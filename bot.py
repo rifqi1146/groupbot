@@ -7,6 +7,7 @@ import io
 import re
 import json
 import platform
+import statistics
 import time
 import shlex
 import shutil
@@ -490,6 +491,143 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
+#speedtest
+SPEED_TITLE = "⚡️ SpeedTest"
+EMO = {
+    "ping": "🏓",
+    "down": "⬇️",
+    "up": "⬆️",
+    "ok": "✅",
+    "bad": "❌",
+}
+
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    mode = args[0].lower() if args else "quick"
+
+    if mode in ("adv", "advanced"):
+        await speedtest_advanced(update, context)
+    else:
+        await speedtest_quick(update, context)
+
+async def speedtest_quick(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = await update.message.reply_text(
+        f"<b>{SPEED_TITLE}</b>\nRunning quick test…",
+        parse_mode="HTML"
+    )
+
+    try:
+        # PING
+        t0 = time.perf_counter()
+        async with aiohttp.ClientSession() as s:
+            async with s.get("https://www.google.com", timeout=5):
+                pass
+        ping = round((time.perf_counter() - t0) * 1000, 1)
+
+        # DOWNLOAD (Cloudflare)
+        total = 0
+        t0 = time.perf_counter()
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                "https://speed.cloudflare.com/__down?bytes=5000000",
+                timeout=30
+            ) as r:
+                async for chunk in r.content.iter_chunked(8192):
+                    total += len(chunk)
+                    if total >= 5 * 1024 * 1024:
+                        break
+        down = round((total * 8) / ((time.perf_counter() - t0) * 1024 * 1024), 2)
+
+        # UPLOAD (httpbin)
+        data = b"0" * (512 * 1024)
+        t0 = time.perf_counter()
+        async with aiohttp.ClientSession() as s:
+            async with s.post("https://httpbin.org/post", data=data, timeout=20):
+                pass
+        up = round((len(data) * 8) / ((time.perf_counter() - t0) * 1024 * 1024), 2)
+
+        await msg.edit_text(
+            f"{EMO['ok']} <b>{SPEED_TITLE} — Quick Result</b>\n\n"
+            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
+            f"{EMO['down']} Download: <code>{down} Mbps</code>\n"
+            f"{EMO['up']} Upload: <code>{up} Mbps</code>\n\n"
+            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        await msg.edit_text(
+            f"{EMO['bad']} Speedtest failed\n<code>{e}</code>",
+            parse_mode="HTML"
+        )
+        
+async def speedtest_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = await update.message.reply_text(
+        f"<b>{SPEED_TITLE}</b>\nRunning advanced diagnostics…",
+        parse_mode="HTML"
+    )
+
+    try:
+        samples = []
+        async with aiohttp.ClientSession() as s:
+            for _ in range(5):
+                try:
+                    t0 = time.perf_counter()
+                    async with s.get("https://www.google.com", timeout=5):
+                        pass
+                    samples.append((time.perf_counter() - t0) * 1000)
+                except:
+                    samples.append(999.0)
+                await asyncio.sleep(0.2)
+
+        avg = round(statistics.mean(samples), 1)
+        jitter = round(statistics.stdev(samples), 1)
+
+        quality = (
+            "Excellent" if jitter < 5 else
+            "Good" if jitter < 15 else
+            "Poor"
+        )
+
+        await msg.edit_text(
+            f"{EMO['ok']} <b>{SPEED_TITLE} — Advanced Result</b>\n\n"
+            f"💻 System: <code>{platform.system()} {platform.release()}</code>\n"
+            f"{EMO['ping']} Avg Ping: <code>{avg} ms</code>\n"
+            f"📉 Jitter: <code>{jitter} ms</code>\n"
+            f"📊 Stability: <b>{quality}</b>\n\n"
+            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        await msg.edit_text(
+            f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
+            parse_mode="HTML"
+        )
+                               
+#ping
+async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start = time.perf_counter()
+
+    # kirim pesan awal
+    msg = await update.message.reply_text("🏓 <b>Pinging...</b>", parse_mode="HTML")
+
+    end = time.perf_counter()
+    ms = int((end - start) * 1000)
+
+    if ms < 150:
+        emo = "⚡"
+    elif ms < 500:
+        emo = "🔥"
+    else:
+        emo = "🐌"
+
+    await msg.edit_text(
+        f"{emo} <b>Pong!</b>\n"
+        f"⏱️ <b>Latency:</b> <code>{ms} ms</code>",
+        parse_mode="HTML"
+    )
+    
 # ---- GROQ + Pollinations handlers (for python-telegram-bot) ----
 logger = logging.getLogger(__name__)
 
@@ -1212,8 +1350,12 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ===========================
     if data == "help:features":
         text = (
-            "✨ " + bold("Features") + "\n"
-            "• /dl — Download video TikTok / Instagram / YouTube\n\n"
+    "✨ " + bold("Features") + "\n"
+    "• 🏓 /ping — Cek latency bot\n"
+    "• ⬇️ /dl — Download video TikTok / Instagram / YouTube\n"
+    "• ⚡ /speedtest — Cek kecepatan internet bot (quick / adv)\n\n"
+
+            
 
             "🤖 " + bold("AI & Search") + "\n"
             "• /ai — Tanya AI (default model)\n"
@@ -2138,6 +2280,8 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
+    "speedtest": speedtest_cmd,
+    "ping": ping_cmd,
     "deepseek": ai_deepseek_cmd,
     "openai": ai_openai_cmd,
     "start": start_cmd,
@@ -2148,10 +2292,6 @@ _DOLLAR_CMD_MAP = {
     "setmodeai": setmodeai_cmd,
     "ai": ai_cmd,
     "info": info_cmd,
-    "tosticker": tosticker_cmd,
-    "tophoto": tophoto_cmd,
-    "createpack": createpack_cmd,
-    "addtpack": addtpack_cmd,
     "ban": ban_cmd,
     "mute": mute_cmd,
     "unmute": unmute_cmd,
@@ -2201,6 +2341,8 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- main ----
 def main():
     # register handlers
+    app.add_handler(CommandHandler("speedtest", speedtest_cmd))
+    app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
@@ -2208,12 +2350,8 @@ def main():
     app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
     app.add_handler(CommandHandler("openai", ai_openai_cmd))
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
-    app.add_handler(CommandHandler("tosticker", tosticker_cmd))
     app.add_handler(CommandHandler("ai", ai_cmd))
     app.add_handler(CommandHandler("info", info_cmd))
-    app.add_handler(CommandHandler("tophoto", tophoto_cmd))
-    app.add_handler(CommandHandler("createpack", createpack_cmd))
-    app.add_handler(CommandHandler("addtpack", addtpack_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
