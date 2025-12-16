@@ -1,0 +1,9 @@
+groq
+python-telegram-bot==20.3
+python-dotenv
+requests
+aiohttp
+Pillow
+psutil
+yt-dlp
+
