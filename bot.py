@@ -2421,13 +2421,13 @@ def main():
     # 0️⃣ cache semua user dulu
     app.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, user_cache_handler),
-        group=0
+        group=1
     )
 
     # 1️⃣ $router (contoh: $groq, $ai)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
-        group=1
+        group=0
     )
 
     # 2️⃣ auto blacklist detector
