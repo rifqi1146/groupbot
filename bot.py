@@ -288,6 +288,152 @@ async def resolve_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
 
     return None
 
+import os
+import uuid
+import time
+import asyncio
+from telegram import Update
+from telegram.ext import ContextTypes, CommandHandler
+
+TMP_DIR = "/tmp"
+
+
+# =========================
+# PROGRESS BAR HELPER
+# =========================
+def progress_bar(percent: float) -> str:
+    filled = int(percent // 10)
+    empty = 10 - filled
+    return "█" * filled + "░" * empty
+
+
+# =========================
+# CORE DOWNLOAD WITH PROGRESS
+# =========================
+async def _download_media_with_progress(url: str, status_msg):
+    uid = str(uuid.uuid4())
+    out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
+
+    cmd = [
+        "yt-dlp",
+        "-f", "mp4/best",
+        "--merge-output-format", "mp4",
+
+        # TikTok no watermark
+        "--extractor-args", "tiktok:watermark=0",
+
+        "--no-playlist",
+        "--newline",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+
+        "-o", out_tpl,
+        url
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL
+    )
+
+    last_update = 0
+
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+
+        try:
+            raw = line.decode().strip()
+            if "%" not in raw or "|" not in raw:
+                continue
+
+            percent_str, speed, eta = raw.split("|")
+            percent = float(percent_str.replace("%", "").strip())
+
+            now = time.time()
+            if now - last_update >= 2:
+                bar = progress_bar(percent)
+                await status_msg.edit_text(
+                    f"⬇️ <b>Mengunduh media...</b>\n\n"
+                    f"<code>{bar} {percent:.1f}%</code>\n"
+                    f"🚀 Speed: <b>{speed}</b>\n"
+                    f"⏳ ETA: <b>{eta}</b>",
+                    parse_mode="HTML"
+                )
+                last_update = now
+        except Exception:
+            pass
+
+    await proc.wait()
+
+    if proc.returncode != 0:
+        return None
+
+    for f in os.listdir(TMP_DIR):
+        if f.startswith(uid):
+            return os.path.join(TMP_DIR, f)
+
+    return None
+
+
+# =========================
+# BOT COMMAND /dl
+# =========================
+async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg:
+        return
+
+    if not context.args:
+        return await msg.reply_text(
+            "<b>Usage:</b>\n"
+            "<code>/dl &lt;tiktok | instagram | youtube link&gt;</code>",
+            parse_mode="HTML"
+        )
+
+    url = context.args[0]
+
+    status = await msg.reply_text(
+        "⬇️ <b>Mengunduh media...</b>",
+        parse_mode="HTML"
+    )
+
+    try:
+        file_path = await _download_media_with_progress(url, status)
+        if not file_path:
+            return await status.edit_text(
+                "❌ <b>Gagal mengunduh media</b>",
+                parse_mode="HTML"
+            )
+
+        size_mb = os.path.getsize(file_path) / (1024 * 1024)
+
+        if size_mb > 1900:
+            await context.bot.send_document(
+                msg.chat.id,
+                document=open(file_path, "rb"),
+                caption="✅ <b>Download selesai</b>",
+                parse_mode="HTML"
+            )
+        else:
+            await context.bot.send_video(
+                msg.chat.id,
+                video=open(file_path, "rb"),
+                caption="✅ <b>Download selesai</b>",
+                parse_mode="HTML"
+            )
+
+        os.remove(file_path)
+        await status.delete()
+
+    except Exception as e:
+        await status.edit_text(
+            f"❌ <b>Error:</b> <code>{e}</code>",
+            parse_mode="HTML"
+        )
+
 # utils_groq_poll18.py
 # ---------------- split helper (same logic) ----------------
 def split_message(text: str, max_length: int = 4000) -> List[str]:
@@ -2108,6 +2254,7 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
+    "dl": dl_cmd,
     "deepseek": ai_deepseek_cmd,
     "openai": ai_openai_cmd,
     "start": start_cmd,
@@ -2171,6 +2318,7 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- main ----
 def main():
     # register handlers
+    app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
     app.add_handler(CommandHandler("groq", groq_query))
