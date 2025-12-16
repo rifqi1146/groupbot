@@ -1309,7 +1309,7 @@ def help_keyboard():
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📋 <b>Help Menu</b>\n"
-        "Pilih kategori di bawah ya 😎✨\n"
+        "Pilih kategori di bawah ya✨\n"
     )
     await update.message.reply_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
 
@@ -1325,7 +1325,6 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data or ""
 
-    # helper escape local vars fast
     def esc(s: str) -> str:
         return html.escape(s or "")
 
@@ -1348,23 +1347,39 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "help:features":
         text = (
             "✨ " + bold("Features") + "\n"
-            "Fitur-fitur yang bisa kamu pake:\n\n"
-            "- /tosticker → Ubah foto/sticker jadi sticker\n"
-            "- /tophoto → Ubah sticker jadi PNG\n"
-            "- /createpack → Bikin sticker pack (reply foto)\n"
-            "- /addtpack → Tambah ke sticker pack\n"
-            "- /stats → Cek RAM / Storage / CPU\n"
-            "- /whois @username → Cek cache user\n"
-            "- /ai → Tanya AI (default model)\n"
-            "- /openai → Tanya OpenAI\n"
-            "- /groq → Tanya GroqAI\n"
-            "- /nsfw → Generate NSFW image 🔞\n"
-            "- /deepseek → Tanya DeepSeek\n"
-            "- /ai flash|pro|lite → Paksa model tertentu\n"
-            "- /setmodeai → Set default AI model per chat\n"
-            "- /info → Cek info user\n"
+            "<i>Fitur utama</i>\n\n"
+
+            "🖼️ " + bold("Sticker Tools") + "\n"
+            "• /tosticker — Foto / gambar jadi sticker\n"
+            "• /tophoto — Sticker ke PNG\n"
+            "• /createpack — Buat sticker pack baru\n"
+            "• /addtpack — Tambah ke sticker pack\n\n"
+
+            "⬇️ " + bold("Downloader") + "\n"
+            "• /dl — Download video TikTok / Instagram / YouTube\n\n"
+
+            "🤖 " + bold("AI & Search") + "\n"
+            "• /ai — Tanya AI (default model)\n"
+            "• /openai — Tanya OpenAI\n"
+            "• /groq — Tanya Groq AI\n"
+            "• /deepseek — Tanya DeepSeek\n"
+            "• /ai flash|pro|lite — Paksa model AI\n"
+            "• /setmodeai — Set default model AI\n\n"
+
+            "🧠 " + bold("Utilities") + "\n"
+            "• /whois @username — Info user cache\n"
+            "• /stats — Info sistem (CPU / RAM / Storage)\n"
+            "• /info — Info user Telegram\n\n"
+
+            "🔞 " + bold("NSFW") + "\n"
+            "• /nsfw — Generate gambar NSFW"
         )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
+
+        await query.edit_message_text(
+            text,
+            reply_markup=help_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     # ===========================
@@ -1373,14 +1388,14 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "help:admin":
         text = (
             "🔧 " + bold("Admin Tools") + "\n\n"
-            "/ban — reply/id → ban\n"
-            "/mute — reply/id → mute\n"
-            "/unmute — reply/id → unmute\n"
-            "/warn — tambah warn user\n"
-            "/unwarn — kurangi warn\n"
-            "/warns — lihat warn\n"
-            "/resetwarn — reset warn\n"
-            "/setwarnthreshold — set batas warn\n"
+            "• /ban — Ban user (reply / id)\n"
+            "• /mute — Mute user\n"
+            "• /unmute — Unmute user\n"
+            "• /warn — Tambah warn\n"
+            "• /unwarn — Kurangi warn\n"
+            "• /warns — Lihat total warn\n"
+            "• /resetwarn — Reset warn\n"
+            "• /setwarnthreshold — Atur batas warn"
         )
         await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
         return
@@ -1391,19 +1406,17 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "help:blacklist":
         bl = load_blacklist()
         words = bl.get("words", [])
-        sample = ", ".join(words[:12]) if words else "Belum ada kata"
-
-        # escape dynamic content!
+        sample = ", ".join(words[:12]) if words else "Belum ada"
         sample_esc = esc(sample)
 
         text = (
             "🚫 " + bold("Blacklist System") + "\n\n"
-            f"<i>Kata yang terdaftar:</i> {sample_esc}\n\n"
-            f"{code('/addbad <kata>')} — Tambah kata\n"
-            f"{code('/rmbad <kata>')} — Hapus kata\n"
-            f"{code('/listbad')} — Lihat semua kata\n"
-            f"{code('/setaction mute|ban')} — Set aksi\n"
-            f"{code('/setduration <menit>')} — Durasi tindakan\n"
+            f"<i>Kata terdaftar:</i> {sample_esc}\n\n"
+            f"• {code('/addbad <kata>')} — Tambah kata\n"
+            f"• {code('/rmbad <kata>')} — Hapus kata\n"
+            f"• {code('/listbad')} — Lihat semua\n"
+            f"• {code('/setaction mute|ban')} — Aksi\n"
+            f"• {code('/setduration <menit>')} — Durasi"
         )
         await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
         return
@@ -1414,11 +1427,24 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "help:warns":
         text = (
             "⚠️ " + bold("Warn System") + "\n\n"
-            f"{code('/warn')} — Tambah warn (reply/id)\n"
-            f"{code('/unwarn')} — Kurangi warn (reply/id)\n"
-            f"{code('/warns')} — Lihat warn user\n"
-            f"{code('/resetwarn')} — Reset warn\n"
-            f"{code('/setwarnthreshold <angka>')} — Set batas warn\n"
+            "• /warn — Tambah warn\n"
+            "• /unwarn — Kurangi warn\n"
+            "• /warns — Cek warn\n"
+            "• /resetwarn — Reset warn\n"
+            "• /setwarnthreshold — Set batas"
+        )
+        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
+        return
+
+    # ===========================
+    # CREATOR
+    # ===========================
+    if data == "help:creator":
+        text = (
+            "👤 " + bold("Creator") + "\n\n"
+            "Bot dibuat oleh ꦠꦾꦎꦴꦭꦶꦪ\n"
+            f"Contact: {code('@hirohitokiyoshi')}\n\n"
+            "<i>Promote bot sebagai admin untuk fitur penuh.</i>"
         )
         await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
         return
