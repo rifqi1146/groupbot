@@ -2338,113 +2338,162 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# ---- main ----
+# ======================
+# MAIN ENTRY
+# ======================
 def main():
-    # register handlers
-    app.add_handler(CommandHandler("speedtest", speedtest_cmd))
-    app.add_handler(CommandHandler("ping", ping_cmd))
-    app.add_handler(CommandHandler("dl", dl_cmd))
+    logger.info("Initializing bot...")
+
+    # ======================
+    # BUILD APPLICATION
+    # ======================
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .concurrent_updates(True)
+        .build()
+    )
+
+    # ======================
+    # CORE COMMANDS
+    # ======================
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
-    app.add_handler(CommandHandler("groq", groq_query))
-    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
-    app.add_handler(CommandHandler("openai", ai_openai_cmd))
-    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
-    app.add_handler(CommandHandler("ai", ai_cmd))
-    app.add_handler(CommandHandler("info", info_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
-    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
-    app.add_handler(CommandHandler("stats_cmd", stats_cmd))
+    app.add_handler(CommandHandler("ping", ping_cmd))
+    app.add_handler(CommandHandler("speedtest", speedtest_cmd))
+    app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("info", info_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("whois", whois_cmd))
+
+    # ======================
+    # AI COMMANDS
+    # ======================
+    app.add_handler(CommandHandler("ai", ai_cmd))
+    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
+    app.add_handler(CommandHandler("openai", ai_openai_cmd))
+    app.add_handler(CommandHandler("groq", groq_query))
+    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
+    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
+
+    # ======================
+    # ADMIN / MODERATION
+    # ======================
     app.add_handler(CommandHandler("ban", ban_cmd))
     app.add_handler(CommandHandler("mute", mute_cmd))
     app.add_handler(CommandHandler("unmute", unmute_cmd))
 
-    # $ router (priority)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router), 1)
-
-    # warn commands
+    # ======================
+    # WARN SYSTEM
+    # ======================
     app.add_handler(CommandHandler("warn", warn_cmd))
     app.add_handler(CommandHandler("unwarn", unwarn_cmd))
     app.add_handler(CommandHandler("warns", warns_cmd))
     app.add_handler(CommandHandler("resetwarn", resetwarn_cmd))
     app.add_handler(CommandHandler("setwarnthreshold", setwarnthreshold_cmd))
 
-    # blacklist admin control
+    # ======================
+    # BLACKLIST ADMIN
+    # ======================
     app.add_handler(CommandHandler("addbad", addbad_cmd))
     app.add_handler(CommandHandler("rmbad", rmbad_cmd))
     app.add_handler(CommandHandler("listbad", listbad_cmd))
     app.add_handler(CommandHandler("setaction", setaction_cmd))
     app.add_handler(CommandHandler("setduration", setduration_cmd))
 
-    # stats + admin utilities
-    app.add_handler(CommandHandler("stats", stats_cmd))
+    # ======================
+    # ADMIN UTILITIES
+    # ======================
     app.add_handler(CommandHandler("syncadmins", syncadmins_cmd))
-    app.add_handler(CommandHandler("whois", whois_cmd))
 
-    # cache every seen user (run BEFORE blacklist handler)
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, user_cache_handler), 0)
+    # ======================
+    # INLINE CALLBACKS
+    # ======================
+    app.add_handler(
+        CallbackQueryHandler(help_callback, pattern=r"^help:")
+    )
 
-    # automatic blacklist detector
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _blacklist_process))
+    # ======================
+    # PRIORITY MESSAGE PIPELINE
+    # ======================
 
-    # ignore plain text fallback
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None))
-    pass
-    # startup banner
+    # 0️⃣ cache semua user dulu
+    app.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, user_cache_handler),
+        group=0
+    )
+
+    # 1️⃣ $router (contoh: $groq, $ai)
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        group=1
+    )
+
+    # 2️⃣ auto blacklist detector
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, _blacklist_process),
+        group=2
+    )
+
+    # 3️⃣ fallback (biar ga error)
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None),
+        group=99
+    )
+
+    # ======================
+    # STARTUP INFO
+    # ======================
     try:
         bl = load_blacklist()
-        words_count = len(bl.get("words", []))
         warns_data = load_json_file(WARNS_FILE, {})
-        chats_with_warns = len(warns_data.keys())
-        total_warned_users = sum(len(ch.get("users", {})) for ch in warns_data.values())
-        default_thresh = DEFAULT_WARN_THRESHOLD
+
         banner = r"""
-  ____        _   _       ____        _   
- |  _ \ _   _| |_| |__   |  _ \  __ _| |_ 
+  ____        _   _       ____        _
+ |  _ \ _   _| |_| |__   |  _ \  __ _| |_
  | |_) | | | | __| '_ \  | | | |/ _` | __|
- |  _ <| |_| | |_| |_) | | |_| | (_| | |_ 
+ |  _ <| |_| | |_| |_) | | |_| | (_| | |_
  |_| \_\\__,_|\__|_.__/  |____/ \__,_|\__|
 """
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-        info_lines = [
-            banner,
-            f"  -> Started : {now}",
-            f"  -> Bot token loaded: {'yes' if TOKEN else 'no'}",
-            f"  -> Blacklist words : {words_count}",
-            f"  -> Chats with warns : {chats_with_warns}",
-            f"  -> Total warned users : {total_warned_users}",
-            f"  -> Default warn threshold : {default_thresh}",
-            "  -> Features: sticker tools, create/add pack, blacklist, warns, admin cmds, stats, cache, Gemini AI",
-            "  -> Creator: ꦠꦾꦎꦴꦭꦶꦪ",
-            "-" * 48,
-        ]
-        for line in info_lines:
-            logger.info(line)
-            print(line)
-    except Exception:
-        logger.exception("startup status print failed")
-        print("Bot starting... (status unavailable)")
+        print(banner)
+        logger.info("Bot starting...")
+        logger.info(f"Blacklist words: {len(bl.get('words', []))}")
+        logger.info(f"Chats with warns: {len(warns_data)}")
 
-    try:
+    except Exception:
+        logger.exception("Startup info failed")
+
+    # ======================
+    # SAFE set_my_commands (ASYNC)
+    # ======================
+    async def _set_commands(app):
         cmds = [
             ("start", "Check bot status"),
-            ("tosticker", "Convert photo to sticker"),
-            ("tophoto", "Convert sticker to photo"),
-            ("createpack", "Create sticker pack (reply photo)"),
-            ("addtpack", "Add to sticker pack"),
-            ("help", "Interactive help menu"),
-            ("stats", "Show system stats"),
-            ("warn", "Add warn to user"),
-            ("unwarn", "Remove 1 warn from user"),
+            ("help", "Show help menu"),
+            ("ping", "Check latency"),
+            ("speedtest", "Network speed test"),
+            ("dl", "Download video (TT/IG/YT)"),
+            ("info", "User information"),
+            ("stats", "System statistics"),
         ]
-        app.bot.set_my_commands([{"command": c, "description": d} for c, d in cmds])
-    except Exception:
-        logger.exception("set_my_commands failed (non-fatal)")
+        try:
+            await app.bot.set_my_commands(cmds)
+        except Exception:
+            logger.exception("set_my_commands failed")
 
-    logger.info("Bot launching polling loop...")
+    app.post_init = _set_commands
+
+    # ======================
+    # RUN BOT
+    # ======================
+    logger.info("Launching polling loop...")
     print("Launching... (listening for updates)")
-    app.run_polling()
+    app.run_polling(close_loop=False)
 
+
+# ======================
+# ENTRY POINT
+# ======================
 if __name__ == "__main__":
     main()
