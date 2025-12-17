@@ -492,8 +492,8 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-# speedtest
 import asyncio
+import json
 import time
 import platform
 import psutil
@@ -514,16 +514,37 @@ EMO = {
 # =========================================
 
 
-# ---------- COMMAND ----------
-async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mode = "quick"
-    if context.args:
-        mode = context.args[0].lower()
+# ========= ENTRY POINT =========
+async def speedtest_cmd(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    args = context.args or []
+    mode = args[0].lower() if args else "quick"
 
     if mode in ("adv", "advanced"):
         await speedtest_advanced(update)
     else:
         await speedtest_quick(update)
+
+
+# ========= CORE RUNNER =========
+async def _run_speedtest() -> dict:
+    proc = await asyncio.create_subprocess_exec(
+        "speedtest",
+        "--accept-license",
+        "--accept-gdpr",
+        "--format=json",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise Exception(stderr.decode() or "speedtest failed")
+
+    return json.loads(stdout.decode())
 
 
 # ---------- QUICK ----------
@@ -534,26 +555,11 @@ async def speedtest_quick(update: Update):
 
     try:
         start = time.perf_counter()
+        data = await _run_speedtest()
 
-        proc = await asyncio.create_subprocess_exec(
-            "speedtest",
-            "--accept-license",
-            "--accept-gdpr",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            raise Exception(stderr.decode() or "speedtest failed")
-
-        text = stdout.decode()
-
-        ping = _extract(text, "ms")
-        download = _extract(text, "Mbit/s", key="Download")
-        upload = _extract(text, "Mbit/s", key="Upload")
-
+        ping = round(data["ping"]["latency"], 2)
+        download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
+        upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
         elapsed = round(time.perf_counter() - start, 2)
 
         await msg.edit_text(
@@ -580,30 +586,18 @@ async def speedtest_advanced(update: Update):
     )
 
     try:
+        data = await _run_speedtest()
+
+        # system
         vm = psutil.virtual_memory()
         cpu = psutil.cpu_count(logical=True)
         ram_gb = round(vm.available / 1024**3, 1)
 
-        proc = await asyncio.create_subprocess_exec(
-            "speedtest",
-            "--accept-license",
-            "--accept-gdpr",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            raise Exception(stderr.decode() or "speedtest failed")
-
-        text = stdout.decode()
-
-        ping = float(_extract(text, "ms"))
-        download = float(_extract(text, "Mbit/s", key="Download"))
-        upload = float(_extract(text, "Mbit/s", key="Upload"))
-
-        jitter = round(ping * 0.25, 1)
+        # speed
+        ping = round(data["ping"]["latency"], 2)
+        jitter = round(data["ping"].get("jitter", ping * 0.25), 2)
+        download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
+        upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
 
         stability = (
             "Excellent" if jitter < 5 else
@@ -613,14 +607,28 @@ async def speedtest_advanced(update: Update):
 
         avg_score = round(statistics.mean([download, upload]), 1)
 
+        # network / server
+        isp = data["isp"]
+        ip = data["interface"]["externalIp"]
+        server = data["server"]
+        server_name = f"{server['name']} ({server['location']}, {server['country']})"
+        server_host = server["host"]
+
         await msg.edit_text(
             f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
             f"💻 System: {platform.system()} {platform.release()} • "
-            f"{cpu} cores • {ram_gb} GB available\n\n"
-            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
+            f"{cpu} cores • {ram_gb} GB available\n"
+            f"🌐 Network: {isp}\n"
+            f"📡 IP: <code>{ip}</code>\n\n"
+
+            f"🏓 Ping: <code>{ping} ms</code>\n"
             f"📉 Jitter: <code>{jitter} ms</code>\n"
             f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
             f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
+
+            f"🗄 Server: {server_name}\n"
+            f"🔗 Host: <code>{server_host}</code>\n\n"
+
             f"📊 Stability: <b>{stability}</b>\n"
             f"📈 Overall Score: <b>{avg_score} Mbps</b>\n\n"
             f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -632,21 +640,6 @@ async def speedtest_advanced(update: Update):
             f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
             parse_mode="HTML",
         )
-
-
-# ---------- HELPER (FIXED) ----------
-def _extract(text: str, unit: str, key: str | None = None) -> str:
-    for line in text.splitlines():
-        if key and key not in line:
-            continue
-
-        if unit in line:
-            # cari angka FLOAT pertama di baris
-            match = re.search(r"([0-9]+(?:\.[0-9]+)?)", line)
-            if match:
-                return match.group(1)
-
-    return "0"
                                        
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
