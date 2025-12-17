@@ -894,7 +894,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "✨ <b>Features</b>\n\n"
     "• 🏓 /ping — Cek latency bot\n"
     "• ⬇️ /dl — Download video (TT / IG / YT)\n"
-    "• 🔍 /gsearch <query> — Cari di Google\n"
+    "• 🔍 /gsearch — Cari di Google\n"
 )
         await query.edit_message_text(
             text,
