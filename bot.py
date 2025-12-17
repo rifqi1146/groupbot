@@ -639,14 +639,13 @@ def _extract(text: str, unit: str, key: str | None = None) -> str:
     for line in text.splitlines():
         if key and key not in line:
             continue
+
         if unit in line:
-            parts = line.replace(unit, "").replace(":", " ").split()
-            for p in parts:
-                try:
-                    float(p)
-                    return p
-                except ValueError:
-                    continue
+            # cari angka FLOAT pertama di baris
+            match = re.search(r"([0-9]+(?:\.[0-9]+)?)", line)
+            if match:
+                return match.group(1)
+
     return "0"
                                        
 #ping
