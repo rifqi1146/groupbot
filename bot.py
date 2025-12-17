@@ -512,6 +512,16 @@ EMO = {
     "upload": "⬆️",
 }
 
+# ---------- MAIN CMD ----------
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args or []
+    mode = args[0].lower() if args else "quick"
+
+    if mode in ("adv", "advanced"):
+        await speedtest_advanced(update)
+    else:
+        await speedtest_quick(update)
+        
 # ================= CORE =================
 
 def _run_speedtest_blocking():
