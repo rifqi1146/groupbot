@@ -20,7 +20,7 @@ import dns.resolver
 import uuid
 
 from bs4 import BeautifulSoup
-from typing import List, Tuple, Optional. Tuple
+from typing import List, Tuple, Optional, Tuple
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
@@ -827,21 +827,22 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-# ---- interactive help menu ----
-def help_keyboard():
-    kb = [
-        [
-            InlineKeyboardButton("✨ Features", callback_data="help:features"),
-        ],
-        ]
-            InlineKeyboardButton("👤 Creator", callback_data="help:creator"),
-            InlineKeyboardButton("🔙 Back", callback_data="help:back"),
-        ],
-        [
-            InlineKeyboardButton("❌ Close", callback_data="help:close"),
-        ],
-    ]
-    return InlineKeyboardMarkup(kb)
+# ---- help
+def help_main_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✨ Features", callback_data="help:features")],
+        [InlineKeyboardButton("🤖 AI", callback_data="help:ai")],
+        [InlineKeyboardButton("🧠 Utilities", callback_data="help:utils")],
+        [InlineKeyboardButton("🔞 NSFW", callback_data="help:nsfw")],
+        [InlineKeyboardButton("👤 Creator", callback_data="help:creator")],
+        [InlineKeyboardButton("❌ Close", callback_data="help:close")],
+    ])
+
+def help_back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Back", callback_data="help:back")],
+        [InlineKeyboardButton("❌ Close", callback_data="help:close")],
+    ])
 
 
 # ===========================
@@ -850,9 +851,13 @@ def help_keyboard():
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📋 <b>Help Menu</b>\n"
-        "Pilih kategori di bawah ya✨\n"
+        "Pilih kategori di bawah ya✨"
     )
-    await update.message.reply_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
+    await update.message.reply_text(
+        text,
+        reply_markup=help_main_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 # ===========================
@@ -866,92 +871,97 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data or ""
 
-    def esc(s: str) -> str:
-        return html.escape(s or "")
-
-    # ===========================
-    # CLOSE BUTTON
-    # ===========================
+    # ❌ CLOSE
     if data == "help:close":
         try:
             await query.message.delete()
-        except:
-            try:
-                await query.edit_message_reply_markup(reply_markup=None)
-            except:
-                pass
+        except Exception:
+            pass
         return
 
-    # ===========================
-    # FEATURES
-    # ===========================
-    if data == "help:features":
-        text = (
-    "✨ " + bold("Features") + "\n"
-    "• 🏓 /ping — Cek latency bot\n"
-    "• ⬇️ /dl — Download video TikTok / Instagram / YouTube\n\n"
-
-            
-
-            "🤖 " + bold("AI & Search") + "\n"
-            "• /ai — Tanya AI (default model)\n"
-            "• /openai — Tanya OpenAI\n"
-            "• /groq — Tanya Groq AI\n"
-            "• /deepseek — Tanya DeepSeek\n"
-            "• /ai flash|pro|lite — Paksa model AI\n"
-            "• /setmodeai — Set default model AI\n\n"
-
-            "🧠 " + bold("Utilities") + "\n"
-            "• /whois @username — Info user cache\n"
-            "• /stats — Info sistem (CPU / RAM / Storage)\n"
-            "• /info — Info user Telegram\n\n"
-
-            "🔞 " + bold("NSFW") + "\n"
-            "• /nsfw — Generate gambar NSFW"
-        )
-
+    # 🔙 BACK
+    if data == "help:back":
         await query.edit_message_text(
-            text,
-            reply_markup=help_keyboard(),
+            "📋 <b>Help Menu</b>\nPilih kategori di bawah ya✨",
+            reply_markup=help_main_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    # ===========================
-    # CREATOR
-    # ===========================
+    # ✨ FEATURES
+    if data == "help:features":
+        text = (
+            "✨ <b>Features</b>\n\n"
+            "• 🏓 /ping — Cek latency bot\n"
+            "• ⬇️ /dl — Download video (TT / IG / YT)\n"
+            "• ⚡ /speedtest — Cek speed jaringan (jika ada)\n"
+        )
+        await query.edit_message_text(
+            text,
+            reply_markup=help_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # 🤖 AI
+    if data == "help:ai":
+        text = (
+            "🤖 <b>AI Commands</b>\n\n"
+            "• /ai — Tanya AI (default)\n"
+            "• /ai flash|pro|lite — Pilih model\n"
+            "• /setmodeai — Set default AI\n"
+            "• /openai — OpenAI via HF\n"
+            "• /groq — Groq AI\n"
+            "• /deepseek — DeepSeek AI"
+        )
+        await query.edit_message_text(
+            text,
+            reply_markup=help_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # 🧠 UTILITIES
+    if data == "help:utils":
+        text = (
+            "🧠 <b>Utilities</b>\n\n"
+            "• /stats — Info sistem\n\n"
+        )
+        await query.edit_message_text(
+            text,
+            reply_markup=help_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # 🔞 NSFW
+    if data == "help:nsfw":
+        text = (
+            "🔞 <b>NSFW</b>\n\n"
+            "• /nsfw — Generate gambar NSFW\n\n"
+            "<i>Gunakan dengan bijak.\n"
+            "Disarankan hanya di private chat.</i>"
+        )
+        await query.edit_message_text(
+            text,
+            reply_markup=help_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # 👤 CREATOR
     if data == "help:creator":
         text = (
-            "👤 " + bold("Creator") + "\n\n"
+            "👤 <b>Creator</b>\n\n"
             "Bot dibuat oleh ꦠꦾꦎꦴꦭꦶꦪ\n"
-            f"Contact: {code('@hirohitokiyoshi')}\n\n"
+            "@hirohitokiyoshi\n\n"
             "<i>Promote bot sebagai admin untuk fitur penuh.</i>"
         )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
-        return
-
-    # ===========================
-    # CREATOR
-    # ===========================
-    if data == "help:creator":
-        text = (
-            "👤 " + bold("Creator") + "\n"
-            "Bot ini dibuat sama ꦠꦾꦎꦴꦭꦶꦪ\n\n"
-            f"Contact: {code('@hirohitokiyoshi')}\n\n"
-            "Tip: Promote bot sebagai admin untuk fitur penuh."
+        await query.edit_message_text(
+            text,
+            reply_markup=help_back_keyboard(),
+            parse_mode="HTML"
         )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
-        return
-
-    # ===========================
-    # BACK
-    # ===========================
-    if data == "help:back":
-        text = (
-            "📋 " + bold("Help Menu") + "\n"
-            "Pilih kategori di bawah untuk detail."
-        )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
         return
 
 # --- Helper & stats
@@ -1176,6 +1186,147 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(out)
 
+#google search 
+import aiohttp
+import urllib.parse
+
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+GSEARCH_CACHE = { }
+
+async def google_search(query: str, page: int = 0, limit: int = 5):
+    try:
+        start = page * limit + 1
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            "key": GOOGLE_API_KEY,
+            "cx": GOOGLE_CSE_ID,
+            "q": query,
+            "num": limit,
+            "start": start,
+        }
+
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(url, params=params, timeout=20) as resp:
+                if resp.status != 200:
+                    return False, await resp.text()
+                data = await resp.json()
+
+        results = []
+        for it in data.get("items", []):
+            results.append({
+                "title": it.get("title", ""),
+                "snippet": it.get("snippet", ""),
+                "link": it.get("link", ""),
+            })
+
+        return True, results
+
+    except Exception as e:
+        return False, str(e)
+        
+def gsearch_keyboard(search_id: str, page: int):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬅️ Prev", callback_data=f"gsp:{search_id}:{page-1}"),
+            InlineKeyboardButton(f"📄 {page+1}", callback_data="noop"),
+            InlineKeyboardButton("Next ➡️", callback_data=f"gsp:{search_id}:{page+1}"),
+        ],
+        [
+            InlineKeyboardButton("❌ Close", callback_data=f"gsp:close:{search_id}")
+        ]
+    ])
+    
+async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text(
+            "🔍 <b>Google Search</b>\n\n"
+            "<code>/gsearch python asyncio</code>",
+            parse_mode="HTML"
+        )
+
+    query = " ".join(context.args)
+    search_id = uuid.uuid4().hex[:8]
+
+    GSEARCH_CACHE[search_id] = {
+        "query": query,
+        "page": 0,
+        "user": update.effective_user.id,
+    }
+
+    msg = await update.message.reply_text("🔍 Lagi nyari di Google...")
+
+    ok, res = await google_search(query, 0)
+    if not ok:
+        return await msg.edit_text(f"❌ Error\n<code>{res}</code>", parse_mode="HTML")
+
+    if not res:
+        return await msg.edit_text("❌ Ga nemu hasil.")
+
+    text = f"🔍 <b>Google Search:</b> <i>{html.escape(query)}</i>\n\n"
+    for i, r in enumerate(res, start=1):
+        text += (
+            f"<b>{i}. {html.escape(r['title'])}</b>\n"
+            f"{html.escape(r['snippet'])}\n"
+            f"{r['link']}\n\n"
+        )
+
+    await msg.edit_text(
+        text[:4096],
+        parse_mode="HTML",
+        reply_markup=gsearch_keyboard(search_id, 0),
+        disable_web_page_preview=False
+    )
+
+async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    if q.data == "noop":
+        return
+
+    _, a, b = q.data.split(":", 2)
+
+    if a == "close":
+        GSEARCH_CACHE.pop(b, None)
+        return await q.message.delete()
+
+    search_id = a
+    page = int(b)
+
+    data = GSEARCH_CACHE.get(search_id)
+    if not data:
+        return await q.message.edit_text("❌ Data search expired.")
+
+    # lock ke user pemanggil
+    if q.from_user.id != data["user"]:
+        return await q.answer("Ini bukan search lu dongo", show_alert=True)
+
+    if page < 0:
+        return
+
+    query = data["query"]
+    ok, res = await google_search(query, page)
+    if not ok or not res:
+        return await q.message.edit_text("❌ Ga ada hasil lagi.")
+
+    data["page"] = page
+
+    text = f"🔍 <b>Google Search:</b> <i>{html.escape(query)}</i>\n\n"
+    for i, r in enumerate(res, start=1 + page * 3):
+        text += (
+            f"<b>{i}. {html.escape(r['title'])}</b>\n"
+            f"{html.escape(r['snippet'])}\n"
+            f"{r['link']}\n\n"
+        )
+
+    await q.message.edit_text(
+        text[:4096],
+        parse_mode="HTML",
+        reply_markup=gsearch_keyboard(search_id, page),
+        disable_web_page_preview=False
+    )
+               
 # --- Konfigurasi API Hugging Face ---
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 HF_MODEL_DEFAULT = os.getenv("HF_MODEL_DEFAULT", "openai/gpt-oss-120b:fastest")
@@ -1430,185 +1581,10 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(final[:4000])
 
-async def whois_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text("Usage: /whois @username")
-    a = context.args[0].lstrip("@").lower()
-    uc = _user_cache.get("by_username", {})
-    if a in uc:
-        info = uc[a]
-        await update.message.reply_text(
-            f"🔎 Ditemukan di cache\n"
-            f"Username : @{a}\n"
-            f"User ID  : {info['id']}\n"
-            f"Nama     : {info.get('name')}\n"
-            f"Seen     : {info.get('seen')}"
-        )
-    else:
-        await update.message.reply_text("Gak ada data username itu di cache. Coba /syncadmins atau tunggu orang itu ngomong dulu.")
-
-async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Text-only user info (no profile photo).
-    Sends placeholder "Mengambil info..." then edits it into full info (HTML).
-    """
-    try:
-        msg = update.message
-        if not msg:
-            return
-
-        # placeholder
-        try:
-            placeholder = await msg.reply_text("🔎 Mengambil info user...", quote=True)
-        except Exception:
-            placeholder = None
-
-        # resolve target user
-        target = None
-        if msg.reply_to_message:
-            target = msg.reply_to_message.from_user
-        elif context.args:
-            arg = context.args[0]
-            uid = None
-            if arg.startswith("@"):
-                arg = arg[1:]
-            if arg.isdigit():
-                uid = int(arg)
-            else:
-                uc = _user_cache.get("by_username", {})
-                if arg.lower() in uc:
-                    uid = uc[arg.lower()]["id"]
-            if uid:
-                try:
-                    member = await context.bot.get_chat_member(update.effective_chat.id, uid)
-                    target = member.user
-                except Exception:
-                    try:
-                        # fallback: get_chat (may return user-like chat)
-                        profile = await context.bot.get_chat(uid)
-                        # profile could be a Chat object; construct a minimal user-like object if possible
-                        class _U: pass
-                        u = _U()
-                        u.id = profile.id
-                        u.first_name = getattr(profile, "first_name", None) or getattr(profile, "title", None) or ""
-                        u.last_name = getattr(profile, "last_name", None) or ""
-                        u.username = getattr(profile, "username", None)
-                        u.is_bot = False
-                        target = u
-                    except Exception:
-                        target = None
-
-        if not target and update.effective_user:
-            target = update.effective_user
-
-        if not target:
-            if placeholder:
-                await placeholder.edit_text("⚠️ Gagal resolve user. Reply ke pesan atau berikan @username / id.")
-            else:
-                await msg.reply_text("⚠️ Gagal resolve user. Reply ke pesan atau berikan @username / id.")
-            return
-
-        # cache user for future
-        try:
-            cache_user(target)
-        except Exception:
-            pass
-
-        uid = getattr(target, "id", "—")
-        first = getattr(target, "first_name", "") or ""
-        last = getattr(target, "last_name", "") or ""
-        name = (first + (" " + last if last else "")).strip() or "—"
-        username = f"@{getattr(target, 'username', None)}" if getattr(target, "username", None) else "—"
-        is_bot = getattr(target, "is_bot", False)
-        # some User objects expose 'is_premium' / 'language_code'
-        is_premium = getattr(target, "is_premium", False)
-        lang_code = getattr(target, "language_code", None) or "—"
-
-        # seen (from our cache)
-        seen = "—"
-        try:
-            entry = _user_cache.get("by_id", {}).get(str(uid))
-            if entry:
-                seen = entry.get("seen", "—")
-        except Exception:
-            seen = "—"
-
-        # profile photo count
-        photo_count = 0
-        try:
-            photos = await context.bot.get_user_profile_photos(uid, limit=1)
-            photo_count = getattr(photos, "total_count", 0) or 0
-        except Exception:
-            photo_count = 0
-
-        # chat-specific status (admin/creator/member)
-        chat_status = "—"
-        try:
-            member = await context.bot.get_chat_member(update.effective_chat.id, uid)
-            chat_status = getattr(member, "status", "—")
-        except Exception:
-            chat_status = "—"
-
-        # bio / about (via get_chat may contain description for some users)
-        bio = None
-        try:
-            chat_obj = await context.bot.get_chat(uid)
-            bio = getattr(chat_obj, "description", None) or getattr(chat_obj, "bio", None)
-        except Exception:
-            bio = None
-
-        # more environment info we can provide (bot-side)
-        try:
-            me = await context.bot.get_me()
-            bot_username = getattr(me, "username", "—")
-        except Exception:
-            bot_username = "—"
-
-        # helper to escape HTML
-        def esc(x):
-            return html.escape(str(x)) if x is not None else "—"
-
-        # build full report (HTML)
-        lines = []
-        lines.append(f"{bold('👤 User Info')}")
-        lines.append("")  # spacer
-        lines.append(f"{bold('Name')}: {esc(name)}")
-        lines.append(f"{bold('Username')}: {esc(username)}")
-        lines.append(f"{bold('User ID')}: <code>{esc(uid)}</code>")
-        lines.append(f"{bold('Bot account')}: {'Yes' if is_bot else 'No'}")
-        # optional flags
-        lines.append(f"{bold('Premium')}: {'Yes' if is_premium else 'No'}")
-        lines.append(f"{bold('Language')}: {esc(lang_code)}")
-        lines.append(f"{bold('Seen')}: {esc(seen)}")
-        lines.append(f"{bold('Profile photos')}: {photo_count}")
-        lines.append(f"{bold('Chat status')}: {esc(chat_status)}")
-        if bio:
-            lines.append(f"{bold('Bio')}: {esc(bio)}")
-        report = "\n".join(lines)
-
-        # final: edit placeholder to report (text-only)
-        if placeholder:
-            try:
-                await placeholder.edit_text(report, parse_mode="HTML")
-                return
-            except Exception:
-                # fallback: new message
-                await msg.reply_text(report, parse_mode="HTML")
-                return
-        else:
-            await msg.reply_text(report, parse_mode="HTML")
-            return
-
-    except Exception:
-        logger.exception("info_cmd failed")
-        try:
-            await update.message.reply_text("Gagal ambil info user.")
-        except Exception:
-            pass
-
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
+    "gsearch": gsearch_cmd,
     "ping": ping_cmd,
     "deepseek": ai_deepseek_cmd,
     "openai": ai_openai_cmd,
@@ -1619,10 +1595,7 @@ _DOLLAR_CMD_MAP = {
     "menu": help_cmd,
     "setmodeai": setmodeai_cmd,
     "ai": ai_cmd,
-    "info": info_cmd,
     "stats": stats_cmd,
-    "syncadmins": syncadmins_cmd,
-    "whois": whois_cmd,
 }
 
 async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1674,13 +1647,12 @@ def main():
     # ======================
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("gsearch", gsearch_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
-    app.add_handler(CommandHandler("info", info_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("whois", whois_cmd))
-
+   
     # ======================
     # AI COMMANDS
     # ======================
@@ -1690,39 +1662,20 @@ def main():
     app.add_handler(CommandHandler("groq", groq_query))
     app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
-
-    # ======================
-    # ADMIN UTILITIES
-    # ======================
-    app.add_handler(CommandHandler("syncadmins", syncadmins_cmd))
-
+    
     # ======================
     # INLINE CALLBACKS
     # ======================
     app.add_handler(
         CallbackQueryHandler(help_callback, pattern=r"^help:")
     )
-
-    # ======================
-    # PRIORITY MESSAGE PIPELINE
-    # ======================
-
-    # 0️⃣ cache semua user dulu
     app.add_handler(
-        MessageHandler(filters.ALL & ~filters.COMMAND, user_cache_handler),
-        group=1
+        CallbackQueryHandler(gsearch_callback, pattern=r"^gsp:")
     )
-
     # 1️⃣ $router (contoh: $groq, $ai)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=0
-    )
-
-    # 2️⃣ auto blacklist detector
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, _blacklist_process),
-        group=2
     )
 
     # 3️⃣ fallback (biar ga error)
@@ -1730,14 +1683,7 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None),
         group=99
     )
-
-    # ======================
-    # STARTUP INFO
-    # ======================
     try:
-        bl = load_blacklist()
-        warns_data = load_json_file(WARNS_FILE, {})
-
         banner = r"""
   ____        _   _       ____        _
  |  _ \ _   _| |_| |__   |  _ \  __ _| |_
@@ -1747,23 +1693,18 @@ def main():
 """
         print(banner)
         logger.info("Bot starting...")
-        logger.info(f"Blacklist words: {len(bl.get('words', []))}")
-        logger.info(f"Chats with warns: {len(warns_data)}")
 
     except Exception:
         logger.exception("Startup info failed")
 
-    # ======================
-    # SAFE set_my_commands (ASYNC)
-    # ======================
     async def _set_commands(app):
         cmds = [
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
             ("dl", "Download video (TT/IG/YT)"),
-            ("info", "User information"),
             ("stats", "System statistics"),
+            ("gsearch", "Cari info via Google"),
         ]
         try:
             await app.bot.set_my_commands(cmds)
@@ -1772,16 +1713,9 @@ def main():
 
     app.post_init = _set_commands
 
-    # ======================
-    # RUN BOT
-    # ======================
     logger.info("Launching polling loop...")
     print("Launching... (listening for updates)")
     app.run_polling(close_loop=False)
-
-
-# ======================
-# ENTRY POINT
-# ======================
+    
 if __name__ == "__main__":
     main()
