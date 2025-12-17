@@ -494,13 +494,13 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
 #speedtest
 import asyncio
-import subprocess
 import time
 import platform
 import psutil
 import statistics
 from datetime import datetime
-
+from telegram import Update
+from telegram.ext import ContextTypes
 
 # ================= CONFIG =================
 SPEED_TITLE = "⚡️🌸 SpeedLab"
@@ -511,24 +511,25 @@ EMO = {
     "download": "⬇️",
     "upload": "⬆️",
 }
-
 # =========================================
 
 
-async def speedtest_cmd(message, mode: str = "quick"):
-    """
-    mode: quick | adv
-    handler lu yang manggil fungsi ini
-    """
+async def speedtest_cmd(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    mode: str = "quick"
+):
     if mode in ("adv", "advanced"):
-        await speedtest_advanced(message)
+        await speedtest_advanced(update)
     else:
-        await speedtest_quick(message)
+        await speedtest_quick(update)
 
 
 # ---------- QUICK ----------
-async def speedtest_quick(message):
-    msg = await message.reply_text(f"⏳ {SPEED_TITLE} — Running quick test...")
+async def speedtest_quick(update: Update):
+    msg = await update.effective_message.reply_text(
+        f"⏳ {SPEED_TITLE} — Running quick test..."
+    )
 
     try:
         start = time.perf_counter()
@@ -572,16 +573,16 @@ async def speedtest_quick(message):
 
 
 # ---------- ADVANCED ----------
-async def speedtest_advanced(message):
-    msg = await message.reply_text(f"⏳ {SPEED_TITLE} — Running advanced test...")
+async def speedtest_advanced(update: Update):
+    msg = await update.effective_message.reply_text(
+        f"⏳ {SPEED_TITLE} — Running advanced test..."
+    )
 
     try:
-        # system info
         vm = psutil.virtual_memory()
         cpu = psutil.cpu_count(logical=True)
         ram_gb = round(vm.available / 1024**3, 1)
 
-        # run speedtest
         proc = await asyncio.create_subprocess_exec(
             "speedtest",
             "--accept-license",
@@ -601,7 +602,6 @@ async def speedtest_advanced(message):
         download = float(_extract(text, "Mbit/s", key="Download"))
         upload = float(_extract(text, "Mbit/s", key="Upload"))
 
-        # fake jitter (speedtest-cli ga kasih jitter)
         jitter = round(ping * 0.25, 1)
 
         stability = (
@@ -614,7 +614,8 @@ async def speedtest_advanced(message):
 
         await msg.edit_text(
             f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
-            f"💻 System: {platform.system()} {platform.release()} • {cpu} cores • {ram_gb} GB available\n\n"
+            f"💻 System: {platform.system()} {platform.release()} • "
+            f"{cpu} cores • {ram_gb} GB available\n\n"
             f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
             f"📉 Jitter: <code>{jitter} ms</code>\n"
             f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
