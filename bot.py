@@ -122,7 +122,7 @@ def progress_bar(percent: float) -> str:
 
 #dl core
 async def resolve_tiktok_url(url: str) -> str:
-    timeout = aiohttp.ClientTimeout(total=15)
+    timeout = aiohttp.ClientTimeout(total=20)
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Linux; Android 13) "
@@ -132,20 +132,18 @@ async def resolve_tiktok_url(url: str) -> str:
     }
 
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as s:
-        try:
-            # 1️⃣ HEAD dulu (lebih ringan)
-            async with s.head(url, allow_redirects=True) as r:
-                final = str(r.url)
-                if "tiktok.com" in final:
-                    return clean_tiktok_url(final)
-        except:
-            pass
-
-        # 2️⃣ fallback GET
         async with s.get(url, allow_redirects=True) as r:
-            return clean_tiktok_url(str(r.url))
+            final_url = str(r.url)
+
+    # buang parameter panjang tiktok
+    final_url = final_url.split("?")[0]
+
+    if "/video/" not in final_url:
+        raise Exception("Invalid TikTok URL")
+
+    return final_url
         
-async def _download_media_with_progress(url: str, status_msg):
+async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
@@ -153,15 +151,11 @@ async def _download_media_with_progress(url: str, status_msg):
         "yt-dlp",
         "-f", "mp4/best",
         "--merge-output-format", "mp4",
-
-        # TikTok no watermark
-        "--extractor-args", "tiktok:watermark=0",
-
         "--no-playlist",
         "--newline",
+        "--extractor-args", "tiktok:watermark=0",
         "--progress-template",
         "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-
         "-o", out_tpl,
         url
     ]
@@ -198,7 +192,7 @@ async def _download_media_with_progress(url: str, status_msg):
                     parse_mode="HTML"
                 )
                 last_update = now
-        except Exception:
+        except:
             pass
 
     await proc.wait()
@@ -218,20 +212,32 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kasih link video")
 
     raw_url = context.args[0]
-    msg = await update.message.reply_text("🔄 Memproses...")
+    status = await update.message.reply_text("🔄 Memproses...")
 
     try:
-        if "tiktok.com" in raw_url:
-            fixed_url = await resolve_tiktok_url(raw_url)
-        else:
-            fixed_url = raw_url  # IG / YT untouched
+        url = raw_url
 
-        video = await download_media(fixed_url)  # fungsi lama lu
-        await update.message.reply_video(video=video)
-        await msg.edit_text("✅ Download selesai")
+        if "tiktok.com" in raw_url:
+            url = await resolve_tiktok_url(raw_url)
+
+        file_path = await download_media_with_progress(url, status)
+
+        if not file_path:
+            raise Exception("Download failed")
+
+        await update.message.reply_video(
+            video=open(file_path, "rb")
+        )
+
+        await status.edit_text("✅ Download selesai")
+
+        try:
+            os.remove(file_path)
+        except:
+            pass
 
     except Exception as e:
-        await msg.edit_text(
+        await status.edit_text(
             "❌ Gagal mengunduh media\n"
             "ℹ️ Link TikTok lagi rewel, coba ulang"
         )
