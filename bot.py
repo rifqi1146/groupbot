@@ -1421,6 +1421,86 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(out, parse_mode="HTML")
 
+import socket
+import aiohttp
+import whois
+from telegram import Update
+from telegram.ext import ContextTypes
+import html
+
+
+async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /domain example.com
+    """
+    msg = update.effective_message
+
+    if not context.args:
+        return await msg.reply_text(
+            "<b>Usage:</b> /domain &lt;domain&gt;\n"
+            "<b>Example:</b> /domain google.com",
+            parse_mode="HTML"
+        )
+
+    domain = context.args[0]
+    domain = domain.replace("http://", "").replace("https://", "").split("/")[0]
+
+    loading = await msg.reply_text(f"🔄 <b>Analyzing domain:</b> <code>{html.escape(domain)}</code>", parse_mode="HTML")
+
+    info = {}
+
+    # ---------------- IP RESOLVE ----------------
+    try:
+        info["ip"] = socket.gethostbyname(domain)
+    except Exception:
+        info["ip"] = "Not found"
+
+    # ---------------- WHOIS ----------------
+    try:
+        w = whois.whois(domain)
+        info["registrar"] = w.registrar or "Not available"
+        info["created"] = str(w.creation_date) if w.creation_date else "Not available"
+        info["expires"] = str(w.expiration_date) if w.expiration_date else "Not available"
+        info["nameservers"] = w.name_servers if w.name_servers else []
+    except Exception:
+        info["registrar"] = "Not available"
+        info["created"] = "Not available"
+        info["expires"] = "Not available"
+        info["nameservers"] = []
+
+    # ---------------- HTTP CHECK ----------------
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{domain}", timeout=10) as r:
+                info["http_status"] = r.status
+                info["server"] = r.headers.get("server", "Not available")
+    except Exception:
+        info["http_status"] = "Not available"
+        info["server"] = "Not available"
+
+    # ---------------- FORMAT NS ----------------
+    if info["nameservers"]:
+        ns_text = "\n".join(f"• {html.escape(ns)}" for ns in info["nameservers"][:5])
+    else:
+        ns_text = "Not available"
+
+    # ---------------- RESULT ----------------
+    text = (
+        "<b>🌐 Domain Information</b>\n\n"
+        f"<b>Domain:</b> <code>{html.escape(domain)}</code>\n"
+        f"<b>IP Address:</b> <code>{info['ip']}</code>\n"
+        f"<b>HTTP Status:</b> <code>{info['http_status']}</code>\n"
+        f"<b>Server:</b> <code>{html.escape(info['server'])}</code>\n\n"
+        "<b>📋 Registration Details</b>\n"
+        f"<b>Registrar:</b> {html.escape(info['registrar'])}\n"
+        f"<b>Created:</b> {html.escape(info['created'])}\n"
+        f"<b>Expires:</b> {html.escape(info['expires'])}\n\n"
+        "<b>🔧 Name Servers</b>\n"
+        f"{ns_text}"
+    )
+
+    await loading.edit_text(text, parse_mode="HTML")
+    
 #google search 
 import aiohttp
 import urllib.parse
@@ -1883,6 +1963,7 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
+    app.add_handler(CommandHandler("domain", domain_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
