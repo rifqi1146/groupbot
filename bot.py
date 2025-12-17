@@ -462,7 +462,7 @@ def _find_urls(text: str) -> List[str]:
     return _URL_RE.findall(text)
 
 
-# ---- helper: fetch + extract main article text (async) ----
+# ---- helper
 async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optional[str], Optional[str]]:
     """
     Fetch url and return (title, cleaned_text) or (None, None) on failure.
@@ -833,8 +833,6 @@ def help_main_keyboard():
         [InlineKeyboardButton("✨ Features", callback_data="help:features")],
         [InlineKeyboardButton("🤖 AI", callback_data="help:ai")],
         [InlineKeyboardButton("🧠 Utilities", callback_data="help:utils")],
-        [InlineKeyboardButton("🔞 NSFW", callback_data="help:nsfw")],
-        [InlineKeyboardButton("👤 Creator", callback_data="help:creator")],
         [InlineKeyboardButton("❌ Close", callback_data="help:close")],
     ])
 
