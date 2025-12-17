@@ -122,19 +122,28 @@ def progress_bar(percent: float) -> str:
 
 #dl core
 async def resolve_tiktok_url(url: str) -> str:
-    """
-    Convert long TikTok URL → short vt.tiktok.com URL
-    """
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(
-                url,
-                allow_redirects=True,
-                timeout=15
-            ) as resp:
-                return str(resp.url)
-    except Exception:
-        return url
+    timeout = aiohttp.ClientTimeout(total=15)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 13) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Mobile Safari/537.36"
+        )
+    }
+
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as s:
+        try:
+            # 1️⃣ HEAD dulu (lebih ringan)
+            async with s.head(url, allow_redirects=True) as r:
+                final = str(r.url)
+                if "tiktok.com" in final:
+                    return clean_tiktok_url(final)
+        except:
+            pass
+
+        # 2️⃣ fallback GET
+        async with s.get(url, allow_redirects=True) as r:
+            return clean_tiktok_url(str(r.url))
         
 async def _download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
@@ -206,26 +215,25 @@ async def _download_media_with_progress(url: str, status_msg):
 #dl
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kasih link TikTok nya")
+        return await update.message.reply_text("❌ Kasih link video")
 
     raw_url = context.args[0]
-
-    msg = await update.message.reply_text("🔄 Memproses link...")
-
-    # 🔥 AUTO FIX DI SINI
-    fixed_url = await resolve_tiktok_url(raw_url)
+    msg = await update.message.reply_text("🔄 Memproses...")
 
     try:
-        # lanjutkan logic download lu PERSIS seperti biasa
-        video_url = await download_tiktok(fixed_url)  # <-- fungsi lama lu
+        if "tiktok.com" in raw_url:
+            fixed_url = await resolve_tiktok_url(raw_url)
+        else:
+            fixed_url = raw_url  # IG / YT untouched
 
+        video = await download_media(fixed_url)  # fungsi lama lu
+        await update.message.reply_video(video=video)
         await msg.edit_text("✅ Download selesai")
-        await update.message.reply_video(video=video_url)
 
     except Exception as e:
         await msg.edit_text(
             "❌ Gagal mengunduh media\n"
-            "ℹ️ Coba pakai link vt.tiktok.com"
+            "ℹ️ Link TikTok lagi rewel, coba ulang"
         )
 
 # utils_groq_poll18.py
