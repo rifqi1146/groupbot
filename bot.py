@@ -807,7 +807,8 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    await update.message.reply_text("🔤 Translating...")
+    # ⬇️ SATU MESSAGE SAJA
+    msg = await update.message.reply_text("🔤 Translating...")
 
     # ---- translator pool ----
     translators = []
@@ -819,18 +820,18 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: pass
 
     if not translators:
-        return await update.message.reply_text("❌ Translator not available")
+        return await msg.edit_text("❌ Translator not available")
 
     if mode == "single":
-        await tr_single(update, text, target_lang, auto_detect, translators)
+        await tr_single(msg, text, target_lang, auto_detect, translators)
     elif mode == "batch":
-        await tr_batch(update, context, target_lang, batch_count, translators)
+        await tr_batch(msg, context, target_lang, batch_count, translators)
     elif mode == "quick":
-        await tr_quick(update, context, target_lang, translators)
+        await tr_quick(msg, context, target_lang, translators)
 
 
 # ---------- SINGLE ----------
-async def tr_single(update, text, target, auto, services):
+async def tr_single(msg, text, target, auto, services):
     for name, T in services:
         try:
             tr = T(source="auto", target=target)
@@ -851,12 +852,12 @@ async def tr_single(update, text, target, auto, services):
             if len(text) > 120:
                 out += f"\n\n📝 <b>Original:</b>\n{html.escape(text[:200])}..."
 
-            return await update.message.reply_text(out, parse_mode="HTML")
+            return await msg.edit_text(out, parse_mode="HTML")
 
         except:
             continue
 
-    await update.message.reply_text("❌ All translators failed")
+    await msg.edit_text("❌ All translators failed")
 
 
 # ---------- BATCH ----------
@@ -872,7 +873,7 @@ async def tr_batch(update, context, target, count, services):
             break
 
     if not msgs:
-        return await update.message.reply_text("❌ No messages")
+        return await update.message.edir_text("❌ No messages")
 
     msgs.reverse()
     res = []
@@ -893,7 +894,7 @@ async def tr_batch(update, context, target, count, services):
         f"\n🔧 Engine: <code>{name}</code>"
     )
 
-    await update.message.reply_text(out[:4096], parse_mode="HTML")
+    await update.message.edit_text(out[:4096], parse_mode="HTML")
 
 
 # ---------- QUICK ----------
@@ -909,7 +910,7 @@ async def tr_quick(update, context, target, services):
             break
 
     if not msgs:
-        return await update.message.reply_text("❌ No recent messages")
+        return await update.message.edit_text("❌ No recent messages")
 
     msgs.reverse()
     out = [f"🚀 <b>Quick Translate → {target.upper()}</b>\n"]
@@ -921,7 +922,7 @@ async def tr_quick(update, context, target, services):
             out.append(f"<b>{i}.</b> ❌ Failed")
 
     out.append(f"\n🔧 Engine: <code>{name}</code>")
-    await update.message.reply_text("\n\n".join(out), parse_mode="HTML")
+    await update.message.edit_text("\n\n".join(out), parse_mode="HTML")
     
 # ---- Pollinations NSFW
 async def pollinations_generate_nsfw(update, context):
