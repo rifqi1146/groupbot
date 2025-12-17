@@ -492,7 +492,7 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-#speedtest
+# speedtest
 import asyncio
 import time
 import platform
@@ -514,11 +514,12 @@ EMO = {
 # =========================================
 
 
-async def speedtest_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    mode: str = "quick"
-):
+# ---------- COMMAND ----------
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mode = "quick"
+    if context.args:
+        mode = context.args[0].lower()
+
     if mode in ("adv", "advanced"):
         await speedtest_advanced(update)
     else:
@@ -633,13 +634,19 @@ async def speedtest_advanced(update: Update):
         )
 
 
-# ---------- HELPER ----------
+# ---------- HELPER (FIXED) ----------
 def _extract(text: str, unit: str, key: str | None = None) -> str:
     for line in text.splitlines():
         if key and key not in line:
             continue
         if unit in line:
-            return line.split(":")[-1].strip().split()[0]
+            parts = line.replace(unit, "").replace(":", " ").split()
+            for p in parts:
+                try:
+                    float(p)
+                    return p
+                except ValueError:
+                    continue
     return "0"
                                        
 #ping
