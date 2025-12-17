@@ -320,131 +320,6 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-# ===============================
-# ASUPAN VIDEO (ANTI BOCIL)
-# ===============================
-
-import aiohttp
-import random
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-
-# keyword WAJIB ada (biar ga bocil)
-REQUIRED_KEYWORDS = [
-    # joget / dance
-    "dance", "dj", "joget", "goyang", "pinaytiktokgrils", "tiktokdance",
-
-    # vibe nongkrong / cafe
-    "cewekcantik", "tantee", "hijabgirl", "trenddance", "tanktop", "vibes",
-
-    # lifestyle cewek
-    "girl", "girls", "cewek", "wanita", "ladies",
-    "tiktokgirls", "hijabvibes", "cewekhijab", "hotgirl", "dancetrand",
-
-    # body / gym (tetep)
-    "gym", "bahancrt", "verllyaling", "body", "abs",
-
-    # pose & activity
-    "mirror", "dancetiktok", "tobrut", "dancecover", "trend",
-
-    # night vibe
-    "beautiful", "club", "cewekberdamage", "hotdance", "tanteholic"
-]
-
-# keyword TERLARANG (auto skip)
-BANNED_KEYWORDS = [
-    "baby", "kid", "child", "anak", "bayi",
-    "cat", "kucing", "dog", "anjing",
-    "meme", "funny"
-]
-
-# -------------------------------
-# FETCH VIDEO URL (STRICT FILTER)
-# -------------------------------
-async def fetch_asupan_video():
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(
-                "https://tikwm.com/api/feed/list",
-                params={"region": "ID", "count": 50},
-                timeout=20
-            ) as r:
-                if r.status != 200:
-                    return None
-                data = await r.json()
-
-        videos = data.get("data", [])
-        if not videos:
-            return None
-
-        valid = []
-
-        for v in videos:
-            title = (v.get("title") or "").lower()
-
-            if any(bad in title for bad in BANNED_KEYWORDS):
-                continue
-
-            if not any(ok in title for ok in REQUIRED_KEYWORDS):
-                continue
-
-            play = v.get("play")
-            if play:
-                valid.append(play)
-
-        if not valid:
-            return None
-
-        return random.choice(valid)
-
-    except Exception:
-        return None
-
-# -------------------------------
-# INLINE KEYBOARD
-# -------------------------------
-def asupan_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")],
-        [InlineKeyboardButton("❌ Close", callback_data="asupan:close")]
-    ])
-
-# -------------------------------
-# COMMAND /asupan
-# -------------------------------
-async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    video_url = await fetch_asupan_video()
-    if not video_url:
-        return await update.message.reply_text("❌ Ga dapet asupan, coba lagi")
-
-    await update.message.reply_video(
-        video=video_url,
-        reply_markup=asupan_keyboard()
-    )
-
-# -------------------------------
-# CALLBACK
-# -------------------------------
-async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()  # WAJIB
-
-    if q.data == "asupan:close":
-        try:
-            await q.message.delete()
-        except:
-            pass
-        return
-
-    if q.data == "asupan:next":
-        video_url = await fetch_asupan_video()
-        if not video_url:
-            return
-
-        await q.message.edit_media(
-            media=InputMediaVideo(media=video_url),
-            reply_markup=asupan_keyboard()
-        )
-        
 # ---- GROQ + Pollinations
 logger = logging.getLogger(__name__)
 
@@ -1248,68 +1123,114 @@ def progress_bar(percent: float, length: int = 12) -> str:
 
 # --- Handler Command Stats (Style B + progress bars) ---
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ---------- BASIC ----------
     ram = get_ram_info()
     storage = get_storage_info()
     cpu_cores = get_cpu_cores()
-    kernel = get_kernel_version()
-    os_name = get_os_name()
-    python_ver = get_python_version()
     uptime = get_pretty_uptime()
 
+    # ---------- OS NAME (FIX UBUNTU) ----------
+    try:
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                os_info = {}
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        os_info[k] = v.strip('"')
+            os_name = f"{os_info.get('NAME', 'Linux')} {os_info.get('VERSION', '')}".strip()
+        else:
+            os_name = platform.system() + " " + platform.release()
+    except Exception:
+        os_name = "Linux"
+
+    kernel = platform.release()
+    python_ver = platform.python_version()
+
+    # ---------- CPU INFO ----------
+    try:
+        cpu_load = psutil.cpu_percent(interval=1)
+    except Exception:
+        cpu_load = 0.0
+
+    try:
+        freq = psutil.cpu_freq()
+        cpu_freq = f"{freq.current:.0f} MHz" if freq else "N/A"
+    except Exception:
+        cpu_freq = "N/A"
+
+    # ---------- RAM + SWAP ----------
+    swap_line = ""
+    try:
+        swap = psutil.swap_memory()
+        swap_line = (
+            f"\n<b>🧠 Swap</b>\n"
+            f"  {humanize_bytes(swap.used)} / {humanize_bytes(swap.total)} ({swap.percent:.1f}%)\n"
+            f"  {progress_bar(swap.percent)}"
+        ) if swap.total > 0 else ""
+    except Exception:
+        pass
+
+    # ---------- NETWORK ----------
+    net_line = ""
+    try:
+        net = psutil.net_io_counters()
+        net_line = (
+            "\n<b>🌐 Network</b>\n"
+            f"  ⬇️ RX: {humanize_bytes(net.bytes_recv)}\n"
+            f"  ⬆️ TX: {humanize_bytes(net.bytes_sent)}"
+        )
+    except Exception:
+        pass
+
+    # ---------- OUTPUT ----------
     lines = []
     lines.append("<b>📈 System Stats</b>")
-    lines.append("")  # blank
+    lines.append("")
+
+    # CPU
+    lines.append("<b>⚙️ CPU</b>")
+    lines.append(f"  Cores : {cpu_cores}")
+    lines.append(f"  Load  : {cpu_load:.1f}%")
+    lines.append(f"  Freq  : {cpu_freq}")
+    lines.append(f"  {progress_bar(cpu_load)}")
+    lines.append("")
 
     # RAM
     if ram:
-        ram_used = humanize_bytes(ram["used"])
-        ram_total = humanize_bytes(ram["total"])
-        ram_pct = ram["percent"]
         lines.append("<b>🧠 RAM</b>")
-        lines.append(f"  {ram_used} / {ram_total}  ({ram_pct:.1f}%)")
-        lines.append(f"  {progress_bar(ram_pct)}")
+        lines.append(f"  {humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])} ({ram['percent']:.1f}%)")
+        lines.append(f"  {progress_bar(ram['percent'])}")
+        if swap_line:
+            lines.append(swap_line)
     else:
-        lines.append("<b>🧠 RAM</b>  Info unavailable")
+        lines.append("<b>🧠 RAM</b> Info unavailable")
 
-    lines.append("")  # blank
+    lines.append("")
 
-    # Storage (prefer order)
-    if storage:
-        prefer = ["/data", "/sdcard", "/storage", "/"]
-        lines.append("<b>💾 Storage</b>")
-        shown = set()
-        for m in prefer:
-            if m in storage:
-                v = storage[m]
-                pct = (v["used"] / v["total"] * 100) if v["total"] else 0.0
-                lines.append(f"  {html.escape(m)}")
-                lines.append(f"    {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])}  ({pct:.1f}%)")
-                lines.append(f"    {progress_bar(pct)}")
-                shown.add(m)
-        for mount, v in storage.items():
-            if mount in shown:
-                continue
-            pct = (v["used"] / v["total"] * 100) if v["total"] else 0.0
-            lines.append(f"  {html.escape(mount)}")
-            lines.append(f"    {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])}  ({pct:.1f}%)")
-            lines.append(f"    {progress_bar(pct)}")
-    else:
-        lines.append("<b>💾 Storage</b>  Info unavailable")
+    # Storage
+    if storage and "/" in storage:
+        v = storage["/"]
+        pct = (v["used"] / v["total"] * 100) if v["total"] else 0.0
+        lines.append("<b>💾 Disk (/)</b>")
+        lines.append(f"  {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])} ({pct:.1f}%)")
+        lines.append(f"  {progress_bar(pct)}")
 
-    lines.append("")  # blank
+    lines.append("")
 
-    # CPU / kernel / python / uptime
-    lines.append(f"<b>⚙️ CPU Cores</b>: {cpu_cores}")
-    lines.append(f"<b>🐧 Kernel</b>: {html.escape(kernel)}")
-    lines.append(f"<b>🖥️ OS</b>: {html.escape(os_name)}")
-    lines.append(f"<b>🐍 Python</b>: {html.escape(python_ver)}")
-    lines.append(f"<b>⏱️ Uptime</b>: {html.escape(uptime)}")
+    # System
+    lines.append("<b>🖥️ System</b>")
+    lines.append(f"  OS     : {html.escape(os_name)}")
+    lines.append(f"  Kernel : {html.escape(kernel)}")
+    lines.append(f"  Python : {html.escape(python_ver)}")
+    lines.append(f"  Uptime : {html.escape(uptime)}")
+
+    if net_line:
+        lines.append(net_line)
 
     out = "\n".join(lines)
-    try:
-        await update.message.reply_text(out, parse_mode='HTML')
-    except Exception:
-        await update.message.reply_text(out)
+
+    await update.message.reply_text(out, parse_mode="HTML")
 
 #google search 
 import aiohttp
@@ -1709,7 +1630,6 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
-    "asupan": asupan_cmd,
     "gsearch": gsearch_cmd,
     "ping": ping_cmd,
     "deepseek": ai_deepseek_cmd,
@@ -1771,7 +1691,6 @@ def main():
     # ======================
     # CORE COMMANDS
     # ======================
-    app.add_handler(CommandHandler("asupan", asupan_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
@@ -1831,7 +1750,6 @@ def main():
             ("ping", "Check latency"),
             ("dl", "Download video (TT/IG/YT)"),
             ("stats", "System statistics"),
-            ("asupan", "Cari asupan"),
             ("gsearch", "Cari info via Google"),
         ]
         try:
