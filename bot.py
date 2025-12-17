@@ -492,13 +492,14 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
     return final_chunks
 
 #speedtest
-SPEED_TITLE = "⚡️ SpeedTest"
+SPEED_TITLE = "⚡️🌸 SpeedLab"
 EMO = {
+    "ok": "✅",
+    "bad": "❌",
     "ping": "🏓",
     "down": "⬇️",
     "up": "⬆️",
-    "ok": "✅",
-    "bad": "❌",
+    "dns": "🔍",
 }
 
 async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -568,36 +569,156 @@ async def speedtest_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     try:
-        samples = []
+        import aiohttp, psutil, platform, statistics, socket
+
+        # =====================
+        # SYSTEM INFO
+        # =====================
+        os_name = f"{platform.system()} {platform.release()}"
+        cpu = psutil.cpu_count(logical=True)
+        ram_avail = round(psutil.virtual_memory().available / 1024**3, 1)
+
+        # =====================
+        # NETWORK INFO
+        # =====================
         async with aiohttp.ClientSession() as s:
-            for _ in range(5):
-                try:
-                    t0 = time.perf_counter()
-                    async with s.get("https://www.google.com", timeout=5):
-                        pass
-                    samples.append((time.perf_counter() - t0) * 1000)
-                except:
-                    samples.append(999.0)
-                await asyncio.sleep(0.2)
+            ip_data = await (await s.get("https://api.ipify.org?format=json", timeout=6)).json()
+            geo = await (await s.get(f"https://ipapi.co/{ip_data['ip']}/json/", timeout=6)).json()
 
-        avg = round(statistics.mean(samples), 1)
-        jitter = round(statistics.stdev(samples), 1)
+        isp = geo.get("org", "N/A")
+        location = f"{geo.get('city','N/A')}, {geo.get('country_name','N/A')}"
 
-        quality = (
+        # =====================
+        # MULTI SERVER PING
+        # =====================
+        servers = {
+            "Google": "https://www.google.com",
+            "Cloudflare": "https://1.1.1.1",
+            "GitHub": "https://github.com"
+        }
+
+        ping_results = {}
+        async with aiohttp.ClientSession() as s:
+            for name, url in servers.items():
+                times = []
+                for _ in range(3):
+                    try:
+                        t0 = time.perf_counter()
+                        async with s.get(url, timeout=5):
+                            pass
+                        times.append((time.perf_counter() - t0) * 1000)
+                    except:
+                        times.append(999.0)
+                    await asyncio.sleep(0.15)
+
+                ping_results[name] = {
+                    "avg": round(statistics.mean(times), 1),
+                    "jitter": round(statistics.stdev(times), 1) if len(times) > 1 else 0.0
+                }
+
+        all_pings = [v["avg"] for v in ping_results.values()]
+        jitter = round(statistics.stdev(all_pings), 1) if len(all_pings) > 1 else 0.0
+
+        stability = (
             "Excellent" if jitter < 5 else
             "Good" if jitter < 15 else
             "Poor"
         )
 
-        await msg.edit_text(
-            f"{EMO['ok']} <b>{SPEED_TITLE} — Advanced Result</b>\n\n"
-            f"💻 System: <code>{platform.system()} {platform.release()}</code>\n"
-            f"{EMO['ping']} Avg Ping: <code>{avg} ms</code>\n"
-            f"📉 Jitter: <code>{jitter} ms</code>\n"
-            f"📊 Stability: <b>{quality}</b>\n\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode="HTML"
+        # =====================
+        # DOWNLOAD TEST
+        # =====================
+        dl_urls = [
+            ("5MB", 5),
+            ("25MB", 25),
+            ("50MB", 50),
+        ]
+
+        downloads = {}
+        async with aiohttp.ClientSession() as s:
+            for label, size in dl_urls:
+                total = 0
+                t0 = time.perf_counter()
+                try:
+                    async with s.get("https://speed.cloudflare.com/__down", timeout=40) as r:
+                        async for chunk in r.content.iter_chunked(8192):
+                            total += len(chunk)
+                            if total >= size * 1024 * 1024:
+                                break
+                    dur = time.perf_counter() - t0
+                    speed = round((total * 8) / (dur * 1024 * 1024), 2)
+                except:
+                    speed = 0.0
+                downloads[label] = speed
+
+        avg_download = round(
+            sum(downloads.values()) / len(downloads), 1
         )
+
+        # =====================
+        # UPLOAD TEST
+        # =====================
+        payload = b"0" * (2 * 1024 * 1024)
+        try:
+            t0 = time.perf_counter()
+            async with aiohttp.ClientSession() as s:
+                async with s.post(
+                    "https://speed.cloudflare.com/__up",
+                    data=payload,
+                    timeout=30
+                ):
+                    pass
+            upload = round((len(payload) * 8) / ((time.perf_counter() - t0) * 1024 * 1024), 2)
+            upload_ep = "https://speed.cloudflare.com/up"
+        except:
+            upload, upload_ep = 0.0, "N/A"
+
+        # =====================
+        # DNS TEST
+        # =====================
+        dns_servers = ["1.1.1.1", "8.8.8.8"]
+        dns_times = []
+
+        for ns in dns_servers:
+            try:
+                t0 = time.perf_counter()
+                socket.gethostbyname("google.com")
+                dns_times.append((time.perf_counter() - t0) * 1000)
+            except:
+                dns_times.append(999.0)
+
+        dns_fastest = round(min(dns_times), 1)
+
+        # =====================
+        # OUTPUT
+        # =====================
+        lines = [
+            f"{EMO['ok']} <b>{SPEED_TITLE} — Advanced Results</b>\n",
+            f"💻 <b>System:</b> <code>{os_name}</code> • {cpu} cores • {ram_avail} GB available",
+            f"🌐 <b>Network:</b> {isp} • {location}\n",
+            f"{EMO['ping']} <b>Multi-Server Ping:</b>",
+        ]
+
+        for srv, d in ping_results.items():
+            lines.append(f"• {srv}: {d['avg']} ms (±{d['jitter']} ms)")
+
+        lines += [
+            f"\n📊 <b>Connection Quality:</b>",
+            f"• Stability: <b>{stability}</b> (Jitter: {jitter} ms)\n",
+            f"{EMO['down']} <b>Download Speeds:</b>",
+        ]
+
+        for k, v in downloads.items():
+            lines.append(f"• {k}: {v} Mbps")
+
+        lines += [
+            f"\n{EMO['up']} <b>Upload:</b> {upload} Mbps (endpoint: {upload_ep})",
+            f"{EMO['dns']} <b>DNS (fastest):</b> {dns_fastest} ms\n",
+            f"📈 <b>Overall Score:</b> {avg_download} Mbps avg • {stability} stability",
+            f"🕒 <b>Completed:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ]
+
+        await msg.edit_text("\n".join(lines), parse_mode="HTML")
 
     except Exception as e:
         await msg.edit_text(
