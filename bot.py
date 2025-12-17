@@ -891,11 +891,11 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ✨ FEATURES
     if data == "help:features":
         text = (
-            "✨ <b>Features</b>\n\n"
-            "• 🏓 /ping — Cek latency bot\n"
-            "• ⬇️ /dl — Download video (TT / IG / YT)\n"
-            "• ⚡ /speedtest — Cek speed jaringan (jika ada)\n"
-        )
+    "✨ <b>Features</b>\n\n"
+    "• 🏓 /ping — Cek latency bot\n"
+    "• ⬇️ /dl — Download video (TT / IG / YT)\n"
+    "• 🔍 /gsearch <query> — Cari di Google\n"
+)
         await query.edit_message_text(
             text,
             reply_markup=help_back_keyboard(),
@@ -1308,12 +1308,12 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = data["query"]
     ok, res = await google_search(query, page)
     if not ok or not res:
-        return await q.message.edit_text("❌ Ga ada hasil lagi.")
+        return await q.message.edit_text("❌ Gada hasil lagi.")
 
     data["page"] = page
 
     text = f"🔍 <b>Google Search:</b> <i>{html.escape(query)}</i>\n\n"
-    for i, r in enumerate(res, start=1 + page * 3):
+    for i, r in enumerate(res, start=1 + page * 5):
         text += (
             f"<b>{i}. {html.escape(r['title'])}</b>\n"
             f"{html.escape(r['snippet'])}\n"
