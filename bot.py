@@ -1083,6 +1083,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "• 🏓 /ping — Cek latency bot\n"
     "• ⬇️ /dl — Download video (TT / IG / YT)\n"
     "• 🔍 /gsearch — Cari di Google\n"
+    "• 🌐 /tr — Translate teks\n"
 )
         await query.edit_message_text(
             text,
@@ -1939,6 +1940,7 @@ def main():
             ("dl", "Download video (TT/IG/YT)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
+            ("tr", "Translate text),
         ]
         try:
             await app.bot.set_my_commands(cmds)
