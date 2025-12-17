@@ -734,6 +734,195 @@ async def groq_query(update, context):
         logger.exception("groq_query failed")
         return
 
+#tr
+from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
+from telegram import Update
+from telegram.ext import ContextTypes
+import html
+
+# ---------- MAIN CMD ----------
+async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args or []
+    target_lang = "en"
+    mode = "single"
+    batch_count = 3
+    auto_detect = False
+    custom_text = ""
+
+    # ---- parse args ----
+    if not args:
+        mode = "single"
+    elif len(args) == 1:
+        a = args[0].lower()
+        if a in ("batch", "b"):
+            mode = "batch"
+        elif a in ("quick", "q"):
+            mode = "quick"
+        elif a == "auto":
+            auto_detect = True
+        else:
+            target_lang = a
+    else:
+        a = args[0].lower()
+        if a in ("batch", "b"):
+            mode = "batch"
+            target_lang = args[1]
+            if len(args) >= 3:
+                try:
+                    batch_count = min(int(args[2]), 10)
+                except:
+                    batch_count = 3
+        elif a in ("quick", "q"):
+            mode = "quick"
+            target_lang = args[1]
+        elif a == "auto":
+            auto_detect = True
+            target_lang = args[1]
+        else:
+            target_lang = args[0]
+            custom_text = " ".join(args[1:])
+
+    # ---- get text ----
+    text = ""
+    if custom_text:
+        text = custom_text
+    elif update.message.reply_to_message and update.message.reply_to_message.text:
+        text = update.message.reply_to_message.text
+    elif mode == "single":
+        return await update.message.reply_text(
+            "<b>🔤 Universal Translator</b>\n\n"
+            "<b>Single:</b>\n"
+            "/tr → reply msg → EN\n"
+            "/tr es → reply msg\n"
+            "/tr fr Hello\n\n"
+            "<b>Batch:</b>\n"
+            "/tr batch\n"
+            "/tr batch es 5\n\n"
+            "<b>Quick:</b>\n"
+            "/tr quick\n"
+            "/tr quick id\n\n"
+            "<b>Auto:</b>\n"
+            "/tr auto\n"
+            "/tr auto ja",
+            parse_mode="HTML"
+        )
+
+    await update.message.reply_text("🔤 Translating...")
+
+    # ---- translator pool ----
+    translators = []
+    try: translators.append(("Google", GoogleTranslator))
+    except: pass
+    try: translators.append(("MyMemory", MyMemoryTranslator))
+    except: pass
+    try: translators.append(("Libre", LibreTranslator))
+    except: pass
+
+    if not translators:
+        return await update.message.reply_text("❌ Translator not available")
+
+    if mode == "single":
+        await tr_single(update, text, target_lang, auto_detect, translators)
+    elif mode == "batch":
+        await tr_batch(update, context, target_lang, batch_count, translators)
+    elif mode == "quick":
+        await tr_quick(update, context, target_lang, translators)
+
+
+# ---------- SINGLE ----------
+async def tr_single(update, text, target, auto, services):
+    for name, T in services:
+        try:
+            tr = T(source="auto", target=target)
+            translated = tr.translate(text)
+
+            try:
+                detected = tr.detect(text)
+            except:
+                detected = "auto"
+
+            out = (
+                f"✅ <b>Translated → {target.upper()}</b>\n\n"
+                f"{html.escape(translated)}\n\n"
+                f"🔍 Lang: <code>{detected}</code>\n"
+                f"🔧 Engine: <code>{name}</code>"
+            )
+
+            if len(text) > 120:
+                out += f"\n\n📝 <b>Original:</b>\n{html.escape(text[:200])}..."
+
+            return await update.message.reply_text(out, parse_mode="HTML")
+
+        except:
+            continue
+
+    await update.message.reply_text("❌ All translators failed")
+
+
+# ---------- BATCH ----------
+async def tr_batch(update, context, target, count, services):
+    name, T = services[0]
+    tr = T(source="auto", target=target)
+
+    msgs = []
+    async for m in context.bot.get_chat_history(update.effective_chat.id, limit=50):
+        if m.text and m.message_id != update.message.message_id:
+            msgs.append(m)
+        if len(msgs) >= count:
+            break
+
+    if not msgs:
+        return await update.message.reply_text("❌ No messages")
+
+    msgs.reverse()
+    res = []
+
+    for i, m in enumerate(msgs, 1):
+        try:
+            translated = tr.translate(m.text)
+            res.append(
+                f"<b>{i}.</b> {html.escape(m.from_user.first_name if m.from_user else 'User')}\n"
+                f"🔄 {html.escape(translated)}\n"
+            )
+        except:
+            res.append(f"<b>{i}.</b> ❌ Failed\n")
+
+    out = (
+        f"📚 <b>Batch Translation → {target.upper()}</b>\n\n" +
+        "\n".join(res) +
+        f"\n🔧 Engine: <code>{name}</code>"
+    )
+
+    await update.message.reply_text(out[:4096], parse_mode="HTML")
+
+
+# ---------- QUICK ----------
+async def tr_quick(update, context, target, services):
+    name, T = services[0]
+    tr = T(source="auto", target=target)
+
+    msgs = []
+    async for m in context.bot.get_chat_history(update.effective_chat.id, limit=10):
+        if m.text and m.message_id != update.message.message_id:
+            msgs.append(m.text)
+        if len(msgs) >= 3:
+            break
+
+    if not msgs:
+        return await update.message.reply_text("❌ No recent messages")
+
+    msgs.reverse()
+    out = [f"🚀 <b>Quick Translate → {target.upper()}</b>\n"]
+
+    for i, t in enumerate(msgs, 1):
+        try:
+            out.append(f"<b>{i}.</b> {html.escape(tr.translate(t))}")
+        except:
+            out.append(f"<b>{i}.</b> ❌ Failed")
+
+    out.append(f"\n🔧 Engine: <code>{name}</code>")
+    await update.message.reply_text("\n\n".join(out), parse_mode="HTML")
+    
 # ---- Pollinations NSFW
 async def pollinations_generate_nsfw(update, context):
     """
@@ -1628,6 +1817,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
+    "tr": tr_cmd,
     "gsearch": gsearch_cmd,
     "ping": ping_cmd,
     "deepseek": ai_deepseek_cmd,
@@ -1691,6 +1881,7 @@ def main():
     # ======================
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("tr", tr_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
