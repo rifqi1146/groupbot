@@ -492,7 +492,24 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
     return final_chunks
 
 #speedtest
+import asyncio
+import json
+import time
+import platform
+import statistics
+from datetime import datetime
+
+import aiohttp
+import psutil
+from telegram import Update
+from telegram.ext import ContextTypes
+
+# =======================
+# CONFIG
+# =======================
+
 SPEED_TITLE = "⚡️🌸 SpeedLab"
+
 EMO = {
     "ok": "✅",
     "bad": "❌",
@@ -501,17 +518,17 @@ EMO = {
     "up": "⬆️",
 }
 
-PING_TARGETS = {
+PING_SERVERS = {
     "Google": "https://www.google.com",
     "Cloudflare": "https://1.1.1.1",
     "GitHub": "https://github.com",
 }
 
 # =======================
-# OOKLA HELPER
+# OOKLA RUNNER
 # =======================
 
-async def run_ookla():
+async def _run_ookla():
     proc = await asyncio.create_subprocess_exec(
         "speedtest",
         "-f", "json",
@@ -527,80 +544,65 @@ async def run_ookla():
 
 
 # =======================
-# QUICK SPEEDTEST
+# MAIN SPEEDTEST CMD
 # =======================
 
-async def speedtest_quick(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args or []
+    mode = args[0].lower() if args else "quick"
+
     msg = await update.message.reply_text(
-        f"{SPEED_TITLE}\nRunning quick test…",
+        f"{SPEED_TITLE}\nRunning speedtest…",
         parse_mode="HTML"
     )
 
     try:
-        # ping
-        async with aiohttp.ClientSession() as s:
-            t0 = time.perf_counter()
-            async with s.get("https://www.google.com", timeout=5):
-                pass
-            ping = round((time.perf_counter() - t0) * 1000, 1)
+        # =======================
+        # QUICK MODE
+        # =======================
+        if mode in ("q", "quick"):
+            async with aiohttp.ClientSession() as s:
+                t0 = time.perf_counter()
+                async with s.get("https://www.google.com", timeout=5):
+                    pass
+                ping = round((time.perf_counter() - t0) * 1000, 1)
 
-        # ookla
-        data = await run_ookla()
+            data = await _run_ookla()
 
-        dl = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
-        ul = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
+            dl = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
+            ul = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
 
-        quality = (
-            "Excellent" if dl >= 100 else
-            "Good" if dl >= 50 else
-            "Fair" if dl >= 20 else
-            "Poor"
-        )
+            quality = (
+                "Excellent" if dl >= 100 else
+                "Good" if dl >= 50 else
+                "Fair" if dl >= 25 else
+                "Poor"
+            )
 
-        await msg.edit_text(
-            f"{EMO['ok']} <b>{SPEED_TITLE} — Quick Results</b>\n\n"
-            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
-            f"{EMO['down']} Download: <b>{dl} Mbps</b>\n"
-            f"{EMO['up']} Upload: <b>{ul} Mbps</b>\n\n"
-            f"📊 Quality: <b>{quality}</b>\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode="HTML"
-        )
+            await msg.edit_text(
+                f"{EMO['ok']} <b>{SPEED_TITLE} — Quick Results</b>\n\n"
+                f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
+                f"{EMO['down']} Download: <b>{dl} Mbps</b>\n"
+                f"{EMO['up']} Upload: <b>{ul} Mbps</b>\n\n"
+                f"📊 Quality: <b>{quality}</b>\n"
+                f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                parse_mode="HTML"
+            )
+            return
 
-    except Exception as e:
-        await msg.edit_text(
-            f"{EMO['bad']} Quick speedtest failed\n<code>{e}</code>",
-            parse_mode="HTML"
-        )
+        # =======================
+        # ADVANCED MODE
+        # =======================
 
+        # system info
+        sys_os = f"{platform.system()} {platform.release()}"
+        cpu = psutil.cpu_count(logical=True)
+        ram = round(psutil.virtual_memory().available / 1024**3, 1)
 
-# =======================
-# ADVANCED SPEEDTEST
-# =======================
-
-async def speedtest_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text(
-        f"{SPEED_TITLE}\nRunning advanced diagnostics…",
-        parse_mode="HTML"
-    )
-
-    try:
-        # ===================
-        # SYSTEM
-        # ===================
-        sys_info = {
-            "os": f"{platform.system()} {platform.release()}",
-            "cpu": psutil.cpu_count(logical=True),
-            "ram": round(psutil.virtual_memory().available / 1024**3, 1),
-        }
-
-        # ===================
-        # MULTI PING
-        # ===================
+        # multi ping
         ping_results = {}
-
         async with aiohttp.ClientSession() as s:
-            for name, url in PING_TARGETS.items():
+            for name, url in PING_SERVERS.items():
                 samples = []
                 for _ in range(3):
                     try:
@@ -614,38 +616,34 @@ async def speedtest_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
                 ping_results[name] = {
                     "avg": round(statistics.mean(samples), 1),
-                    "jitter": round(statistics.stdev(samples), 1) if len(samples) > 1 else 0.0,
+                    "jitter": round(statistics.stdev(samples), 1) if len(samples) > 1 else 0.0
                 }
 
-        jitter_all = [v["jitter"] for v in ping_results.values()]
-        avg_jitter = round(statistics.mean(jitter_all), 1)
+        all_jitter = [v["jitter"] for v in ping_results.values()]
+        jitter_avg = round(statistics.mean(all_jitter), 1)
 
         stability = (
-            "Excellent" if avg_jitter < 5 else
-            "Good" if avg_jitter < 15 else
+            "Excellent" if jitter_avg < 5 else
+            "Good" if jitter_avg < 15 else
             "Poor"
         )
 
-        # ===================
-        # OOKLA FULL TEST
-        # ===================
-        data = await run_ookla()
+        # ookla full
+        data = await _run_ookla()
 
         dl = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
         ul = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
         latency = round(data["ping"]["latency"], 1)
 
-        isp = data["isp"]
-        location = f"{data['server']['location']}, {data['server']['country']}"
+        isp = data.get("isp", "N/A")
         server = data["server"]["name"]
+        location = f"{data['server']['location']}, {data['server']['country']}"
 
-        # ===================
-        # OUTPUT
-        # ===================
+        # output
         lines = [
             f"{EMO['ok']} <b>{SPEED_TITLE} — Advanced Results</b>",
             "",
-            f"💻 System: <code>{sys_info['os']}</code> • {sys_info['cpu']} cores • {sys_info['ram']} GB available",
+            f"💻 System: <code>{sys_os}</code> • {cpu} cores • {ram} GB available",
             f"🌐 Network: <b>{isp}</b> • {location}",
             "",
             "🏓 <b>Multi-Server Ping:</b>",
@@ -657,7 +655,7 @@ async def speedtest_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE)
         lines += [
             "",
             "📊 <b>Connection Quality:</b>",
-            f"• Stability: <b>{stability}</b> (Jitter: {avg_jitter} ms)",
+            f"• Stability: <b>{stability}</b> (Jitter: {jitter_avg} ms)",
             "",
             "⬇️ <b>Download:</b>",
             f"• {dl} Mbps",
@@ -673,20 +671,32 @@ async def speedtest_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     except Exception as e:
         await msg.edit_text(
-            f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
+            f"{EMO['bad']} Speedtest failed\n<code>{e}</code>",
             parse_mode="HTML"
         )
+                               
+#ping
+async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start = time.perf_counter()
 
+    # kirim pesan awal
+    msg = await update.message.reply_text("🏓 <b>Pinging...</b>", parse_mode="HTML")
 
-# =======================
-# HANDLERS
-# =======================
+    end = time.perf_counter()
+    ms = int((end - start) * 1000)
 
-speedtest_handler = CommandHandler(
-    "speedtest",
-    lambda u, c: speedtest_advanced(u, c) if c.args and c.args[0] in ("adv", "advanced")
-    else speedtest_quick(u, c)
-)
+    if ms < 150:
+        emo = "⚡"
+    elif ms < 500:
+        emo = "🔥"
+    else:
+        emo = "🐌"
+
+    await msg.edit_text(
+        f"{emo} <b>Pong!</b>\n"
+        f"⏱️ <b>Latency:</b> <code>{ms} ms</code>",
+        parse_mode="HTML"
+    )
     
 # ---- GROQ + Pollinations handlers (for python-telegram-bot) ----
 logger = logging.getLogger(__name__)
