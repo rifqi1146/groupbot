@@ -1870,54 +1870,47 @@ def main():
     # BUILD APPLICATION
     # ======================
     app = (
-        ApplicationBuilder()
-        .token(TOKEN)
-        .concurrent_updates(True)
-        .build()
-    )
+    ApplicationBuilder()
+    .token(TOKEN)
+    .build()
+)
 
-    # ======================
-    # CORE COMMANDS
-    # ======================
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("tr", tr_cmd))
-    app.add_handler(CommandHandler("gsearch", gsearch_cmd))
-    app.add_handler(CommandHandler("menu", help_cmd))
-    app.add_handler(CommandHandler("ping", ping_cmd))
-    app.add_handler(CommandHandler("dl", dl_cmd))
-    app.add_handler(CommandHandler("stats", stats_cmd))
-   
-    # ======================
-    # AI COMMANDS
-    # ======================
-    app.add_handler(CommandHandler("ai", ai_cmd))
-    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
-    app.add_handler(CommandHandler("openai", ai_openai_cmd))
-    app.add_handler(CommandHandler("groq", groq_query))
-    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
-    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
-    
-    # ======================
-    # INLINE CALLBACKS
-    # ======================
-    app.add_handler(
-        CallbackQueryHandler(help_callback, pattern=r"^help:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(gsearch_callback, pattern=r"^gsp:")
-    )
-    # 1️⃣ $router (contoh: $groq, $ai)
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
-        group=0
-    )
+# ======================
+# CORE COMMANDS
+# ======================
+app.add_handler(CommandHandler("start", start_cmd))
+app.add_handler(CommandHandler("help", help_cmd))
+app.add_handler(CommandHandler("menu", help_cmd))
+app.add_handler(CommandHandler("ping", ping_cmd))
+app.add_handler(CommandHandler("dl", dl_cmd))
+app.add_handler(CommandHandler("stats", stats_cmd))
+app.add_handler(CommandHandler("tr", tr_cmd))
+app.add_handler(CommandHandler("gsearch", gsearch_cmd))
 
-    # 3️⃣ fallback (biar ga error)
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None),
-        group=99
-    )
+# ======================
+# AI COMMANDS
+# ======================
+app.add_handler(CommandHandler("ai", ai_cmd))
+app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
+app.add_handler(CommandHandler("openai", ai_openai_cmd))
+app.add_handler(CommandHandler("groq", groq_query))
+app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
+app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
+
+# ======================
+# INLINE CALLBACKS
+# ======================
+app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
+
+# ======================
+# MESSAGE ROUTER
+# ======================
+app.add_handler(
+    MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+    group=0
+)
     try:
         banner = r"""
   ____        _   _       ____        _
