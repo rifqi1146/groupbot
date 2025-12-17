@@ -492,6 +492,7 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
+# ===== SPEEDTEST (OOKLA) =====
 import asyncio
 import json
 import time
@@ -502,7 +503,6 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
-# ================= CONFIG =================
 SPEED_TITLE = "⚡️🌸 SpeedLab"
 EMO = {
     "ok": "✅",
@@ -511,30 +511,29 @@ EMO = {
     "download": "⬇️",
     "upload": "⬆️",
 }
-# =========================================
 
-
-# ========= ENTRY POINT =========
-async def speedtest_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    args = context.args or []
-    mode = args[0].lower() if args else "quick"
+# ================= ENTRY =================
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mode = "quick"
+    if context.args:
+        mode = context.args[0].lower()
 
     if mode in ("adv", "advanced"):
         await speedtest_advanced(update)
     else:
         await speedtest_quick(update)
 
-
-# ========= CORE RUNNER =========
+# ================= CORE =================
 async def _run_speedtest() -> dict:
+    """
+    Run Ookla speedtest and return parsed JSON
+    """
     proc = await asyncio.create_subprocess_exec(
         "speedtest",
         "--accept-license",
         "--accept-gdpr",
         "--format=json",
+        "--progress=no",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -546,8 +545,7 @@ async def _run_speedtest() -> dict:
 
     return json.loads(stdout.decode())
 
-
-# ---------- QUICK ----------
+# ================= QUICK =================
 async def speedtest_quick(update: Update):
     msg = await update.effective_message.reply_text(
         f"⏳ {SPEED_TITLE} — Running quick test..."
@@ -556,11 +554,11 @@ async def speedtest_quick(update: Update):
     try:
         start = time.perf_counter()
         data = await _run_speedtest()
+        elapsed = round(time.perf_counter() - start, 2)
 
         ping = round(data["ping"]["latency"], 2)
         download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
         upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
-        elapsed = round(time.perf_counter() - start, 2)
 
         await msg.edit_text(
             f"{EMO['ok']} {SPEED_TITLE} — Quick Results\n\n"
@@ -578,8 +576,7 @@ async def speedtest_quick(update: Update):
             parse_mode="HTML",
         )
 
-
-# ---------- ADVANCED ----------
+# ================= ADVANCED =================
 async def speedtest_advanced(update: Update):
     msg = await update.effective_message.reply_text(
         f"⏳ {SPEED_TITLE} — Running advanced test..."
@@ -591,13 +588,25 @@ async def speedtest_advanced(update: Update):
         # system
         vm = psutil.virtual_memory()
         cpu = psutil.cpu_count(logical=True)
-        ram_gb = round(vm.available / 1024**3, 1)
+        ram = round(vm.available / 1024**3, 1)
 
-        # speed
+        # network
+        isp = data.get("isp", "N/A")
+        iface = data.get("interface", {})
+        ip = iface.get("externalIp", "N/A")
+
+        # server
+        srv = data.get("server", {})
+        server_name = srv.get("name", "N/A")
+        server_loc = f"{srv.get('location','')} {srv.get('country','')}".strip()
+        server_ip = srv.get("ip", "N/A")
+
+        # metrics
         ping = round(data["ping"]["latency"], 2)
-        jitter = round(data["ping"].get("jitter", ping * 0.25), 2)
+        jitter = round(data["ping"]["jitter"], 2)
         download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
         upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
+        packet_loss = round((data.get("packetLoss") or 0) * 100, 2)
 
         stability = (
             "Excellent" if jitter < 5 else
@@ -607,28 +616,20 @@ async def speedtest_advanced(update: Update):
 
         avg_score = round(statistics.mean([download, upload]), 1)
 
-        # network / server
-        isp = data["isp"]
-        ip = data["interface"]["externalIp"]
-        server = data["server"]
-        server_name = f"{server['name']} ({server['location']}, {server['country']})"
-        server_host = server["host"]
-
         await msg.edit_text(
             f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
             f"💻 System: {platform.system()} {platform.release()} • "
-            f"{cpu} cores • {ram_gb} GB available\n"
-            f"🌐 Network: {isp}\n"
-            f"📡 IP: <code>{ip}</code>\n\n"
-
-            f"🏓 Ping: <code>{ping} ms</code>\n"
+            f"{cpu} cores • {ram} GB available\n"
+            f"🌐 ISP: {isp}\n"
+            f"🌍 Public IP: <code>{ip}</code>\n\n"
+            f"🛰 Server: {server_name}\n"
+            f"📍 Location: {server_loc}\n"
+            f"📡 Server IP: <code>{server_ip}</code>\n\n"
+            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
             f"📉 Jitter: <code>{jitter} ms</code>\n"
+            f"📦 Packet Loss: <code>{packet_loss}%</code>\n"
             f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
             f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
-
-            f"🗄 Server: {server_name}\n"
-            f"🔗 Host: <code>{server_host}</code>\n\n"
-
             f"📊 Stability: <b>{stability}</b>\n"
             f"📈 Overall Score: <b>{avg_score} Mbps</b>\n\n"
             f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -640,6 +641,8 @@ async def speedtest_advanced(update: Update):
             f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
             parse_mode="HTML",
         )
+
+# ===== END SPEEDTEST =====
                                        
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
