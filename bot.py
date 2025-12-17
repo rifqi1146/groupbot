@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# bot.py - sticker tools + blacklist + warns + stats + user cache + Gemini AI (multi-model)
-# Recommended: run inside venv with python-telegram-bot==20.3
 
 import os
 import io
@@ -19,8 +17,10 @@ import random
 import urllib.parse
 import html
 import dns.resolver
+import uuid
 
-from typing import List, Tuple, Optional
+from bs4 import BeautifulSoup
+from typing import List, Tuple, Optional. Tuple
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
@@ -44,13 +44,13 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# optional psutil for nicer stats; if not available we'll fallback
+#psutil
 try:
     import psutil
 except Exception:
     psutil = None
 
-#----HTML helper (safe auto-escape)----
+#----HTML helper
 def bold(text: str) -> str:
     return f"<b>{html.escape(text)}</b>"
 
@@ -72,14 +72,12 @@ def link(label: str, url: str) -> str:
 def mono(text: str) -> str:
     return f"<tt>{html.escape(text)}</tt>"
 
-# ---- setup ----
+#setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+# Load env
 load_dotenv()
-
-# Ambil token dari environment variable
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
@@ -87,45 +85,10 @@ if not TOKEN:
 
 app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
-# ---- files & defaults ----
-BL_FILE = "blacklist.json"
-WARNS_FILE = "warns.json"
+#----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
-DEFAULT_WARN_THRESHOLD = 3
-
-# ---- image helpers ----
-def resize_image_for_sticker(image: Image.Image) -> Image.Image:
-    max_size = 512
-    w, h = image.size
-    ratio = max_size / max(w, h)
-    new_w, new_h = int(w * ratio), int(h * ratio)
-    img = image.convert("RGBA").resize((new_w, new_h), Image.LANCZOS)
-    new_img = Image.new("RGBA", (max_size, max_size), (0, 0, 0, 0))
-    paste_x = (max_size - new_w) // 2
-    paste_y = (max_size - new_h) // 2
-    new_img.paste(img, (paste_x, paste_y), img)
-    return new_img
-
-def image_to_webp_bytes(image: Image.Image, quality=95) -> io.BytesIO:
-    bio = io.BytesIO()
-    image.save(bio, format="WEBP", quality=quality, method=6)
-    bio.seek(0)
-    return bio
-
-def image_to_png_bytes(image: Image.Image) -> io.BytesIO:
-    bio = io.BytesIO()
-    image.save(bio, format="PNG")
-    bio.seek(0)
-    return bio
-
-def make_pack_name_short(base_name: str, bot_username: str) -> str:
-    s = (base_name or "pack").lower()
-    s = re.sub(r'[^a-z0-9_]', '_', s)
-    suffix = f"_by_{bot_username}"
-    if not s.endswith(suffix):
-        s = s + suffix
-    return s[:64]
+TMP_DIR = "/tmp"
 
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
@@ -142,176 +105,22 @@ def save_json_file(path, data):
     except Exception:
         logger.exception("Failed to save %s", path)
 
-# ---- blacklist ----
-def load_blacklist():
-    return load_json_file(BL_FILE, {"words": [], "action": "mute", "duration": 5})
-def save_blacklist(data):
-    save_json_file(BL_FILE, data)
-_black = load_blacklist()
+# ---- ai mode 
 
-# ---- ai mode (per-chat) ----
 def load_ai_mode():
     return load_json_file(AI_MODE_FILE, {})
 def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
-# ---- warns storage ----
-_warns = load_json_file(WARNS_FILE, {})
-def save_warns():
-    save_json_file(WARNS_FILE, _warns)
-
-def get_chat_warns(chat_id):
-    chat_id = str(chat_id)
-    return _warns.setdefault(chat_id, {"threshold": DEFAULT_WARN_THRESHOLD, "users": {}})
-
-def incr_warn(chat_id, user_id):
-    data = get_chat_warns(chat_id)
-    uid = str(user_id)
-    count = data["users"].get(uid, 0) + 1
-    data["users"][uid] = count
-    save_warns()
-    return count
-
-def decrement_warn(chat_id, user_id):
-    data = get_chat_warns(chat_id)
-    uid = str(user_id)
-    if uid not in data["users"]:
-        return 0
-    count = data["users"].get(uid, 0) - 1
-    if count <= 0:
-        data["users"].pop(uid, None)
-        save_warns()
-        return 0
-    else:
-        data["users"][uid] = count
-        save_warns()
-        return count
-
-def reset_warn(chat_id, user_id=None):
-    data = get_chat_warns(chat_id)
-    if user_id is None:
-        data["users"] = {}
-    else:
-        uid = str(user_id)
-        if uid in data["users"]:
-            del data["users"][uid]
-    save_warns()
-
-def get_warn_count(chat_id, user_id):
-    data = get_chat_warns(chat_id)
-    return data["users"].get(str(user_id), 0)
-
-def set_threshold(chat_id, n):
-    data = get_chat_warns(chat_id)
-    data["threshold"] = n
-    save_warns()
-
-# ---- user cache ----
-_user_cache = load_json_file(USER_CACHE_FILE, {"by_username": {}, "by_id": {}})
-def save_user_cache(cache):
-    save_json_file(USER_CACHE_FILE, cache)
-
-def cache_user(user):
-    if not user:
-        return
-    uid = user.id
-    now = datetime.utcnow().isoformat()
-    if getattr(user, "username", None):
-        key = user.username.lower()
-        _user_cache.setdefault("by_username", {})
-        _user_cache["by_username"][key] = {"id": uid, "seen": now, "name": user.first_name or ""}
-    _user_cache.setdefault("by_id", {})
-    _user_cache["by_id"][str(uid)] = {"username": getattr(user, "username", None), "seen": now, "name": user.first_name or ""}
-    save_user_cache(_user_cache)
-
-async def user_cache_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if update.effective_user and not update.effective_user.is_bot:
-            cache_user(update.effective_user)
-    except Exception:
-        logger.exception("user_cache_handler failed")
-
-# ---- admin helper ----
-async def is_user_admin(update: Update, user_id: int) -> bool:
-    try:
-        member = await update.effective_chat.get_member(user_id)
-        return member.status in ("administrator", "creator")
-    except Exception:
-        return False
-
-async def ensure_bot_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
-    try:
-        me = await context.bot.get_me()
-        member = await context.bot.get_chat_member(chat_id, me.id)
-        return member.status in ("administrator", "creator")
-    except Exception:
-        return False
-
-# ---- resolve user helper ----
-async def resolve_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, arg: str | None = None) -> int | None:
-    if update.message and update.message.reply_to_message:
-        return update.message.reply_to_message.from_user.id
-
-    if update.message and update.message.entities:
-        for ent in update.message.entities:
-            if ent.type == "text_mention" and ent.user:
-                return ent.user.id
-
-    if not arg:
-        return None
-
-    a = arg.strip()
-    if a.startswith("@"):
-        a = a[1:]
-
-    if a.isdigit():
-        try:
-            return int(a)
-        except Exception:
-            return None
-
-    try:
-        uc = _user_cache.get("by_username", {})
-        if a.lower() in uc:
-            return uc[a.lower()]["id"]
-    except Exception:
-        logger.exception("user cache lookup failed")
-
-    try:
-        admins = await context.bot.get_chat_administrators(update.effective_chat.id)
-        for adm in admins:
-            u = adm.user
-            if u.username and u.username.lower() == a.lower():
-                cache_user(u)
-                return u.id
-    except Exception:
-        pass
-
-    return None
-
-import os
-import uuid
-import time
-import asyncio
-from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler
-
-TMP_DIR = "/tmp"
-
-
-# =========================
-# PROGRESS BAR HELPER
-# =========================
+#mbuh
 def progress_bar(percent: float) -> str:
     filled = int(percent // 10)
     empty = 10 - filled
     return "█" * filled + "░" * empty
 
 
-# =========================
-# CORE DOWNLOAD WITH PROGRESS
-# =========================
+#dl core
 async def _download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
@@ -379,10 +188,7 @@ async def _download_media_with_progress(url: str, status_msg):
 
     return None
 
-
-# =========================
-# BOT COMMAND /dl
-# =========================
+#dl
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
@@ -437,7 +243,6 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # utils_groq_poll18.py
-# ---------------- split helper (same logic) ----------------
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
     Splits a long text into chunks not exceeding max_length.
@@ -515,7 +320,7 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
     
-# ---- GROQ + Pollinations handlers (for python-telegram-bot) ----
+# ---- GROQ + Pollinations
 logger = logging.getLogger(__name__)
 
 GROQ_KEY = os.getenv("GROQ_API_KEY")
@@ -548,7 +353,6 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
     chunks = []
     current = ""
 
-    # try by paragraphs
     for para in text.split("\n\n"):
         para = para.strip()
         if not para:
@@ -561,7 +365,6 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
             if len(para) <= max_length:
                 current = para
             else:
-                # para too long -> split by sentences
                 sent_buf = ""
                 for sent in para.split(". "):
                     sent = sent.strip()
@@ -595,7 +398,6 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
     if current:
         chunks.append(current)
 
-    # final sanity: ensure nothing > max_length
     final = []
     for c in chunks:
         if len(c) <= max_length:
@@ -605,7 +407,7 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
                 final.append(c[i:i+max_length])
     return final
 
-# ---- helper: extract prompt safely from update/context ----
+# ---- helper
 def _extract_prompt_from_update(update, context) -> str:
     """
     Try common sources:
@@ -648,13 +450,8 @@ def _extract_prompt_from_update(update, context) -> str:
         pass
 
     return ""
-
-# ---- GROQ handler (async for python-telegram-bot) ----
+    
 # ---- helper: find urls in text ----
-import re
-from typing import Optional, Tuple, List
-from bs4 import BeautifulSoup  # pip install beautifulsoup4
-
 _URL_RE = re.compile(
     r"(https?://[^\s'\"<>]+)", re.IGNORECASE
 )
@@ -769,7 +566,7 @@ async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optio
         return None, None
 
 
-# ---- GROQ handler (async for python-telegram-bot) patched with URL fetching + ad cleaning ----
+# ---- GROQ handler
 async def groq_query(update, context):
     """
     $groq <prompt>  OR  reply to message with $groq
@@ -781,11 +578,7 @@ async def groq_query(update, context):
     msg = update.message
     if not msg:
         return
-
-    # get prompt from context.args / text after command / reply message
     prompt = _extract_prompt_from_update(update, context)
-
-    # If no prompt -> show help/usage
     if not prompt:
         help_txt = (
             f"{em} {bold('Usage:')}\n"
@@ -802,21 +595,15 @@ async def groq_query(update, context):
             except:
                 pass
         return
-
-    # rate limit per-user
     uid = msg.from_user.id if msg.from_user else 0
     if uid and not _can(uid):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
-
-    # create thinking placeholder (editable)
     thinking = None
     try:
         thinking = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban…", quote=True)
     except Exception:
         thinking = None
-
-    # sanitize prompt
     if not isinstance(prompt, str):
         prompt = str(prompt)
     prompt = prompt.strip()
@@ -826,8 +613,6 @@ async def groq_query(update, context):
         else:
             await msg.reply_text(f"{em} ❌ Prompt kosong.")
         return
-
-    # detect URL(s) in prompt - prefer the first
     urls = _find_urls(prompt)
     used_article = False
     article_title = None
@@ -949,7 +734,7 @@ async def groq_query(update, context):
         logger.exception("groq_query failed")
         return
 
-# ---- Pollinations NSFW image generator (async) ----
+# ---- Pollinations NSFW
 async def pollinations_generate_nsfw(update, context):
     """
     Usage: $nsfw <prompt>  OR  reply to message with image prompt
@@ -1042,147 +827,13 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-# moderation commands (ban/mute/unmute) and warn/unwarn/warns functions:
-async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    if not await ensure_bot_admin(context, chat_id):
-        return await update.message.reply_text("Saya perlu jadi admin dengan izin ban.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Gagal resolve user. Gunakan reply / user_id / @username.")
-    try:
-        await context.bot.ban_chat_member(chat_id, target_id)
-        await update.message.reply_text(f"User {target_id} diban.")
-    except Exception as e:
-        logger.exception("ban failed")
-        await update.message.reply_text(f"Gagal ban: {e}")
-
-async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    if not await ensure_bot_admin(context, chat_id):
-        return await update.message.reply_text("Saya perlu jadi admin dengan izin restrict.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Gagal resolve user. Gunakan reply / user_id / @username.")
-    perms = ChatPermissions(can_send_messages=False)
-    try:
-        await context.bot.restrict_chat_member(chat_id, target_id, perms)
-        await update.message.reply_text(f"User {target_id} dimute.")
-    except Exception as e:
-        logger.exception("mute failed")
-        await update.message.reply_text(f"Gagal mute: {e}")
-
-async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    if not await ensure_bot_admin(context, chat_id):
-        return await update.message.reply_text("Saya perlu jadi admin dengan izin restrict.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Gagal resolve user. Gunakan reply / user_id / @username.")
-    perms = ChatPermissions(
-        can_send_messages=True,
-        can_send_media_messages=True,
-        can_send_polls=True,
-        can_send_other_messages=True,
-        can_add_web_page_previews=True,
-    )
-    try:
-        await context.bot.restrict_chat_member(chat_id, target_id, perms)
-        await update.message.reply_text(f"User {target_id} diunmute.")
-    except Exception as e:
-        logger.exception("unmute failed")
-        await update.message.reply_text(f"Gagal unmute: {e}")
-
-async def warn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Gagal resolve user. Gunakan reply / user_id / @username.")
-    chat_id = update.effective_chat.id
-    try:
-        new_warn = incr_warn(chat_id, target_id)
-        threshold = get_chat_warns(chat_id).get("threshold", DEFAULT_WARN_THRESHOLD)
-        await update.message.reply_text(f"⚠️ Warn ditambahkan untuk {target_id}. ({new_warn}/{threshold})")
-        if new_warn >= threshold:
-            try:
-                await context.bot.ban_chat_member(chat_id, target_id)
-                await context.bot.unban_chat_member(chat_id, target_id, only_if_banned=False)
-                await update.message.reply_text(f"User {target_id} reached warn threshold ({threshold}) → kicked.")
-            except Exception:
-                logger.exception("kick on threshold failed")
-                await update.message.reply_text("Gagal kick user pada threshold.")
-            reset_warn(chat_id, target_id)
-    except Exception as e:
-        logger.exception("warn_cmd failed")
-        await update.message.reply_text(f"Gagal menambahkan warn: {e}")
-
-async def unwarn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Gagal resolve user. Gunakan reply / user_id / @username.")
-    chat_id = update.effective_chat.id
-    try:
-        new_count = decrement_warn(chat_id, target_id)
-        if new_count == 0:
-            await update.message.reply_text(f"Warn dihapus untuk {target_id}. Saat ini 0 warn.")
-        else:
-            await update.message.reply_text(f"Warn dikurangi untuk {target_id}. Sisa: {new_count}.")
-    except Exception as e:
-        logger.exception("unwarn_cmd failed")
-        await update.message.reply_text(f"Gagal mengurangi warn: {e}")
-
-async def warns_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Masukkan user valid (reply / user_id / @username).")
-    count = get_warn_count(update.effective_chat.id, target_id)
-    await update.message.reply_text(f"User {target_id} has {count} warn(s).")
-
-async def resetwarn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    arg = context.args[0] if context.args else None
-    target_id = await resolve_user_id(update, context, arg)
-    if not target_id:
-        return await update.message.reply_text("Masukkan user valid (reply / @username / id).")
-    reset_warn(update.effective_chat.id, target_id)
-    await update.message.reply_text(f"Warns reset for {target_id}.")
-
-async def setwarnthreshold_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    if not context.args:
-        return await update.message.reply_text("Usage: /setwarnthreshold <angka>")
-    try:
-        n = max(1, int(context.args[0]))
-    except Exception:
-        return await update.message.reply_text("Masukkan angka integer.")
-    set_threshold(update.effective_chat.id, n)
-    await update.message.reply_text(f"Warn threshold set to {n} for this chat.")
-
 # ---- interactive help menu ----
 def help_keyboard():
     kb = [
         [
             InlineKeyboardButton("✨ Features", callback_data="help:features"),
-            InlineKeyboardButton("🔧 Admin", callback_data="help:admin"),
         ],
-        [
-            InlineKeyboardButton("🚫 Blacklist", callback_data="help:blacklist"),
-            InlineKeyboardButton("⚠️ Warns", callback_data="help:warns"),
-        ],
-        [
+        ]
             InlineKeyboardButton("👤 Creator", callback_data="help:creator"),
             InlineKeyboardButton("🔙 Back", callback_data="help:back"),
         ],
@@ -1267,60 +918,6 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ===========================
-    # ADMIN
-    # ===========================
-    if data == "help:admin":
-        text = (
-            "🔧 " + bold("Admin Tools") + "\n\n"
-            "• /ban — Ban user (reply / id)\n"
-            "• /mute — Mute user\n"
-            "• /unmute — Unmute user\n"
-            "• /warn — Tambah warn\n"
-            "• /unwarn — Kurangi warn\n"
-            "• /warns — Lihat total warn\n"
-            "• /resetwarn — Reset warn\n"
-            "• /setwarnthreshold — Atur batas warn"
-        )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
-        return
-
-    # ===========================
-    # BLACKLIST
-    # ===========================
-    if data == "help:blacklist":
-        bl = load_blacklist()
-        words = bl.get("words", [])
-        sample = ", ".join(words[:12]) if words else "Belum ada"
-        sample_esc = esc(sample)
-
-        text = (
-            "🚫 " + bold("Blacklist System") + "\n\n"
-            f"<i>Kata terdaftar:</i> {sample_esc}\n\n"
-            f"• {code('/addbad <kata>')} — Tambah kata\n"
-            f"• {code('/rmbad <kata>')} — Hapus kata\n"
-            f"• {code('/listbad')} — Lihat semua\n"
-            f"• {code('/setaction mute|ban')} — Aksi\n"
-            f"• {code('/setduration <menit>')} — Durasi"
-        )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
-        return
-
-    # ===========================
-    # WARNS
-    # ===========================
-    if data == "help:warns":
-        text = (
-            "⚠️ " + bold("Warn System") + "\n\n"
-            "• /warn — Tambah warn\n"
-            "• /unwarn — Kurangi warn\n"
-            "• /warns — Cek warn\n"
-            "• /resetwarn — Reset warn\n"
-            "• /setwarnthreshold — Set batas"
-        )
-        await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
-        return
-
-    # ===========================
     # CREATOR
     # ===========================
     if data == "help:creator":
@@ -1357,145 +954,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=help_keyboard(), parse_mode="HTML")
         return
 
-# ---- blacklist helpers & handler ----
-def build_blacklist_regex(words):
-    if not words:
-        return None
-    escaped = [re.escape(w) for w in words if w]
-    pattern = r"\b(?:" + "|".join(escaped) + r")\b"
-    return re.compile(pattern, flags=re.IGNORECASE)
-
-async def do_temporary_unrestrict(chat_id, user_id, duration_minutes, context):
-    await asyncio.sleep(duration_minutes * 60)
-    try:
-        perms = ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_polls=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True,
-            can_change_info=False,
-            can_invite_users=True,
-            can_pin_messages=False,
-        )
-        await context.bot.restrict_chat_member(chat_id, user_id, permissions=perms)
-    except Exception:
-        return
-
-async def _blacklist_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-    if update.effective_user.is_bot:
-        return
-    uid = update.effective_user.id
-    if await is_user_admin(update, uid):
-        return
-    data = load_blacklist()
-    regex = build_blacklist_regex(data.get("words", []))
-    if not regex:
-        return
-    text = update.message.text
-    if not regex.search(text):
-        return
-    chat_id = update.effective_chat.id
-    action = data.get("action", "mute")
-    duration = int(data.get("duration", 5))
-    try:
-        new_warn = incr_warn(chat_id, uid)
-        threshold = get_chat_warns(chat_id).get("threshold", DEFAULT_WARN_THRESHOLD)
-        await update.message.reply_text(f"⚠️ Kata terlarang terdeteksi. Warn {new_warn}/{threshold}.")
-        if new_warn >= threshold:
-            try:
-                await context.bot.ban_chat_member(chat_id, uid)
-                await context.bot.unban_chat_member(chat_id, uid, only_if_banned=False)
-                await update.message.reply_text(f"User reached warn threshold ({threshold}) → kicked.")
-            except Exception:
-                logger.exception("kick on threshold failed")
-                await update.message.reply_text("Gagal kick user pada threshold.")
-            reset_warn(chat_id, uid)
-            return
-        if action == "mute":
-            perms = ChatPermissions(can_send_messages=False)
-            until = datetime.utcnow() + timedelta(minutes=duration)
-            await context.bot.restrict_chat_member(chat_id, uid, permissions=perms, until_date=until)
-            await update.message.reply_text(f"User muted for {duration} minute(s) due to prohibited word.")
-            asyncio.create_task(do_temporary_unrestrict(chat_id, uid, duration, context))
-        else:
-            until = datetime.utcnow() + timedelta(minutes=duration)
-            await context.bot.ban_chat_member(chat_id, uid, until_date=until)
-            await update.message.reply_text(f"User temporarily banned for {duration} minute(s) due to prohibited word.")
-            async def unban_later():
-                await asyncio.sleep(duration * 60)
-                try:
-                    await context.bot.unban_chat_member(chat_id, uid, only_if_banned=True)
-                except Exception:
-                    pass
-            asyncio.create_task(unban_later())
-    except Exception as e:
-        logger.exception("blacklist action failed")
-        await update.message.reply_text(f"Gagal melakukan tindakan: {e}")
-
-# ---- blacklist admin commands ----
-async def addbad_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    if not context.args:
-        return await update.message.reply_text("Usage: /addbad kata")
-    word = context.args[0].strip().lower()
-    if word in _black["words"]:
-        return await update.message.reply_text("Kata sudah ada di blacklist.")
-    _black["words"].append(word)
-    save_blacklist(_black)
-    await update.message.reply_text(f"Ditambahkan ke blacklist: {word}")
-
-async def rmbad_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    if not context.args:
-        return await update.message.reply_text("Usage: /rmbad kata")
-    word = context.args[0].strip().lower()
-    try:
-        _black["words"].remove(word)
-        save_blacklist(_black)
-        await update.message.reply_text(f"Dihapus dari blacklist: {word}")
-    except ValueError:
-        await update.message.reply_text("Kata tidak ditemukan.")
-
-async def listbad_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    words = _black.get("words", [])
-    if not words:
-        return await update.message.reply_text("Belum ada kata di blacklist.")
-    await update.message.reply_text("Blacklist:\n" + ", ".join(words))
-
-async def setaction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    if not context.args:
-        return await update.message.reply_text("Usage: /setaction mute|ban")
-    action = context.args[0].lower()
-    if action not in ("mute", "ban"):
-        return await update.message.reply_text("Action must be 'mute' or 'ban'.")
-    _black["action"] = action
-    save_blacklist(_black)
-    await update.message.reply_text(f"Action set to: {action}")
-
-async def setduration_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Admin only.")
-    if not context.args:
-        return await update.message.reply_text("Usage: /setduration <minutes>")
-    try:
-        mins = int(context.args[0])
-    except ValueError:
-        return await update.message.reply_text("Masukkan angka menit.")
-    _black["duration"] = max(1, mins)
-    save_blacklist(_black)
-    await update.message.reply_text(f"Duration set to {_black['duration']} minutes")
-
-# --- Helper & stats (Style B + progress bars) ---
-import os, platform, shutil, time, html
+# --- Helper & stats
 try:
     import psutil
 except Exception:
@@ -1971,21 +1430,6 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(final[:4000])
 
-# ---- extra user commands ----
-async def syncadmins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_admin(update, update.effective_user.id):
-        return await update.message.reply_text("Hanya admin.")
-    try:
-        admins = await context.bot.get_chat_administrators(update.effective_chat.id)
-        count = 0
-        for adm in admins:
-            cache_user(adm.user)
-            count += 1
-        await update.message.reply_text(f"✅ Sukses sinkron {count} admin ke cache.")
-    except Exception as e:
-        logger.exception("syncadmins failed")
-        await update.message.reply_text(f"Gagal sinkron admins: {e}")
-
 async def whois_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("Usage: /whois @username")
@@ -2176,19 +1620,6 @@ _DOLLAR_CMD_MAP = {
     "setmodeai": setmodeai_cmd,
     "ai": ai_cmd,
     "info": info_cmd,
-    "ban": ban_cmd,
-    "mute": mute_cmd,
-    "unmute": unmute_cmd,
-    "warn": warn_cmd,
-    "unwarn": unwarn_cmd,
-    "warns": warns_cmd,
-    "resetwarn": resetwarn_cmd,
-    "setwarnthreshold": setwarnthreshold_cmd,
-    "addbad": addbad_cmd,
-    "rmbad": rmbad_cmd,
-    "listbad": listbad_cmd,
-    "setaction": setaction_cmd,
-    "setduration": setduration_cmd,
     "stats": stats_cmd,
     "syncadmins": syncadmins_cmd,
     "whois": whois_cmd,
@@ -2259,31 +1690,6 @@ def main():
     app.add_handler(CommandHandler("groq", groq_query))
     app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
-
-    # ======================
-    # ADMIN / MODERATION
-    # ======================
-    app.add_handler(CommandHandler("ban", ban_cmd))
-    app.add_handler(CommandHandler("mute", mute_cmd))
-    app.add_handler(CommandHandler("unmute", unmute_cmd))
-
-    # ======================
-    # WARN SYSTEM
-    # ======================
-    app.add_handler(CommandHandler("warn", warn_cmd))
-    app.add_handler(CommandHandler("unwarn", unwarn_cmd))
-    app.add_handler(CommandHandler("warns", warns_cmd))
-    app.add_handler(CommandHandler("resetwarn", resetwarn_cmd))
-    app.add_handler(CommandHandler("setwarnthreshold", setwarnthreshold_cmd))
-
-    # ======================
-    # BLACKLIST ADMIN
-    # ======================
-    app.add_handler(CommandHandler("addbad", addbad_cmd))
-    app.add_handler(CommandHandler("rmbad", rmbad_cmd))
-    app.add_handler(CommandHandler("listbad", listbad_cmd))
-    app.add_handler(CommandHandler("setaction", setaction_cmd))
-    app.add_handler(CommandHandler("setduration", setduration_cmd))
 
     # ======================
     # ADMIN UTILITIES
