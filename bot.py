@@ -1038,7 +1038,6 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = (user.first_name or "").strip() or "there"
     text = (
         f"👋 Halo {name}!\n\n"
-        "Bot siap: sticker tools, blacklist, warns, stats, AI.\n"
         "Ketik /help buat lihat menu."
     )
     await update.message.reply_text(text)
