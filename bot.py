@@ -542,7 +542,7 @@ async def speedtest_quick(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = b"0" * (512 * 1024)
         t0 = time.perf_counter()
         async with aiohttp.ClientSession() as s:
-            async with s.post("https://httpbin.org/post", data=data, timeout=20):
+            async with s.post("https://speed.cloudflare.com/__up", data=data, timeout=20):
                 pass
         up = round((len(data) * 8) / ((time.perf_counter() - t0) * 1024 * 1024), 2)
 
