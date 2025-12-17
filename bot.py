@@ -522,121 +522,85 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await speedtest_quick(update)
 
 
-# ---------- RUN SPEEDTEST CLI (JSON) ----------
-async def _run_speedtest():
+# ---------- RUN SPEEDTEST CLI (JSON) 
+async def _run_speedtest_json(timeout=60):
     proc = await asyncio.create_subprocess_exec(
-    "/usr/bin/speedtest",
-    "--format=json",
-    "--progress=no",
-    stdout=asyncio.subprocess.PIPE,
-    stderr=asyncio.subprocess.PIPE,
-)
+        "/usr/bin/speedtest",
+        "--format=json",
+        "--progress=no",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
 
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise Exception("speedtest CLI timed out")
 
     if proc.returncode != 0:
         raise Exception(stderr.decode() or "speedtest failed")
 
-    text = stdout.decode().strip()
-
-    if not text.startswith("{"):
-        raise Exception("speedtest returned non-json output")
-
-    return json.loads(text)
+    return json.loads(stdout.decode())
 
 
 # ---------- QUICK ----------
-async def speedtest_quick(update: Update):
-    msg = await update.effective_message.reply_text(
-        f"⏳ {SPEED_TITLE} — Running quick test…"
-    )
+async def speedtest_quick(update):
+    msg = await update.effective_message.reply_text("⏳ Speedtest running...")
 
     try:
-        data = await _run_speedtest()
+        data = await _run_speedtest_json(timeout=45)
 
-        ping = round(data["ping"]["latency"], 2)
-        download = round((data["download"]["bandwidth"] * 8) / 1_000_000, 2)
-        upload = round((data["upload"]["bandwidth"] * 8) / 1_000_000, 2)
+        ping = round(data["ping"]["latency"], 1)
+        down = round(data["download"]["bandwidth"] * 8 / 1e6, 2)
+        up   = round(data["upload"]["bandwidth"] * 8 / 1e6, 2)
 
         await msg.edit_text(
-            f"{EMO['ok']} {SPEED_TITLE} — Quick Results\n\n"
-            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
-            f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
-            f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode="HTML",
+            f"✅ ⚡️🌸 SpeedLab — Quick Results\n\n"
+            f"🏓 Ping: {ping} ms\n"
+            f"⬇️ Download: {down} Mbps\n"
+            f"⬆️ Upload: {up} Mbps\n\n"
+            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     except Exception as e:
-        await msg.edit_text(
-            f"{EMO['bad']} Quick speedtest failed\n<code>{e}</code>",
-            parse_mode="HTML",
-        )
+        await msg.edit_text(f"❌ Quick speedtest failed\n<code>{e}</code>", parse_mode="HTML")
 
 
 # ---------- ADVANCED ----------
-async def speedtest_advanced(update: Update):
-    msg = await update.effective_message.reply_text(
-        f"⏳ {SPEED_TITLE} — Running advanced test… (±15s)"
-    )
+async def speedtest_advanced(update):
+    msg = await update.effective_message.reply_text("⏳ Advanced speedtest running...")
 
     try:
-        data = await _run_speedtest()
+        data = await _run_speedtest_json(timeout=60)
 
-        # system
-        vm = psutil.virtual_memory()
-        cpu = psutil.cpu_count(logical=True)
-        ram = round(vm.available / 1024**3, 1)
+        ping = round(data["ping"]["latency"], 1)
+        jitter = round(data["ping"]["jitter"], 1)
 
-        # network
-        isp = data.get("isp", "N/A")
-        iface = data.get("interface", {})
-        public_ip = iface.get("externalIp", "N/A")
+        down = round(data["download"]["bandwidth"] * 8 / 1e6, 2)
+        up   = round(data["upload"]["bandwidth"] * 8 / 1e6, 2)
 
-        # server
-        srv = data.get("server", {})
-        srv_name = srv.get("name", "N/A")
-        srv_loc = f"{srv.get('location','')} {srv.get('country','')}".strip()
-        srv_ip = srv.get("ip", "N/A")
-
-        # metrics
-        ping = round(data["ping"]["latency"], 2)
-        jitter = round(data["ping"]["jitter"], 2)
-        packet_loss = round((data.get("packetLoss") or 0) * 100, 2)
-
-        download = round((data["download"]["bandwidth"] * 8) / 1_000_000, 2)
-        upload = round((data["upload"]["bandwidth"] * 8) / 1_000_000, 2)
-
-        stability = (
-            "Excellent" if jitter < 5 else
-            "Good" if jitter < 15 else
-            "Poor"
-        )
+        server = data["server"]
+        isp = data["isp"]
+        ip = data["interface"]["externalIp"]
 
         await msg.edit_text(
-            f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
-            f"💻 System: {platform.system()} {platform.release()} • "
-            f"{cpu} cores • {ram} GB available\n"
+            f"✅ ⚡️🌸 SpeedLab — Advanced Results\n\n"
             f"🌐 ISP: {isp}\n"
-            f"🌍 Public IP: {public_ip}\n\n"
-            f"🛰 Server: {srv_name}\n"
-            f"📍 Location: {srv_loc}\n"
-            f"📡 Server IP: {srv_ip}\n\n"
-            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
-            f"📉 Jitter: <code>{jitter} ms</code>\n"
-            f"📦 Packet Loss: <code>{packet_loss}%</code>\n"
-            f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
-            f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
-            f"📊 Stability: <b>{stability}</b>\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode="HTML",
+            f"📡 IP: {ip}\n"
+            f"🖥 Server: {server['name']} ({server['location']})\n\n"
+            f"🏓 Ping: {ping} ms\n"
+            f"📉 Jitter: {jitter} ms\n"
+            f"⬇️ Download: {down} Mbps\n"
+            f"⬆️ Upload: {up} Mbps\n\n"
+            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     except Exception as e:
-        await msg.edit_text(
-            f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
-            parse_mode="HTML",
-        )
+        await msg.edit_text(f"❌ Advanced speedtest failed\n<code>{e}</code>", parse_mode="HTML")
 
 # ================= END SPEEDTEST BLOCK =================
                                        
