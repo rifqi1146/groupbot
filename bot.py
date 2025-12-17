@@ -525,12 +525,12 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- RUN SPEEDTEST CLI (JSON) ----------
 async def _run_speedtest():
     proc = await asyncio.create_subprocess_exec(
-        "speedtest",
-        "--format=json",
-        "--progress=no",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    "/usr/bin/speedtest",
+    "--format=json",
+    "--progress=no",
+    stdout=asyncio.subprocess.PIPE,
+    stderr=asyncio.subprocess.PIPE,
+)
 
     stdout, stderr = await proc.communicate()
 
