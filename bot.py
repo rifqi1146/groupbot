@@ -1113,9 +1113,12 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 🧠 UTILITIES
     if data == "help:utils":
         text = (
-            "🧠 <b>Utilities</b>\n\n"
-            "• /stats — Info sistem\n\n"
-        )
+    "🧠 <b>Utilities</b>\n\n"
+    "• /stats — Info sistem\n"
+    "• /ip — Info IP\n"
+    "• /domain — Info domain\n"
+    "• /whoisdomain — WHOIS domain detail\n\n"
+)
         await query.edit_message_text(
             text,
             reply_markup=help_back_keyboard(),
