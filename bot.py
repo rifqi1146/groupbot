@@ -1697,12 +1697,12 @@ async def google_search(query: str, page: int = 0, limit: int = 5):
 def gsearch_keyboard(search_id: str, page: int):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⬅️ Prev", callback_data=f"gsp:{search_id}:{page-1}"),
+            InlineKeyboardButton("⬅️ Prev", callback_data=f"gsearch:{search_id}:{page-1}"),
             InlineKeyboardButton(f"📄 {page+1}", callback_data="noop"),
-            InlineKeyboardButton("Next ➡️", callback_data=f"gsp:{search_id}:{page+1}"),
+            InlineKeyboardButton("Next ➡️", callback_data=f"gsearch:{search_id}:{page+1}"),
         ],
         [
-            InlineKeyboardButton("❌ Close", callback_data=f"gsp:close:{search_id}")
+            InlineKeyboardButton("❌ Close", callback_data=f"gsearch:close:{search_id}")
         ]
     ])
     
