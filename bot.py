@@ -1940,7 +1940,7 @@ def main():
             ("dl", "Download video (TT/IG/YT)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
-            ("tr", "Translate text),
+            ("tr", "Translate text"),
         ]
         try:
             await app.bot.set_my_commands(cmds)
