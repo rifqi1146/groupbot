@@ -2139,8 +2139,8 @@ def main():
     # ======================
     # INLINE CALLBACKS
     # ======================
-    CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:")
-    CallbackQueryHandler(help_callback, pattern=r"^help:")
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
 
     # ======================
     # MESSAGE ROUTER
