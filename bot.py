@@ -1870,47 +1870,51 @@ def main():
     # BUILD APPLICATION
     # ======================
     app = (
-    ApplicationBuilder()
-    .token(TOKEN)
-    .build()
-)
+        ApplicationBuilder()
+        .token(TOKEN)
+        .build()
+    )
 
-# ======================
-# CORE COMMANDS
-# ======================
-app.add_handler(CommandHandler("start", start_cmd))
-app.add_handler(CommandHandler("help", help_cmd))
-app.add_handler(CommandHandler("menu", help_cmd))
-app.add_handler(CommandHandler("ping", ping_cmd))
-app.add_handler(CommandHandler("dl", dl_cmd))
-app.add_handler(CommandHandler("stats", stats_cmd))
-app.add_handler(CommandHandler("tr", tr_cmd))
-app.add_handler(CommandHandler("gsearch", gsearch_cmd))
+    # ======================
+    # CORE COMMANDS
+    # ======================
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("menu", help_cmd))
+    app.add_handler(CommandHandler("ping", ping_cmd))
+    app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("tr", tr_cmd))
+    app.add_handler(CommandHandler("gsearch", gsearch_cmd))
 
-# ======================
-# AI COMMANDS
-# ======================
-app.add_handler(CommandHandler("ai", ai_cmd))
-app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
-app.add_handler(CommandHandler("openai", ai_openai_cmd))
-app.add_handler(CommandHandler("groq", groq_query))
-app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
-app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
+    # ======================
+    # AI COMMANDS
+    # ======================
+    app.add_handler(CommandHandler("ai", ai_cmd))
+    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
+    app.add_handler(CommandHandler("openai", ai_openai_cmd))
+    app.add_handler(CommandHandler("groq", groq_query))
+    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
+    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
 
-# ======================
-# INLINE CALLBACKS
-# ======================
-app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
-app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
-app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
+    # ======================
+    # INLINE CALLBACKS
+    # ======================
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
 
-# ======================
-# MESSAGE ROUTER
-# ======================
-app.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
-    group=0
-)
+    # ======================
+    # MESSAGE ROUTER
+    # ======================
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        group=0
+    )
+
+    # ======================
+    # STARTUP INFO
+    # ======================
     try:
         banner = r"""
   ____        _   _       ____        _
@@ -1921,10 +1925,12 @@ app.add_handler(
 """
         print(banner)
         logger.info("Bot starting...")
-
     except Exception:
         logger.exception("Startup info failed")
 
+    # ======================
+    # SET BOT COMMANDS
+    # ======================
     async def _set_commands(app):
         cmds = [
             ("start", "Check bot status"),
@@ -1941,9 +1947,13 @@ app.add_handler(
 
     app.post_init = _set_commands
 
+    # ======================
+    # RUN BOT
+    # ======================
     logger.info("Launching polling loop...")
     print("Launching... (listening for updates)")
     app.run_polling(close_loop=False)
-    
+
+
 if __name__ == "__main__":
     main()
