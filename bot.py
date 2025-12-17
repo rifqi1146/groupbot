@@ -121,6 +121,21 @@ def progress_bar(percent: float) -> str:
 
 
 #dl core
+async def resolve_tiktok_url(url: str) -> str:
+    """
+    Convert long TikTok URL → short vt.tiktok.com URL
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(
+                url,
+                allow_redirects=True,
+                timeout=15
+            ) as resp:
+                return str(resp.url)
+    except Exception:
+        return url
+        
 async def _download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
@@ -190,56 +205,27 @@ async def _download_media_with_progress(url: str, status_msg):
 
 #dl
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg:
-        return
-
     if not context.args:
-        return await msg.reply_text(
-            "<b>Usage:</b>\n"
-            "<code>/dl &lt;tiktok | instagram | youtube link&gt;</code>",
-            parse_mode="HTML"
-        )
+        return await update.message.reply_text("❌ Kasih link TikTok nya")
 
-    url = context.args[0]
+    raw_url = context.args[0]
 
-    status = await msg.reply_text(
-        "⬇️ <b>Mengunduh media...</b>",
-        parse_mode="HTML"
-    )
+    msg = await update.message.reply_text("🔄 Memproses link...")
+
+    # 🔥 AUTO FIX DI SINI
+    fixed_url = await resolve_tiktok_url(raw_url)
 
     try:
-        file_path = await _download_media_with_progress(url, status)
-        if not file_path:
-            return await status.edit_text(
-                "❌ <b>Gagal mengunduh media</b>",
-                parse_mode="HTML"
-            )
+        # lanjutkan logic download lu PERSIS seperti biasa
+        video_url = await download_tiktok(fixed_url)  # <-- fungsi lama lu
 
-        size_mb = os.path.getsize(file_path) / (1024 * 1024)
-
-        if size_mb > 1900:
-            await context.bot.send_document(
-                msg.chat.id,
-                document=open(file_path, "rb"),
-                caption="✅ <b>Download selesai</b>",
-                parse_mode="HTML"
-            )
-        else:
-            await context.bot.send_video(
-                msg.chat.id,
-                video=open(file_path, "rb"),
-                caption="✅ <b>Download selesai</b>",
-                parse_mode="HTML"
-            )
-
-        os.remove(file_path)
-        await status.delete()
+        await msg.edit_text("✅ Download selesai")
+        await update.message.reply_video(video=video_url)
 
     except Exception as e:
-        await status.edit_text(
-            f"❌ <b>Error:</b> <code>{e}</code>",
-            parse_mode="HTML"
+        await msg.edit_text(
+            "❌ Gagal mengunduh media\n"
+            "ℹ️ Coba pakai link vt.tiktok.com"
         )
 
 # utils_groq_poll18.py
