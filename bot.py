@@ -122,7 +122,7 @@ def progress_bar(percent: float) -> str:
 
 #dl core
 async def resolve_tiktok_url(url: str) -> str:
-    timeout = aiohttp.ClientTimeout(total=20)
+    timeout = aiohttp.ClientTimeout(total=15)
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Linux; Android 13) "
@@ -133,70 +133,41 @@ async def resolve_tiktok_url(url: str) -> str:
 
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as s:
         async with s.get(url, allow_redirects=True) as r:
-            final_url = str(r.url)
+            final = str(r.url)
 
-    # buang parameter panjang tiktok
-    final_url = final_url.split("?")[0]
-
-    if "/video/" not in final_url:
+    final = final.split("?")[0]
+    if "/video/" not in final:
         raise Exception("Invalid TikTok URL")
 
-    return final_url
+    return final
         
-async def download_media_with_progress(url: str, status_msg):
-    uid = str(uuid.uuid4())
+async def download_media(url: str) -> str | None:
+    uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-    "yt-dlp",
-    "-f", "bv*+ba/b",
-    "--merge-output-format", "mp4",
-    "--extractor-args", "tiktok:watermark=0",
-    "--no-playlist",
-    "--no-progress",
-    "--quiet",
-    "-o", out_tpl,
-    url
-]
+        "yt-dlp",
+        "-f", "bv*+ba/b",
+        "--merge-output-format", "mp4",
+        "--extractor-args", "tiktok:watermark=0",
+        "--no-playlist",
+        "--quiet",
+        "--no-progress",
+        "-o", out_tpl,
+        url
+    ]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE
     )
-
-    last_update = 0
-
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-
-        try:
-            raw = line.decode().strip()
-            if "%" not in raw or "|" not in raw:
-                continue
-
-            percent_str, speed, eta = raw.split("|")
-            percent = float(percent_str.replace("%", "").strip())
-
-            now = time.time()
-            if now - last_update >= 2:
-                bar = progress_bar(percent)
-                await status_msg.edit_text(
-                    f"⬇️ <b>Mengunduh media...</b>\n\n"
-                    f"<code>{bar} {percent:.1f}%</code>\n"
-                    f"🚀 Speed: <b>{speed}</b>\n"
-                    f"⏳ ETA: <b>{eta}</b>",
-                    parse_mode="HTML"
-                )
-                last_update = now
-        except:
-            pass
 
     await proc.wait()
 
     if proc.returncode != 0:
+        err = await proc.stderr.read()
+        print("yt-dlp error:", err.decode(errors="ignore")[:300])
         return None
 
     for f in os.listdir(TMP_DIR):
@@ -213,41 +184,37 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
 
-    # 1️⃣ resolve URL
     try:
         url = raw_url
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
-    except:
-        return await status.edit_text(
-            "❌ Gagal mengunduh media\n"     
-    # 2️⃣ download
-    try:
-        file_path = await download_media_with_progress(url, status)
+
+        file_path = await download_media(url)
         if not file_path:
-            raise Exception("Download failed")
-    except:
-        return await status.edit_text(
-            "❌ Gagal mengunduh media\n"
+            raise Exception("download failed")
+
+        await update.message.reply_video(
+            video=open(file_path, "rb")
         )
 
-    # 3️⃣ kirim video (FINAL)
-    await update.message.reply_video(
-        video=open(file_path, "rb")
-    )
+        # hapus status biar bersih
+        try:
+            await status.delete()
+        except:
+            pass
 
-    # 4️⃣ bersih-bersih (silent, ga boleh ganggu UX)
-    try:
-        await status.delete()
-    except:
-        pass
+        try:
+            os.remove(file_path)
+        except:
+            pass
 
-    try:
-        os.remove(file_path)
-    except:
-        pass
+        return
 
-    return  # ⬅️ PENTING: stop di sini, ga boleh jatuh ke error
+    except Exception:
+        return await status.edit_text(
+            "❌ Gagal mengunduh media\n"
+            "ℹ️ Coba ulang beberapa saat lagi"
+        )
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
