@@ -692,9 +692,11 @@ async def advanced_speedtest(update: Update):
         }
 
         # network
-        async with aiohttp.ClientSession() as s:
-            ip = (await (await s.get("https://api.ipify.org?format=json")).json())["ip"]
-            geo = await (await s.get(f"https://ipapi.co/{ip}/json/")).json()
+        async with s.get(f"https://ipapi.co/{ip_data.get('ip')}/json/", timeout=6) as r2:
+    text = await r2.text()
+    if not text.strip().startswith("{"):
+        raise Exception("ipapi returned non-json")
+    geo = json.loads(text)
 
         # ping
         ping_data = {}
