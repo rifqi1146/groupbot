@@ -209,7 +209,7 @@ async def download_media_with_progress(url: str, status_msg):
 #dl
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kasih link video")
+        return await update.message.reply_text("❌ Kirim link video")
 
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
@@ -228,19 +228,23 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_video(
             video=open(file_path, "rb")
         )
-
-        await status.edit_text("✅ Download selesai")
+        try:
+            await status.delete()
+        except:
+            pass
 
         try:
             os.remove(file_path)
         except:
             pass
 
-    except Exception as e:
-        await status.edit_text(
-            "❌ Gagal mengunduh media\n"
-            "ℹ️ Link TikTok lagi rewel, coba ulang"
-        )
+    except Exception:
+        try:
+            await status.edit_text(
+                "❌ Gagal mengunduh media, Coba ulang\n"
+            )
+        except:
+            pass
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
