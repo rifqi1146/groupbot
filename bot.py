@@ -319,7 +319,132 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⏱️ <b>Latency:</b> <code>{ms} ms</code>",
         parse_mode="HTML"
     )
-    
+
+# ===============================
+# ASUPAN VIDEO (ANTI BOCIL)
+# ===============================
+
+import aiohttp
+import random
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+# keyword WAJIB ada (biar ga bocil)
+REQUIRED_KEYWORDS = [
+    # joget / dance
+    "dance", "dj", "joget", "goyang", "pinaytiktokgrils", "tiktokdance",
+
+    # vibe nongkrong / cafe
+    "cewekcantik", "tantee", "hijabgirl", "trenddance", "tanktop", "vibes",
+
+    # lifestyle cewek
+    "girl", "girls", "cewek", "wanita", "ladies",
+    "tiktokgirls", "hijabvibes", "cewekhijab", "hotgirl", "dancetrand",
+
+    # body / gym (tetep)
+    "gym", "bahancrt", "verllyaling", "body", "abs",
+
+    # pose & activity
+    "mirror", "dancetiktok", "tobrut", "dancecover", "trend",
+
+    # night vibe
+    "beautiful", "club", "cewekberdamage", "hotdance", "tanteholic"
+]
+
+# keyword TERLARANG (auto skip)
+BANNED_KEYWORDS = [
+    "baby", "kid", "child", "anak", "bayi",
+    "cat", "kucing", "dog", "anjing",
+    "meme", "funny"
+]
+
+# -------------------------------
+# FETCH VIDEO URL (STRICT FILTER)
+# -------------------------------
+async def fetch_asupan_video():
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                "https://tikwm.com/api/feed/list",
+                params={"region": "ID", "count": 50},
+                timeout=20
+            ) as r:
+                if r.status != 200:
+                    return None
+                data = await r.json()
+
+        videos = data.get("data", [])
+        if not videos:
+            return None
+
+        valid = []
+
+        for v in videos:
+            title = (v.get("title") or "").lower()
+
+            if any(bad in title for bad in BANNED_KEYWORDS):
+                continue
+
+            if not any(ok in title for ok in REQUIRED_KEYWORDS):
+                continue
+
+            play = v.get("play")
+            if play:
+                valid.append(play)
+
+        if not valid:
+            return None
+
+        return random.choice(valid)
+
+    except Exception:
+        return None
+
+# -------------------------------
+# INLINE KEYBOARD
+# -------------------------------
+def asupan_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")],
+        [InlineKeyboardButton("❌ Close", callback_data="asupan:close")]
+    ])
+
+# -------------------------------
+# COMMAND /asupan
+# -------------------------------
+async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    video_url = await fetch_asupan_video()
+    if not video_url:
+        return await update.message.reply_text("❌ Ga dapet asupan, coba lagi")
+
+    await update.message.reply_video(
+        video=video_url,
+        reply_markup=asupan_keyboard()
+    )
+
+# -------------------------------
+# CALLBACK
+# -------------------------------
+async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()  # WAJIB
+
+    if q.data == "asupan:close":
+        try:
+            await q.message.delete()
+        except:
+            pass
+        return
+
+    if q.data == "asupan:next":
+        video_url = await fetch_asupan_video()
+        if not video_url:
+            return
+
+        await q.message.edit_media(
+            media=InputMediaVideo(media=video_url),
+            reply_markup=asupan_keyboard()
+        )
+        
 # ---- GROQ + Pollinations
 logger = logging.getLogger(__name__)
 
@@ -1584,6 +1709,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
+    "asupan": asupan_cmd,
     "gsearch": gsearch_cmd,
     "ping": ping_cmd,
     "deepseek": ai_deepseek_cmd,
@@ -1645,6 +1771,7 @@ def main():
     # ======================
     # CORE COMMANDS
     # ======================
+    app.add_handler(CommandHandler("asupan", asupan_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
@@ -1704,6 +1831,7 @@ def main():
             ("ping", "Check latency"),
             ("dl", "Download video (TT/IG/YT)"),
             ("stats", "System statistics"),
+            ("asupan", "Cari asupan"),
             ("gsearch", "Cari info via Google"),
         ]
         try:
