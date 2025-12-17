@@ -148,17 +148,16 @@ async def download_media_with_progress(url: str, status_msg):
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "yt-dlp",
-        "-f", "mp4/best",
-        "--merge-output-format", "mp4",
-        "--no-playlist",
-        "--newline",
-        "--extractor-args", "tiktok:watermark=0",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "-o", out_tpl,
-        url
-    ]
+    "yt-dlp",
+    "-f", "bv*+ba/b",
+    "--merge-output-format", "mp4",
+    "--extractor-args", "tiktok:watermark=0",
+    "--no-playlist",
+    "--no-progress",
+    "--quiet",
+    "-o", out_tpl,
+    url
+]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -209,7 +208,7 @@ async def download_media_with_progress(url: str, status_msg):
 #dl
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kasih link video")
+        return await update.message.reply_text("❌ Kirim link video")
 
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
@@ -221,10 +220,7 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             url = await resolve_tiktok_url(raw_url)
     except:
         return await status.edit_text(
-            "❌ Gagal mengunduh media\n"
-            "ℹ️ Link TikTok lagi rewel, coba ulang"
-        )
-
+            "❌ Gagal mengunduh media\n"     
     # 2️⃣ download
     try:
         file_path = await download_media_with_progress(url, status)
@@ -233,7 +229,6 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         return await status.edit_text(
             "❌ Gagal mengunduh media\n"
-            "ℹ️ Link TikTok lagi rewel, coba ulang"
         )
 
     # 3️⃣ kirim video (FINAL)
