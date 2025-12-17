@@ -492,136 +492,6 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-# ===== SPEEDTEST FINAL (ANTI TIMEOUT, NO ASYNC SUBPROCESS) =====
-
-import asyncio
-import json
-import subprocess
-import platform
-import psutil
-from datetime import datetime
-from telegram import Update
-from telegram.ext import ContextTypes
-
-SPEED_TITLE = "⚡️🌸 SpeedLab"
-
-EMO = {
-    "ok": "✅",
-    "bad": "❌",
-    "ping": "🏓",
-    "download": "⬇️",
-    "upload": "⬆️",
-}
-
-# =============================================================
-
-def run_speedtest():
-    proc = subprocess.run(
-        ["speedtest", "--format=json", "--progress=no"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        timeout=120,   # ⬅️ PENTING
-    )
-
-    if proc.returncode != 0:
-        raise Exception(proc.stderr.strip() or "speedtest failed")
-
-    return json.loads(proc.stdout)
-
-
-async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="quick"):
-    if mode in ("adv", "advanced"):
-        await speedtest_advanced(update)
-    else:
-        await speedtest_quick(update)
-
-
-# ---------- QUICK ----------
-async def speedtest_quick(update: Update):
-    msg = await update.effective_message.reply_text(
-        f"⏳ {SPEED_TITLE} — Running quick test..."
-    )
-
-    try:
-        loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(None, run_speedtest)
-
-        ping = round(data["ping"]["latency"], 1)
-        download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
-        upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
-
-        await msg.edit_text(
-            f"{EMO['ok']} {SPEED_TITLE} — Quick Results\n\n"
-            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
-            f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
-            f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode="HTML",
-        )
-
-    except Exception as e:
-        await msg.edit_text(
-            f"{EMO['bad']} Quick speedtest failed\n<code>{e}</code>",
-            parse_mode="HTML",
-        )
-
-
-# ---------- ADVANCED ----------
-async def speedtest_advanced(update: Update):
-    msg = await update.effective_message.reply_text(
-        f"⏳ {SPEED_TITLE} — Running advanced test..."
-    )
-
-    try:
-        vm = psutil.virtual_memory()
-        cpu = psutil.cpu_count(logical=True)
-        ram_gb = round(vm.available / 1024**3, 1)
-
-        loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(None, run_speedtest)
-
-        ping = round(data["ping"]["latency"], 1)
-        jitter = round(data["ping"]["jitter"], 1)
-        download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
-        upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
-
-        server = data["server"]
-        isp = data.get("isp", "Unknown")
-        ip = data["interface"]["externalIp"]
-
-        stability = (
-            "Excellent" if jitter < 5 else
-            "Good" if jitter < 15 else
-            "Poor"
-        )
-
-        avg_score = round((download + upload) / 2, 1)
-
-        await msg.edit_text(
-            f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
-            f"💻 System: {platform.system()} {platform.release()} • "
-            f"{cpu} cores • {ram_gb} GB available\n"
-            f"🌐 ISP: {isp}\n"
-            f"📡 IP: {ip}\n\n"
-            f"🏓 Ping: <code>{ping} ms</code>\n"
-            f"📉 Jitter: <code>{jitter} ms</code>\n"
-            f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
-            f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
-            f"🗼 Server: {server['name']} — {server['location']}, {server['country']}\n"
-            f"📊 Stability: <b>{stability}</b>\n"
-            f"📈 Overall Score: <b>{avg_score} Mbps</b>\n\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode="HTML",
-        )
-
-    except Exception as e:
-        await msg.edit_text(
-            f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
-            parse_mode="HTML",
-        )
-
-# ===== END =====
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.perf_counter()
@@ -1369,8 +1239,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
     "✨ " + bold("Features") + "\n"
     "• 🏓 /ping — Cek latency bot\n"
-    "• ⬇️ /dl — Download video TikTok / Instagram / YouTube\n"
-    "• ⚡ /speedtest — Cek kecepatan internet bot (quick / adv)\n\n"
+    "• ⬇️ /dl — Download video TikTok / Instagram / YouTube\n\n"
 
             
 
@@ -2297,7 +2166,6 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
-    "speedtest": speedtest_cmd,
     "ping": ping_cmd,
     "deepseek": ai_deepseek_cmd,
     "openai": ai_openai_cmd,
@@ -2378,7 +2246,6 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
-    app.add_handler(CommandHandler("speedtest", speedtest_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("info", info_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -2489,7 +2356,6 @@ def main():
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
-            ("speedtest", "Network speed test"),
             ("dl", "Download video (TT/IG/YT)"),
             ("info", "User information"),
             ("stats", "System statistics"),
