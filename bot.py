@@ -209,42 +209,50 @@ async def download_media_with_progress(url: str, status_msg):
 #dl
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kirim link video")
+        return await update.message.reply_text("❌ Kasih link video")
 
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
 
+    # 1️⃣ resolve URL
     try:
         url = raw_url
-
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
+    except:
+        return await status.edit_text(
+            "❌ Gagal mengunduh media\n"
+            "ℹ️ Link TikTok lagi rewel, coba ulang"
+        )
 
+    # 2️⃣ download
+    try:
         file_path = await download_media_with_progress(url, status)
-
         if not file_path:
             raise Exception("Download failed")
-
-        await update.message.reply_video(
-            video=open(file_path, "rb")
+    except:
+        return await status.edit_text(
+            "❌ Gagal mengunduh media\n"
+            "ℹ️ Link TikTok lagi rewel, coba ulang"
         )
-        try:
-            await status.delete()
-        except:
-            pass
 
-        try:
-            os.remove(file_path)
-        except:
-            pass
+    # 3️⃣ kirim video (FINAL)
+    await update.message.reply_video(
+        video=open(file_path, "rb")
+    )
 
-    except Exception:
-        try:
-            await status.edit_text(
-                "❌ Gagal mengunduh media, Coba ulang\n"
-            )
-        except:
-            pass
+    # 4️⃣ bersih-bersih (silent, ga boleh ganggu UX)
+    try:
+        await status.delete()
+    except:
+        pass
+
+    try:
+        os.remove(file_path)
+    except:
+        pass
+
+    return  # ⬅️ PENTING: stop di sini, ga boleh jatuh ke error
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
