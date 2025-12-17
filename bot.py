@@ -528,7 +528,7 @@ async def speedtest_cmd(message, mode: str = "quick"):
 
 # ---------- QUICK ----------
 async def speedtest_quick(message):
-    msg = await message.edit_text(f"⏳ {SPEED_TITLE} — Running quick test...")
+    msg = await message.reply_text(f"⏳ {SPEED_TITLE} — Running quick test...")
 
     try:
         start = time.perf_counter()
@@ -573,7 +573,7 @@ async def speedtest_quick(message):
 
 # ---------- ADVANCED ----------
 async def speedtest_advanced(message):
-    msg = await message.edit_text(f"⏳ {SPEED_TITLE} — Running advanced test...")
+    msg = await message.reply_text(f"⏳ {SPEED_TITLE} — Running advanced test...")
 
     try:
         # system info
