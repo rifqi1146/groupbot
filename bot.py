@@ -492,11 +492,11 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-# ================= SPEEDTEST BLOCK =================
-# speedtest_block.py
+# ===== SPEEDTEST MODULE (PTB SAFE, NO SPINNER) =====
+
 import asyncio
-import subprocess
 import json
+import time
 import platform
 import psutil
 from datetime import datetime
@@ -504,6 +504,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 SPEED_TITLE = "⚡️🌸 SpeedLab"
+
 EMO = {
     "ok": "✅",
     "bad": "❌",
@@ -512,98 +513,132 @@ EMO = {
     "upload": "⬆️",
 }
 
-# ---------- MAIN CMD ----------
-async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args or []
-    mode = args[0].lower() if args else "quick"
+# ==================================================
 
+async def speedtest_cmd(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    mode: str = "quick",
+):
     if mode in ("adv", "advanced"):
         await speedtest_advanced(update)
     else:
         await speedtest_quick(update)
-        
-# ================= CORE =================
-
-def _run_speedtest_blocking():
-    result = subprocess.run(
-        ["/usr/bin/speedtest", "--format=json", "--progress=no"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=60,   # CLI timeout (penting)
-        text=True,
-    )
-    if result.returncode != 0:
-        raise Exception(result.stderr.strip())
-    return json.loads(result.stdout)
 
 
-async def run_speedtest():
-    return await asyncio.to_thread(_run_speedtest_blocking)
-
-# ================= QUICK =================
-
+# ---------- QUICK ----------
 async def speedtest_quick(update: Update):
     msg = await update.effective_message.reply_text(
         f"⏳ {SPEED_TITLE} — Running quick test..."
     )
 
     try:
-        data = await run_speedtest()
+        start = time.perf_counter()
+
+        proc = await asyncio.create_subprocess_exec(
+            "speedtest",
+            "--format=json",
+            "--progress=no",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=25)
+
+        if proc.returncode != 0:
+            raise Exception(stderr.decode() or "speedtest failed")
+
+        data = json.loads(stdout.decode())
 
         ping = round(data["ping"]["latency"], 1)
-        down = round(data["download"]["bandwidth"] * 8 / 1e6, 2)
-        up   = round(data["upload"]["bandwidth"] * 8 / 1e6, 2)
+        download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
+        upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
 
         await msg.edit_text(
             f"{EMO['ok']} {SPEED_TITLE} — Quick Results\n\n"
-            f"{EMO['ping']} Ping: {ping} ms\n"
-            f"{EMO['download']} Download: {down} Mbps\n"
-            f"{EMO['upload']} Upload: {up} Mbps\n\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"{EMO['ping']} Ping: <code>{ping} ms</code>\n"
+            f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
+            f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
+            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode="HTML",
         )
 
     except Exception as e:
-        await msg.edit_text(f"{EMO['bad']} Quick speedtest failed\n<code>{e}</code>", parse_mode="HTML")
+        await msg.edit_text(
+            f"{EMO['bad']} Quick speedtest failed\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
 
-# ================= ADVANCED =================
 
+# ---------- ADVANCED ----------
 async def speedtest_advanced(update: Update):
     msg = await update.effective_message.reply_text(
         f"⏳ {SPEED_TITLE} — Running advanced test..."
     )
 
     try:
-        data = await run_speedtest()
-
         vm = psutil.virtual_memory()
         cpu = psutil.cpu_count(logical=True)
+        ram_gb = round(vm.available / 1024**3, 1)
+
+        proc = await asyncio.create_subprocess_exec(
+            "speedtest",
+            "--format=json",
+            "--progress=no",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=35)
+
+        if proc.returncode != 0:
+            raise Exception(stderr.decode() or "speedtest failed")
+
+        data = json.loads(stdout.decode())
 
         ping = round(data["ping"]["latency"], 1)
         jitter = round(data["ping"]["jitter"], 1)
-        down = round(data["download"]["bandwidth"] * 8 / 1e6, 2)
-        up   = round(data["upload"]["bandwidth"] * 8 / 1e6, 2)
+
+        download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
+        upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
 
         server = data["server"]
-        isp = data["isp"]
+        isp = data.get("isp", "Unknown")
         ip = data["interface"]["externalIp"]
+
+        stability = (
+            "Excellent" if jitter < 5 else
+            "Good" if jitter < 15 else
+            "Poor"
+        )
+
+        avg_score = round((download + upload) / 2, 1)
 
         await msg.edit_text(
             f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
             f"💻 System: {platform.system()} {platform.release()} • "
-            f"{cpu} cores • {round(vm.available/1024**3,1)} GB available\n"
-            f"🌐 ISP: {isp}\n"
-            f"📡 IP: {ip}\n"
-            f"🖥 Server: {server['name']} ({server['location']})\n\n"
-            f"{EMO['ping']} Ping: {ping} ms\n"
-            f"📉 Jitter: {jitter} ms\n"
-            f"{EMO['download']} Download: {down} Mbps\n"
-            f"{EMO['upload']} Upload: {up} Mbps\n\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"{cpu} cores • {ram_gb} GB available\n"
+            f"🌐 Network: {isp}\n"
+            f"📡 IP: {ip}\n\n"
+            f"🏓 Ping: <code>{ping} ms</code>\n"
+            f"📉 Jitter: <code>{jitter} ms</code>\n"
+            f"{EMO['download']} Download: <code>{download} Mbps</code>\n"
+            f"{EMO['upload']} Upload: <code>{upload} Mbps</code>\n\n"
+            f"🗼 Server: {server['name']} — {server['location']}, {server['country']}\n"
+            f"📊 Stability: <b>{stability}</b>\n"
+            f"📈 Overall Score: <b>{avg_score} Mbps</b>\n\n"
+            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode="HTML",
         )
 
     except Exception as e:
-        await msg.edit_text(f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>", parse_mode="HTML")
-                                       
+        await msg.edit_text(
+            f"{EMO['bad']} Advanced speedtest failed\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
+
+# ===== END SPEEDTEST MODULE =====
+
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.perf_counter()
