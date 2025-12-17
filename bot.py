@@ -492,11 +492,11 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-# ===== SPEEDTEST MODULE (PTB SAFE, NO SPINNER) =====
+# ===== SPEEDTEST FINAL (ANTI TIMEOUT, NO ASYNC SUBPROCESS) =====
 
 import asyncio
 import json
-import time
+import subprocess
 import platform
 import psutil
 from datetime import datetime
@@ -513,13 +513,24 @@ EMO = {
     "upload": "⬆️",
 }
 
-# ==================================================
+# =============================================================
 
-async def speedtest_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    mode: str = "quick",
-):
+def run_speedtest():
+    proc = subprocess.run(
+        ["speedtest", "--format=json", "--progress=no"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=120,   # ⬅️ PENTING
+    )
+
+    if proc.returncode != 0:
+        raise Exception(proc.stderr.strip() or "speedtest failed")
+
+    return json.loads(proc.stdout)
+
+
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="quick"):
     if mode in ("adv", "advanced"):
         await speedtest_advanced(update)
     else:
@@ -533,22 +544,8 @@ async def speedtest_quick(update: Update):
     )
 
     try:
-        start = time.perf_counter()
-
-        proc = await asyncio.create_subprocess_exec(
-            "speedtest",
-            "--format=json",
-            "--progress=no",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=25)
-
-        if proc.returncode != 0:
-            raise Exception(stderr.decode() or "speedtest failed")
-
-        data = json.loads(stdout.decode())
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(None, run_speedtest)
 
         ping = round(data["ping"]["latency"], 1)
         download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
@@ -581,24 +578,11 @@ async def speedtest_advanced(update: Update):
         cpu = psutil.cpu_count(logical=True)
         ram_gb = round(vm.available / 1024**3, 1)
 
-        proc = await asyncio.create_subprocess_exec(
-            "speedtest",
-            "--format=json",
-            "--progress=no",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=35)
-
-        if proc.returncode != 0:
-            raise Exception(stderr.decode() or "speedtest failed")
-
-        data = json.loads(stdout.decode())
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(None, run_speedtest)
 
         ping = round(data["ping"]["latency"], 1)
         jitter = round(data["ping"]["jitter"], 1)
-
         download = round(data["download"]["bandwidth"] * 8 / 1_000_000, 2)
         upload = round(data["upload"]["bandwidth"] * 8 / 1_000_000, 2)
 
@@ -618,7 +602,7 @@ async def speedtest_advanced(update: Update):
             f"{EMO['ok']} {SPEED_TITLE} — Advanced Results\n\n"
             f"💻 System: {platform.system()} {platform.release()} • "
             f"{cpu} cores • {ram_gb} GB available\n"
-            f"🌐 Network: {isp}\n"
+            f"🌐 ISP: {isp}\n"
             f"📡 IP: {ip}\n\n"
             f"🏓 Ping: <code>{ping} ms</code>\n"
             f"📉 Jitter: <code>{jitter} ms</code>\n"
@@ -637,8 +621,7 @@ async def speedtest_advanced(update: Update):
             parse_mode="HTML",
         )
 
-# ===== END SPEEDTEST MODULE =====
-
+# ===== END =====
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.perf_counter()
