@@ -122,7 +122,13 @@ def progress_bar(percent: float) -> str:
 
 
 #dl core
+import asyncio, aiohttp, os, uuid, time, logging
+
+log = logging.getLogger(__name__)
+
 async def resolve_tiktok_url(url: str) -> str:
+    log.info(f"[DL] resolve tiktok url: {url}")
+
     timeout = aiohttp.ClientTimeout(total=15)
     headers = {
         "User-Agent": (
@@ -136,14 +142,18 @@ async def resolve_tiktok_url(url: str) -> str:
         async with s.get(url, allow_redirects=True) as r:
             final = str(r.url)
 
-    return final.split("?")[0]
-        
+    final = final.split("?")[0]
+    log.info(f"[DL] resolved url: {final}")
+    return final
+
+
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "yt-dlp",
+        "/usr/bin/yt-dlp",
+        "--ignore-config",
         "-f", "mp4/best",
         "--merge-output-format", "mp4",
         "--extractor-args", "tiktok:watermark=0",
@@ -155,10 +165,12 @@ async def download_media_with_progress(url: str, status_msg):
         url
     ]
 
+    log.info(f"[DL] CMD: {' '.join(cmd)}")
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.PIPE
     )
 
     last_update = 0
@@ -168,8 +180,10 @@ async def download_media_with_progress(url: str, status_msg):
         if not line:
             break
 
+        raw = line.decode(errors="ignore").strip()
+        log.debug(f"[yt-dlp][stdout] {raw}")
+
         try:
-            raw = line.decode().strip()
             if "%" not in raw or "|" not in raw:
                 continue
 
@@ -187,27 +201,42 @@ async def download_media_with_progress(url: str, status_msg):
                     parse_mode="HTML"
                 )
                 last_update = now
-        except:
-            pass
+        except Exception as e:
+            log.warning(f"[DL] progress parse error: {e}")
 
-    await proc.wait()
+    stderr = await proc.stderr.read()
+    rc = await proc.wait()
 
-    if proc.returncode != 0:
+    log.info(f"[DL] yt-dlp exit code: {rc}")
+
+    if stderr:
+        log.error(f"[yt-dlp][stderr]\n{stderr.decode(errors='ignore')}")
+
+    if rc != 0:
         return None
 
     for f in os.listdir(TMP_DIR):
         if f.startswith(uid):
-            return os.path.join(TMP_DIR, f)
+            path = os.path.join(TMP_DIR, f)
+            log.info(f"[DL] file ready: {path}")
+            return path
 
+    log.error("[DL] file not found after download")
     return None
 
-#dl
+
+# =====================
+# COMMAND /dl
+# =====================
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("❌ Kirim link video")
 
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
+    file_path = None
+
+    log.info(f"[DL] request from @{update.effective_user.username}: {raw_url}")
 
     try:
         url = raw_url
@@ -216,7 +245,7 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         file_path = await download_media_with_progress(url, status)
         if not file_path:
-            raise RuntimeError("download failed")
+            raise RuntimeError("yt-dlp returned None")
 
         await update.message.reply_video(
             video=open(file_path, "rb")
@@ -224,7 +253,8 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status.delete()
 
-    except Exception:
+    except Exception as e:
+        log.exception("[DL] FAILED")
         await status.edit_text(
             "❌ Gagal mengunduh media\n"
             "ℹ️ Coba ulang beberapa saat lagi"
@@ -234,8 +264,9 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
-        except:
-            pass
+                log.info(f"[DL] cleanup ok: {file_path}")
+        except Exception as e:
+            log.warning(f"[DL] cleanup failed: {e}")
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
