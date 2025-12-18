@@ -148,17 +148,16 @@ async def download_media_with_progress(url: str, status_msg):
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "yt-dlp",
-        "-f", "mp4/best",
-        "--merge-output-format", "mp4",
-        "--no-playlist",
-        "--newline",
-        "--extractor-args", "tiktok:watermark=0",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "-o", out_tpl,
-        url
-    ]
+    "yt-dlp",
+    "-f", "bv*+ba/b",
+    "--merge-output-format", "mp4",
+    "--no-playlist",
+    "--newline",
+    "--progress-template",
+    "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+    "-o", out_tpl,
+    url
+]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
