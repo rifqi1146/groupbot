@@ -150,7 +150,62 @@ def get_file_size(path: str) -> int:
         return os.path.getsize(path)
     except:
         return 0
-             
+
+async def _dl_worker(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_url: str, status):
+    file_path = None
+
+    try:
+        url = raw_url
+        if "tiktok.com" in raw_url:
+            url = await resolve_tiktok_url(raw_url)
+
+        file_path = await download_media_with_progress(url, status)
+        if not file_path:
+            raise RuntimeError("download failed")
+
+        size = get_file_size(file_path)
+
+        # 🔴 LIMIT TELEGRAM
+        if size > MAX_TG_SIZE:
+            await status.edit_text(
+                "⚠️ <b>File terlalu besar untuk Telegram</b>\n\n"
+                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
+                "🔗 Download manual:\n"
+                f"{url}",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+            return
+
+        # 🟡 UPLOAD
+        await status.edit_text(
+            "⬆️ <b>Mengunggah ke Telegram...</b>",
+            parse_mode="HTML"
+        )
+
+        await update.message.reply_video(
+            video=open(file_path, "rb")
+        )
+
+        await status.delete()
+
+    except Exception:
+        logger.exception("DL ERROR")
+        try:
+            await status.edit_text(
+                "❌ Gagal mengunduh media\n"
+                "ℹ️ Coba ulang beberapa saat lagi"
+            )
+        except:
+            pass
+
+    finally:
+        try:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+        except:
+            pass
+                         
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
@@ -224,54 +279,10 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
-
-    file_path = None
-
-    try:
-        url = raw_url
-        if "tiktok.com" in raw_url:
-            url = await resolve_tiktok_url(raw_url)
-
-        file_path = await download_media_with_progress(url, status)
-        if not file_path:
-            raise RuntimeError("download failed")
-
-        size = get_file_size(file_path)  # ✅ FIXED
-
-        # 🔴 LIMIT TELEGRAM
-        if size > MAX_TG_SIZE:
-            await status.edit_text(
-                "⚠️ <b>File terlalu besar untuk Telegram</b>\n\n"
-                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
-                "🔗 Download manual:\n"
-                f"{url}",
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-            return
-
-        # 🟡 UPLOAD (tanpa progress)
-        await status.edit_text("⬆️ <b>Mengunggah ke Telegram...</b>", parse_mode="HTML")
-
-        await update.message.reply_video(
-            video=open(file_path, "rb")
-        )
-
-        await status.delete()
-
-    except Exception as e:
-        logger.exception("DL ERROR")
-        await status.edit_text(
-            "❌ Gagal mengunduh media\n"
-            "ℹ️ Coba ulang beberapa saat lagi"
-        )
-
-    finally:
-        try:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-        except:
-            pass
+    
+    context.application.create_task(
+        _dl_worker(update, context, raw_url, status)
+    )
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
