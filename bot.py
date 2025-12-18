@@ -148,16 +148,15 @@ async def download_media_with_progress(url: str, status_msg):
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "/usr/bin/yt-dlp",   # ⬅️ PAKSA system yt-dlp
-        "-f", "bv*+ba/b",
-        "--merge-output-format", "mp4",
-        "--no-playlist",
-        "--extractor-args", "tiktok:watermark=0",
-        "--newline",
-        "--print", "after_move:filepath",
-        "-o", out_tpl,
-        url
-    ]
+    "/usr/bin/yt-dlp",
+    "--ignore-config",          # ⬅️ INI KUNCI
+    "-f", "bv*+ba/b",
+    "--merge-output-format", "mp4",
+    "--no-playlist",
+    "--extractor-args", "tiktok:watermark=0",
+    "-o", out_tpl,
+    url
+]
 
     # 🔥 LOG COMMAND
     logger.info("[DL] CMD: %s", " ".join(cmd))
