@@ -88,7 +88,8 @@ app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
-TMP_DIR = "/tmp"
+TMP_DIR = "/root/groupbot/downloads"
+os.makedirs(TMP_DIR, exist_ok=True)
 
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
@@ -122,7 +123,7 @@ def progress_bar(percent: float) -> str:
 
 #dl core
 async def resolve_tiktok_url(url: str) -> str:
-    timeout = aiohttp.ClientTimeout(total=20)
+    timeout = aiohttp.ClientTimeout(total=15)
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Linux; Android 13) "
@@ -133,75 +134,71 @@ async def resolve_tiktok_url(url: str) -> str:
 
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as s:
         async with s.get(url, allow_redirects=True) as r:
-            final_url = str(r.url)
+            final = str(r.url)
 
-    # buang parameter panjang tiktok
-    final_url = final_url.split("?")[0]
-
-    if "/video/" not in final_url:
-        raise Exception("Invalid TikTok URL")
-
-    return final_url
+    return final.split("?")[0]
         
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-    "/usr/bin/yt-dlp",
-    "--ignore-config",          # ⬅️ INI KUNCI
-    "-f", "bv*+ba/b",
-    "--merge-output-format", "mp4",
-    "--no-playlist",
-    "--extractor-args", "tiktok:watermark=0",
-    "-o", out_tpl,
-    url
-]
-
-    # 🔥 LOG COMMAND
-    logger.info("[DL] CMD: %s", " ".join(cmd))
+        "yt-dlp",
+        "-f", "mp4/best",
+        "--merge-output-format", "mp4",
+        "--extractor-args", "tiktok:watermark=0",
+        "--no-playlist",
+        "--newline",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+        "-o", out_tpl,
+        url
+    ]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE   # ⬅️ JANGAN DEVNULL
+        stderr=asyncio.subprocess.DEVNULL
     )
 
-    stdout_log = []
-    stderr_log = []
+    last_update = 0
 
     while True:
         line = await proc.stdout.readline()
         if not line:
             break
-        decoded = line.decode(errors="ignore").strip()
-        stdout_log.append(decoded)
-        logger.info("[yt-dlp][stdout] %s", decoded)
 
-    while True:
-        line = await proc.stderr.readline()
-        if not line:
-            break
-        decoded = line.decode(errors="ignore").strip()
-        stderr_log.append(decoded)
-        logger.error("[yt-dlp][stderr] %s", decoded)
+        try:
+            raw = line.decode().strip()
+            if "%" not in raw or "|" not in raw:
+                continue
+
+            percent_str, speed, eta = raw.split("|")
+            percent = float(percent_str.replace("%", "").strip())
+
+            now = time.time()
+            if now - last_update >= 2:
+                bar = progress_bar(percent)
+                await status_msg.edit_text(
+                    f"⬇️ <b>Mengunduh media...</b>\n\n"
+                    f"<code>{bar} {percent:.1f}%</code>\n"
+                    f"🚀 Speed: <b>{speed}</b>\n"
+                    f"⏳ ETA: <b>{eta}</b>",
+                    parse_mode="HTML"
+                )
+                last_update = now
+        except:
+            pass
 
     await proc.wait()
 
-    # ❌ GAGAL
     if proc.returncode != 0:
-        logger.error("[DL] yt-dlp exit code: %s", proc.returncode)
-        logger.error("[DL] STDERR:\n%s", "\n".join(stderr_log[-20:]))
         return None
 
-    # ✅ CARI FILE
     for f in os.listdir(TMP_DIR):
         if f.startswith(uid):
-            path = os.path.join(TMP_DIR, f)
-            logger.info("[DL] SUCCESS: %s", path)
-            return path
+            return os.path.join(TMP_DIR, f)
 
-    logger.error("[DL] File not found after download")
     return None
 
 #dl
@@ -217,24 +214,28 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
-        logger.info("[DL] URL FINAL: %s", url)
-
         file_path = await download_media_with_progress(url, status)
         if not file_path:
-            raise RuntimeError("yt-dlp returned None")
+            raise RuntimeError("download failed")
 
-        await update.message.reply_video(video=open(file_path, "rb"))
+        await update.message.reply_video(
+            video=open(file_path, "rb")
+        )
 
         await status.delete()
 
-        os.remove(file_path)
-
-    except Exception as e:
-        logger.exception("[DL] FAILED")
+    except Exception:
         await status.edit_text(
             "❌ Gagal mengunduh media\n"
-            "ℹ️ Detail error tercatat di log"
+            "ℹ️ Coba ulang beberapa saat lagi"
         )
+
+    finally:
+        try:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+        except:
+            pass
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
