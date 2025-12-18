@@ -90,7 +90,7 @@ USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
 TMP_DIR = "/root/groupbot/downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
-
+MAX_TG_SIZE = 50 * 1024 * 1024
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
     try:
@@ -146,7 +146,12 @@ async def resolve_tiktok_url(url: str) -> str:
     log.info(f"[DL] resolved url: {final}")
     return final
 
-
+def get_file_size(path: str) -> int:
+    try:
+        return os.path.getsize(path)
+    except:
+        return 0
+       
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
@@ -234,9 +239,8 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     raw_url = context.args[0]
     status = await update.message.reply_text("🔄 Memproses...")
-    file_path = None
 
-    log.info(f"[DL] request from @{update.effective_user.username}: {raw_url}")
+    file_path = None
 
     try:
         url = raw_url
@@ -245,8 +249,23 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         file_path = await download_media_with_progress(url, status)
         if not file_path:
-            raise RuntimeError("yt-dlp returned None")
+            raise RuntimeError("download failed")
 
+        size = get_file_size(file_path)
+
+        # 🔴 FALLBACK LOGIC
+        if size > MAX_TG_SIZE:
+            await status.edit_text(
+                "⚠️ <b>File terlalu besar</b>\n\n"
+                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
+                "🔗 Download manual:\n"
+                f"{url}",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+            return
+
+        # ✅ AMAN → upload
         await update.message.reply_video(
             video=open(file_path, "rb")
         )
@@ -254,7 +273,6 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.delete()
 
     except Exception as e:
-        log.exception("[DL] FAILED")
         await status.edit_text(
             "❌ Gagal mengunduh media\n"
             "ℹ️ Coba ulang beberapa saat lagi"
@@ -264,9 +282,8 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
-                log.info(f"[DL] cleanup ok: {file_path}")
-        except Exception as e:
-            log.warning(f"[DL] cleanup failed: {e}")
+        except:
+            pass
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
