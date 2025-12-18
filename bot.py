@@ -90,7 +90,7 @@ USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
 TMP_DIR = "/root/groupbot/downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
-MAX_TG_SIZE = 100 * 1024 * 1024
+MAX_TG_SIZE = 1900 * 1024 * 1024
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
     try:
@@ -341,24 +341,13 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    start = time.perf_counter()
+    start = update.message.date.timestamp()
+    now = time.time()
 
-    # kirim pesan awal
-    msg = await update.message.reply_text("🏓 <b>Pinging...</b>", parse_mode="HTML")
+    latency = int((now - start) * 1000)
 
-    end = time.perf_counter()
-    ms = int((end - start) * 1000)
-
-    if ms < 150:
-        emo = "⚡"
-    elif ms < 500:
-        emo = "🔥"
-    else:
-        emo = "🐌"
-
-    await msg.edit_text(
-        f"{emo} <b>Pong!</b>\n"
-        f"⏱️ <b>Latency:</b> <code>{ms} ms</code>",
+    await update.message.reply_text(
+        f"⚡ <b>Pong!</b>\n⏱️ Latency: <code>{latency} ms</code>",
         parse_mode="HTML"
     )
 
