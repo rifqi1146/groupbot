@@ -115,21 +115,11 @@ def save_ai_mode(data):
 _ai_mode = load_ai_mode()
 
 #mbuh
-def make_bar(percent: float, length: int = 12) -> str:
-    filled = int(length * percent / 100)
-    return "█" * filled + "░" * (length - filled)
-    
 def progress_bar(percent: float) -> str:
     filled = int(percent // 10)
     empty = 10 - filled
     return "█" * filled + "░" * empty
 
-async def _safe_edit(msg, text):
-    try:
-        await msg.edit_text(text, parse_mode="HTML")
-    except:
-        pass
-        
 #dl core
 import asyncio, aiohttp, os, uuid, time, logging
 
@@ -160,29 +150,6 @@ def get_file_size(path: str) -> int:
         return os.path.getsize(path)
     except:
         return 0
-
-def upload_progress(current, total, status_msg, start_time, state, app):
-    if total == 0:
-        return
-
-    now = time.time()
-    if now - state["last"] < 3:  # ⏱️ throttle
-        return
-
-    percent = current * 100 / total
-    speed = current / max(now - start_time, 1)
-    speed_mb = speed / (1024 * 1024)
-
-    bar = progress_bar(percent)
-
-    text = (
-        "⬆️ <b>Mengunggah ke Telegram...</b>\n\n"
-        f"<code>{bar} {percent:.1f}%</code>\n"
-        f"🚀 Speed: <b>{speed_mb:.2f} MB/s</b>"
-    )
-
-    app.create_task(_safe_edit(status_msg, text))
-    state["last"] = now
              
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
@@ -224,23 +191,21 @@ async def download_media_with_progress(url: str, status_msg):
             percent = float(percent_str.replace("%", "").strip())
 
             now = time.time()
-            if now - last_update >= 3:  # ⏱️ throttle
+            if now - last_update >= 3:  # ⏱️ 3 detik
                 bar = progress_bar(percent)
-                await _safe_edit(
-                    status_msg,
-                    (
-                        "⬇️ <b>Mengunduh media...</b>\n\n"
-                        f"<code>{bar} {percent:.1f}%</code>\n"
-                        f"🚀 Speed: <b>{speed}</b>\n"
-                        f"⏳ ETA: <b>{eta}</b>"
-                    )
+                await status_msg.edit_text(
+                    f"⬇️ <b>Mengunduh media...</b>\n\n"
+                    f"<code>{bar} {percent:.1f}%</code>\n"
+                    f"🚀 Speed: <b>{speed}</b>\n"
+                    f"⏳ ETA: <b>{eta}</b>",
+                    parse_mode="HTML"
                 )
                 last_update = now
         except:
             pass
 
-    rc = await proc.wait()
-    if rc != 0:
+    await proc.wait()
+    if proc.returncode != 0:
         return None
 
     for f in os.listdir(TMP_DIR):
@@ -271,32 +236,12 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not file_path:
             raise RuntimeError("download failed")
 
-        size = os.path.getsize(file_path)
-        if size > MAX_TG_SIZE:
-            await status.edit_text(
-                "⚠️ <b>File terlalu besar</b>\n\n"
-                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
-                "🔗 Download manual:\n"
-                f"{url}",
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-            return
+        # 🟡 Upload phase (TEXT ONLY)
+        await status.edit_text("⬆️ <b>Mengunggah ke Telegram...</b>", parse_mode="HTML")
 
-        start_time = time.time()
-        state = {"last": 0}
-
-        with open(file_path, "rb") as f:
-            await update.message.reply_video(
-                video=f,
-                progress=upload_progress,
-                progress_args=(
-                    status,
-                    start_time,
-                    state,
-                    context.application,
-                )
-            )
+        await update.message.reply_video(
+            video=open(file_path, "rb")
+        )
 
         await status.delete()
 
