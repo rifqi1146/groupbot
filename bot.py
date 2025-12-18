@@ -141,7 +141,14 @@ async def resolve_tiktok_url(url: str) -> str:
         async with s.get(url, allow_redirects=True) as r:
             final = str(r.url)
 
+    # 🔴 CLEAN HARD
+    final = final.replace("\n", "").replace("\r", "").strip()
     final = final.split("?")[0]
+
+    # 🔒 VALIDASI
+    if "/video/" not in final:
+        raise RuntimeError(f"Invalid TikTok URL resolved: {final}")
+
     log.info(f"[DL] resolved url: {final}")
     return final
 
