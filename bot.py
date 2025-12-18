@@ -2036,9 +2036,9 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
-    "ip", ip_cmd),
-    "whoisdomain", whoisdomain_cmd),
-    "domain", domain_cmd),
+    "ip": ip_cmd),
+    "whoisdomain": whoisdomain_cmd),
+    "domain": domain_cmd),
     "tr": tr_cmd,
     "gsearch": gsearch_cmd,
     "ping": ping_cmd,
