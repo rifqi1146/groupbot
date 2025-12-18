@@ -233,10 +233,10 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             url = await resolve_tiktok_url(raw_url)
 
         file_path = await download_media_with_progress(url, status)
-if not file_path:
-    raise RuntimeError("download failed")
+        if not file_path:
+            raise RuntimeError("download failed")
 
-size = get_file_size(file_path)
+        size = get_file_size(file_path)  # ✅ FIXED
 
         # 🔴 LIMIT TELEGRAM
         if size > MAX_TG_SIZE:
@@ -250,7 +250,7 @@ size = get_file_size(file_path)
             )
             return
 
-        # 🟡 UPLOAD (TEXT ONLY, NO PROGRESS)
+        # 🟡 UPLOAD (tanpa progress)
         await status.edit_text("⬆️ <b>Mengunggah ke Telegram...</b>", parse_mode="HTML")
 
         await update.message.reply_video(
@@ -259,7 +259,8 @@ size = get_file_size(file_path)
 
         await status.delete()
 
-    except Exception:
+    except Exception as e:
+        logger.exception("DL ERROR")
         await status.edit_text(
             "❌ Gagal mengunduh media\n"
             "ℹ️ Coba ulang beberapa saat lagi"
