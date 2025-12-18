@@ -124,7 +124,12 @@ def progress_bar(percent: float) -> str:
     empty = 10 - filled
     return "█" * filled + "░" * empty
 
-
+async def _safe_edit(msg, text):
+    try:
+        await msg.edit_text(text, parse_mode="HTML")
+    except:
+        pass
+        
 #dl core
 import asyncio, aiohttp, os, uuid, time, logging
 
@@ -156,19 +161,19 @@ def get_file_size(path: str) -> int:
     except:
         return 0
 
-async def upload_progress(current, total, status_msg, start_time, state):
+def upload_progress(current, total, status_msg, start_time, state, app):
     if total == 0:
         return
 
     now = time.time()
-    if now - state["last"] < 3:
-        return  # ⛔ throttle 3 detik
+    if now - state["last"] < 3:  # ⏱️ throttle
+        return
 
     percent = current * 100 / total
     speed = current / max(now - start_time, 1)
     speed_mb = speed / (1024 * 1024)
 
-    bar = make_bar(percent)
+    bar = progress_bar(percent)
 
     text = (
         "⬆️ <b>Mengunggah ke Telegram...</b>\n\n"
@@ -176,11 +181,8 @@ async def upload_progress(current, total, status_msg, start_time, state):
         f"🚀 Speed: <b>{speed_mb:.2f} MB/s</b>"
     )
 
-    try:
-        await status_msg.edit_text(text, parse_mode="HTML")
-        state["last"] = now
-    except:
-        pass
+    app.create_task(_safe_edit(status_msg, text))
+    state["last"] = now
              
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
@@ -200,12 +202,10 @@ async def download_media_with_progress(url: str, status_msg):
         url
     ]
 
-    log.info(f"[DL] CMD: {' '.join(cmd)}")
-
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.DEVNULL
     )
 
     last_update = 0
@@ -216,47 +216,37 @@ async def download_media_with_progress(url: str, status_msg):
             break
 
         raw = line.decode(errors="ignore").strip()
-        log.debug(f"[yt-dlp][stdout] {raw}")
+        if "%" not in raw or "|" not in raw:
+            continue
 
         try:
-            if "%" not in raw or "|" not in raw:
-                continue
-
             percent_str, speed, eta = raw.split("|")
             percent = float(percent_str.replace("%", "").strip())
 
             now = time.time()
-            if now - last_update >= 2:
+            if now - last_update >= 3:  # ⏱️ throttle
                 bar = progress_bar(percent)
-                await status_msg.edit_text(
-                    f"⬇️ <b>Mengunduh media...</b>\n\n"
-                    f"<code>{bar} {percent:.1f}%</code>\n"
-                    f"🚀 Speed: <b>{speed}</b>\n"
-                    f"⏳ ETA: <b>{eta}</b>",
-                    parse_mode="HTML"
+                await _safe_edit(
+                    status_msg,
+                    (
+                        "⬇️ <b>Mengunduh media...</b>\n\n"
+                        f"<code>{bar} {percent:.1f}%</code>\n"
+                        f"🚀 Speed: <b>{speed}</b>\n"
+                        f"⏳ ETA: <b>{eta}</b>"
+                    )
                 )
                 last_update = now
-        except Exception as e:
-            log.warning(f"[DL] progress parse error: {e}")
+        except:
+            pass
 
-    stderr = await proc.stderr.read()
     rc = await proc.wait()
-
-    log.info(f"[DL] yt-dlp exit code: {rc}")
-
-    if stderr:
-        log.error(f"[yt-dlp][stderr]\n{stderr.decode(errors='ignore')}")
-
     if rc != 0:
         return None
 
     for f in os.listdir(TMP_DIR):
         if f.startswith(uid):
-            path = os.path.join(TMP_DIR, f)
-            log.info(f"[DL] file ready: {path}")
-            return path
+            return os.path.join(TMP_DIR, f)
 
-    log.error("[DL] file not found after download")
     return None
 
 
@@ -277,14 +267,11 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
-        # ⬇️ DOWNLOAD (progress sudah throttle 3 detik di fungsi lu)
         file_path = await download_media_with_progress(url, status)
         if not file_path:
             raise RuntimeError("download failed")
 
-        size = get_file_size(file_path)
-
-        # 🔴 fallback kalau > limit telegram
+        size = os.path.getsize(file_path)
         if size > MAX_TG_SIZE:
             await status.edit_text(
                 "⚠️ <b>File terlalu besar</b>\n\n"
@@ -296,7 +283,6 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ⬆️ UPLOAD dengan progress bar
         start_time = time.time()
         state = {"last": 0}
 
@@ -304,13 +290,17 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_video(
                 video=f,
                 progress=upload_progress,
-                progress_args=(status, start_time, state)
+                progress_args=(
+                    status,
+                    start_time,
+                    state,
+                    context.application,
+                )
             )
 
-        # 🧹 bersih UX
         await status.delete()
 
-    except Exception as e:
+    except Exception:
         await status.edit_text(
             "❌ Gagal mengunduh media\n"
             "ℹ️ Coba ulang beberapa saat lagi"
