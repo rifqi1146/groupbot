@@ -90,7 +90,7 @@ USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
 TMP_DIR = "/root/groupbot/downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
-MAX_TG_SIZE = 50 * 1024 * 1024
+MAX_TG_SIZE = 100 * 1024 * 1024
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
     try:
@@ -236,7 +236,21 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not file_path:
             raise RuntimeError("download failed")
 
-        # 🟡 Upload phase (TEXT ONLY)
+        size = os.path.get_file_size(file_path)
+
+        # 🔴 LIMIT TELEGRAM
+        if size > MAX_TG_SIZE:
+            await status.edit_text(
+                "⚠️ <b>File terlalu besar untuk Telegram</b>\n\n"
+                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
+                "🔗 Download manual:\n"
+                f"{url}",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+            return
+
+        # 🟡 UPLOAD (TEXT ONLY, NO PROGRESS)
         await status.edit_text("⬆️ <b>Mengunggah ke Telegram...</b>", parse_mode="HTML")
 
         await update.message.reply_video(
