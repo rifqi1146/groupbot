@@ -115,6 +115,10 @@ def save_ai_mode(data):
 _ai_mode = load_ai_mode()
 
 #mbuh
+def make_bar(percent: float, length: int = 12) -> str:
+    filled = int(length * percent / 100)
+    return "█" * filled + "░" * (length - filled)
+    
 def progress_bar(percent: float) -> str:
     filled = int(percent // 10)
     empty = 10 - filled
@@ -151,7 +155,33 @@ def get_file_size(path: str) -> int:
         return os.path.getsize(path)
     except:
         return 0
-       
+
+async def upload_progress(current, total, status_msg, start_time, state):
+    if total == 0:
+        return
+
+    now = time.time()
+    if now - state["last"] < 3:
+        return  # ⛔ throttle 3 detik
+
+    percent = current * 100 / total
+    speed = current / max(now - start_time, 1)
+    speed_mb = speed / (1024 * 1024)
+
+    bar = make_bar(percent)
+
+    text = (
+        "⬆️ <b>Mengunggah ke Telegram...</b>\n\n"
+        f"<code>{bar} {percent:.1f}%</code>\n"
+        f"🚀 Speed: <b>{speed_mb:.2f} MB/s</b>"
+    )
+
+    try:
+        await status_msg.edit_text(text, parse_mode="HTML")
+        state["last"] = now
+    except:
+        pass
+             
 async def download_media_with_progress(url: str, status_msg):
     uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
@@ -247,13 +277,14 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
+        # ⬇️ DOWNLOAD (progress sudah throttle 3 detik di fungsi lu)
         file_path = await download_media_with_progress(url, status)
         if not file_path:
             raise RuntimeError("download failed")
 
         size = get_file_size(file_path)
 
-        # 🔴 FALLBACK LOGIC
+        # 🔴 fallback kalau > limit telegram
         if size > MAX_TG_SIZE:
             await status.edit_text(
                 "⚠️ <b>File terlalu besar</b>\n\n"
@@ -265,11 +296,18 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ✅ AMAN → upload
-        await update.message.reply_video(
-            video=open(file_path, "rb")
-        )
+        # ⬆️ UPLOAD dengan progress bar
+        start_time = time.time()
+        state = {"last": 0}
 
+        with open(file_path, "rb") as f:
+            await update.message.reply_video(
+                video=f,
+                progress=upload_progress,
+                progress_args=(status, start_time, state)
+            )
+
+        # 🧹 bersih UX
         await status.delete()
 
     except Exception as e:
