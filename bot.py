@@ -233,10 +233,10 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             url = await resolve_tiktok_url(raw_url)
 
         file_path = await download_media_with_progress(url, status)
-        if not file_path:
-            raise RuntimeError("download failed")
+if not file_path:
+    raise RuntimeError("download failed")
 
-        size = os.path.get_file_size(file_path)
+size = get_file_size(file_path)
 
         # 🔴 LIMIT TELEGRAM
         if size > MAX_TG_SIZE:
