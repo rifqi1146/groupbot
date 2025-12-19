@@ -204,15 +204,17 @@ async def download_media(
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "/opt/yt-dlp/groupbot/yt-dlp",   # ⬅️ pastiin path bener
-        "-f", fmt["format"],
-        "--no-playlist",
-        "--newline",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "-o", out_tpl,
-        url
-    ]
+    "/opt/yt-dlp/groupbot/yt-dlp",
+    "--impersonate", "chrome",
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "--add-header", "Accept-Language:en-US,en;q=0.9",
+    "-f", fmt["format"],
+    "--newline",
+    "--progress-template",
+    "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+    "-o", out_tpl,
+    url
+]
 
     if fmt["ext"] == "mp3":
         cmd += [
