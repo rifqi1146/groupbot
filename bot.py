@@ -655,12 +655,14 @@ async def dl3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link TikTok")
 
     url = context.args[0]
+    user_msg_id = update.message.message_id  # 🔑 ini kuncinya
 
     status = await update.message.reply_text(
         "⏳ <b>Memproses Douyin API...</b>",
         parse_mode="HTML"
     )
 
+    path = None
     try:
         path = await douyin_api_download(
             url,
@@ -672,7 +674,10 @@ async def dl3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
 
         with open(path, "rb") as f:
-            await update.effective_chat.send_video(f)
+            await update.effective_chat.send_video(
+                video=f,
+                reply_to_message_id=user_msg_id  # ✅ reply ke command user
+            )
 
         await status.delete()
 
@@ -680,7 +685,7 @@ async def dl3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text(f"❌ Gagal: {e}")
 
     finally:
-        if os.path.exists(path):
+        if path and os.path.exists(path):
             os.remove(path)
             
 # utils_groq_poll18.py
