@@ -78,12 +78,10 @@ logger = logging.getLogger(__name__)
 
 # Load env
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
 
-if not TOKEN:
-    raise SystemExit("BOT_TOKEN missing in .env")
-
-app = Application.builder().token(TOKEN).concurrent_updates(True).build()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN not set")
 
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
