@@ -90,7 +90,7 @@ USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
 TMP_DIR = "/root/groupbot/downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
-MAX_TG_SIZE = 1900 * 1024 * 1024
+MAX_TG_SIZE = 1000 * 1024 * 1024
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
     try:
@@ -219,8 +219,7 @@ async def download_media_with_progress(url: str, status_msg):
 
     cmd = [
         "/usr/bin/yt-dlp",
-        "--ignore-config",
-        "-f", "mp4/best",
+         "-f", "mp4/best",
         "--merge-output-format", "mp4",
         "--extractor-args", "tiktok:watermark=0",
         "--no-playlist",
