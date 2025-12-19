@@ -88,7 +88,6 @@ app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
-TMP_DIR = "/root/groupbot/downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 MAX_TG_SIZE = 1000 * 1024 * 1024
 # ---- simple JSON helpers ----
@@ -2213,10 +2212,14 @@ def main():
     # BUILD APPLICATION
     # ======================
     app = (
-        ApplicationBuilder()
-        .token(TOKEN)
-        .build()
-    )
+     ApplicationBuilder()
+    .token(BOT_TOKEN)
+    .read_timeout(300)
+    .write_timeout(300)
+    .connect_timeout(300)
+    .pool_timeout(300)
+    .build()
+)
 
     # ======================
     # CORE COMMANDS
