@@ -110,61 +110,25 @@ def save_ai_mode(data):
 _ai_mode = load_ai_mode()
 
 # =========================
-# ASUPAN TIKTOK (SOFT NSFW)
-# TikTokApi v7 FIXED
+# ASUPAN TIKTOK (TIKWM ONLY)
 # =========================
-import sys, os, json, random, asyncio, logging
+import aiohttp, random, logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-# ===== inject asupan venv =====
-ASUPAN_SITE_PACKAGES = os.path.join(
-    os.path.dirname(__file__),
-    "asupan",
-    "asupan_venv",
-    "lib"
-)
-
-for root, dirs, files in os.walk(ASUPAN_SITE_PACKAGES):
-    if root.endswith("site-packages") and root not in sys.path:
-        sys.path.insert(0, root)
-
-from TikTokApi import TikTokApi
-
 log = logging.getLogger(__name__)
 
-ASUPAN_TOKEN_FILE = "asupan_tokens.json"
-
 # =========================
-# TOKEN STORAGE
-# =========================
-def load_tokens():
-    if not os.path.exists(ASUPAN_TOKEN_FILE):
-        return []
-    with open(ASUPAN_TOKEN_FILE, "r") as f:
-        return json.load(f)
-
-def save_tokens(tokens):
-    with open(ASUPAN_TOKEN_FILE, "w") as f:
-        json.dump(tokens, f)
-
-def get_random_token():
-    tokens = load_tokens()
-    if not tokens:
-        raise RuntimeError("ms_token kosong, pakai /asupantoken dulu")
-    return random.choice(tokens)
-
-# =========================
-# KEYWORDS (SOFT ONLY)
+# KEYWORDS ASUPAN INDO
 # =========================
 ASUPAN_KEYWORDS = [
-    "cewek cantik",
-    "cewek tiktok",
-    "cewek joget",
-    "dance tiktok girl",
-    "cosplay girl",
-    "cewek aesthetic",
-    "soft girl tiktok",
+    "cewek indo",
+    "cewek tiktok indo",
+    "cewek joget indo",
+    "cewek cantik indo",
+    "cewek hijab",
+    "cewek jawa",
+    "cewek lucu indo"
 ]
 
 # =========================
@@ -176,108 +140,80 @@ def asupan_keyboard():
     ])
 
 # =========================
-# FETCH ASUPAN (FIXED)
+# FETCH ASUPAN VIA TIKWM
 # =========================
-async def fetch_asupan():
-    ms_token = get_random_token()
+async def fetch_asupan_tikwm():
     keyword = random.choice(ASUPAN_KEYWORDS)
 
-    async with TikTokApi() as api:
-        await api.create_sessions(
-            ms_tokens=[ms_token],
-            num_sessions=1,
-            sleep_after=3
-        )
+    api_url = "https://www.tikwm.com/api/feed/search"
+    payload = {
+        "keywords": keyword,
+        "count": 20,
+        "cursor": 0
+    }
 
-        videos = []
-        async for v in api.search(
-            keyword,
-            search_type="video",
-            count=15
-        ):
-            videos.append(v)
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "Mozilla/5.0"}
+    ) as session:
+        async with session.post(api_url, data=payload, timeout=20) as r:
+            if r.status != 200:
+                raise RuntimeError("TikWM HTTP error")
 
+            data = await r.json()
+
+    videos = data.get("data", {}).get("videos", [])
     if not videos:
         raise RuntimeError("Asupan kosong")
 
     v = random.choice(videos)
 
     return {
-        "url": v.video.play_addr,
-        "desc": (v.desc[:200] if v.desc else "asupan 🔥"),
-        "keyword": keyword
+        "video": v["play"],
+        "desc": v.get("title") or "asupan 🔥"
     }
 
 # =========================
 # /asupan COMMAND
 # =========================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("⏳ Nyari asupan...")
+    status = await update.message.reply_text("⏳ Nyari asupan indo...")
 
     try:
-        data = await fetch_asupan()
+        data = await fetch_asupan_tikwm()
 
-        await msg.edit_text(
-            f"🔥 <b>ASUPAN</b>\n"
-            f"🔎 <i>{data['keyword']}</i>\n\n"
-            f"{data['desc']}",
-            parse_mode="HTML"
-        )
+        await status.delete()
 
         await update.effective_chat.send_video(
-            video=data["url"],
+            video=data["video"],
+            caption=f"🔥 <b>ASUPAN INDO</b>\n\n{data['desc']}",
+            parse_mode="HTML",
             reply_to_message_id=update.message.message_id,
             reply_markup=asupan_keyboard()
         )
 
     except Exception as e:
-        await msg.edit_text(f"❌ Gagal: {e}")
+        await status.edit_text(f"❌ Gagal: {e}")
 
 # =========================
-# CALLBACK (GANTI ASUPAN)
+# CALLBACK: GANTI ASUPAN
 # =========================
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
     try:
-        data = await fetch_asupan()
+        data = await fetch_asupan_tikwm()
 
         await q.message.reply_video(
-            video=data["url"],
-            caption=(
-                f"🔥 <b>ASUPAN</b>\n"
-                f"🔎 <i>{data['keyword']}</i>\n\n"
-                f"{data['desc']}"
-            ),
+            video=data["video"],
+            caption=f"🔥 <b>ASUPAN INDO</b>\n\n{data['desc']}",
             parse_mode="HTML",
             reply_markup=asupan_keyboard()
         )
 
     except Exception as e:
         await q.message.reply_text(f"❌ Gagal: {e}")
-
-# =========================
-# UPDATE MS TOKEN VIA TELEGRAM
-# =========================
-async def asupan_token_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text(
-            "❌ Kirim:\n<code>/asupantoken MS_TOKEN_KAMU</code>",
-            parse_mode="HTML"
-        )
-
-    token = context.args[0].strip()
-    tokens = load_tokens()
-
-    if token not in tokens:
-        tokens.append(token)
-        save_tokens(tokens)
-
-    await update.message.reply_text(
-        f"✅ ms_token ditambahkan\nTotal token: {len(tokens)}"
-    )
-    
+        
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
 # =====================
@@ -2424,7 +2360,6 @@ def main():
     app.add_handler(CommandHandler("tr", tr_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
     app.add_handler(CommandHandler("asupan", asupan_cmd))
-    app.add_handler(CommandHandler("asupantoken", asupan_token_cmd))
 
 
     # ======================
