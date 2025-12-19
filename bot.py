@@ -314,7 +314,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="⚠️ Douyin gagal, fallback ke yt-dlp...",
+                    text="⚠️ Download gagal, fallback ke yt-dlp...",
                     parse_mode="HTML"
                 )
                 path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
