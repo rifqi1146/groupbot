@@ -198,21 +198,6 @@ async def download_media(
     out_tpl = f"{TMP_DIR}/%(id)s.%(ext)s"
     final_path = None
 
-    # ===== BASE CMD =====
-    cmd = [
-    "/opt/yt-dlp/userbot/yt-dlp",
-    "-f", "mp4/best",
-    "--merge-output-format", "mp4",
-    "--extractor-args", "tiktok:watermark=0",
-    "--no-playlist",
-    "--newline",
-    "--progress-template",
-    "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-    "-o", out_tpl,
-    url
-]
-
-    # ===== FORMAT =====
     if fmt_key == "mp3":
         cmd = [
             "/opt/yt-dlp/groupbot/yt-dlp",
@@ -220,14 +205,24 @@ async def download_media(
             "--extract-audio",
             "--audio-format", "mp3",
             "--audio-quality", "0",
-        ] + cmd[1:]
+        ]
     else:
         cmd = [
-            "/opt/yt-dlp/groupbot/yt-dlp",
-            "-f", "bv*[ext=mp4]/b",
+            "/opt/yt-dlp/userbot/yt-dlp",   # ← samain userbot
+            "-f", "mp4/best",
             "--merge-output-format", "mp4",
-            "--extractor-args", "tiktok:watermark=0;impersonate=false",
-        ] + cmd[1:]
+            "--extractor-args", "tiktok:watermark=0",
+        ]
+
+    cmd += [
+        "--no-playlist",
+        "--newline",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+        "--print", "after_move:filepath",
+        "-o", out_tpl,
+        url,
+    ]
 
     log.info(f"[DL] CMD: {' '.join(cmd)}")
 
@@ -248,7 +243,7 @@ async def download_media(
             raw = line.decode(errors="ignore").strip()
             log.debug(f"[yt-dlp] {raw}")
 
-            # 🟢 PROGRESS
+            # 📊 PROGRESS
             if "|" in raw:
                 try:
                     percent_s, speed, eta = raw.split("|", 2)
@@ -272,7 +267,7 @@ async def download_media(
                 except:
                     pass
 
-            # 🔑 PATH FINAL
+            # 📁 FILEPATH FINAL
             elif raw.startswith(TMP_DIR):
                 final_path = raw
 
