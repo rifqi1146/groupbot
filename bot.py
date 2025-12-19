@@ -109,16 +109,10 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
-#mbuh
-def progress_bar(percent: float) -> str:
-    filled = int(percent // 10)
-    empty = 10 - filled
-    return "█" * filled + "░" * empty
-
 # =====================
-# DL CONFIG (STABLE + PROGRESS)
+# DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
 # =====================
-import asyncio, aiohttp, os, uuid, time, logging
+import asyncio, aiohttp, os, uuid, time, re, logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -127,20 +121,14 @@ log = logging.getLogger(__name__)
 TMP_DIR = "downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 
-MAX_TG_SIZE = 1900 * 1024 * 1024  # ~1.9GB
+MAX_TG_SIZE = 1900 * 1024 * 1024
 
 # =====================
 # FORMAT MAP
 # =====================
 DL_FORMATS = {
-    "video": {
-        "label": "🎥 Video",
-        "ext": "mp4",
-    },
-    "mp3": {
-        "label": "🎵 MP3",
-        "ext": "mp3",
-    }
+    "video": {"label": "🎥 Video"},
+    "mp3": {"label": "🎵 MP3"},
 }
 
 DL_CACHE = {}
@@ -170,7 +158,7 @@ def is_youtube(url: str) -> bool:
     return any(x in url for x in ("youtube.com", "youtu.be", "music.youtube.com"))
 
 # =====================
-# RESOLVE TIKTOK
+# RESOLVE TIKTOK SHORT URL
 # =====================
 async def resolve_tiktok_url(url: str) -> str:
     async with aiohttp.ClientSession(
@@ -180,50 +168,77 @@ async def resolve_tiktok_url(url: str) -> str:
         async with s.get(url, allow_redirects=True) as r:
             final = str(r.url)
 
-    final = final.split("?")[0].strip()
+    final = final.split("?")[0]
     if "/video/" not in final:
         raise RuntimeError("Invalid TikTok URL")
     return final
 
 # =====================
-# DOWNLOAD CORE (PROGRESS)
+# DOUYIN API DOWNLOAD (PRIMARY)
 # =====================
-async def download_media(
-    url: str,
-    fmt_key: str,          # "video" / "mp3"
-    bot,
-    chat_id: int,
-    status_msg_id: int
-):
-    import re, os, time, asyncio, uuid, logging
+async def douyin_download(url, bot, chat_id, status_msg_id):
+    uid = uuid.uuid4().hex
+    out_path = f"{TMP_DIR}/{uid}.mp4"
 
-    log = logging.getLogger(__name__)
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "Mozilla/5.0"}
+    ) as s:
+        async with s.post(
+            "https://www.tikwm.com/api/",
+            data={"url": url},
+            timeout=aiohttp.ClientTimeout(total=20)
+        ) as r:
+            data = await r.json()
 
-    TMP_DIR = "downloads"
-    os.makedirs(TMP_DIR, exist_ok=True)
+    if data.get("code") != 0:
+        raise RuntimeError("Douyin API error")
 
-    COOKIES_PATH = "/root/groupbot/cookies/tiktok.txt"
+    video_url = data["data"].get("play")
+    if not video_url:
+        raise RuntimeError("Video URL kosong")
 
-    # =====================
-    # AMBIL VIDEO ID
-    # =====================
-    m = re.search(r"/video/(\d+)", url)
-    video_id = m.group(1) if m else uuid.uuid4().hex
+    async with aiohttp.ClientSession() as s:
+        async with s.get(video_url) as r:
+            total = int(r.headers.get("Content-Length", 0))
+            downloaded = 0
+            last = 0
 
-    out_tpl = f"{TMP_DIR}/{video_id}.%(ext)s"
+            with open(out_path, "wb") as f:
+                async for chunk in r.content.iter_chunked(64 * 1024):
+                    f.write(chunk)
+                    downloaded += len(chunk)
 
-    # =====================
-    # CMD (PERSIS USERBOT + COOKIES)
-    # =====================
+                    if total:
+                        pct = downloaded / total * 100
+                        if time.time() - last >= 1.2:
+                            await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=status_msg_id,
+                                text=(
+                                    "⬇️ <b>Douyin download...</b>\n\n"
+                                    f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                                ),
+                                parse_mode="HTML"
+                            )
+                            last = time.time()
+
+    return out_path
+
+# =====================
+# YT-DLP FALLBACK
+# =====================
+async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
+    vid = re.search(r"/video/(\d+)", url)
+    vid = vid.group(1) if vid else uuid.uuid4().hex
+    out_tpl = f"{TMP_DIR}/{vid}.%(ext)s"
+
     if fmt_key == "mp3":
         cmd = [
             "/opt/yt-dlp/userbot/yt-dlp",
-            "--cookies", COOKIES_PATH,
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
             "--audio-quality", "0",
-            "--no-playlist",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -233,11 +248,9 @@ async def download_media(
     else:
         cmd = [
             "/opt/yt-dlp/userbot/yt-dlp",
-            "--cookies", COOKIES_PATH,
             "-f", "mp4/best",
             "--merge-output-format", "mp4",
             "--extractor-args", "tiktok:watermark=0",
-            "--no-playlist",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -245,266 +258,98 @@ async def download_media(
             url
         ]
 
-    log.info(f"[DL] CMD: {' '.join(cmd)}")
-
-    # =====================
-    # SPAWN PROCESS
-    # =====================
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
 
-    last_edit = 0
+    last = 0
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
 
-    try:
-        # =====================
-        # PROGRESS LOOP
-        # =====================
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-
-            raw = line.decode(errors="ignore").strip()
-            log.debug(f"[yt-dlp] {raw}")
-
-            if "|" not in raw:
-                continue
-
-            try:
-                percent_s, speed, eta = raw.split("|", 2)
-                percent = float(percent_s.replace("%", "").strip())
-
-                now = time.time()
-                if now - last_edit >= 1.2:
-                    bar_len = 10
-                    filled = int(percent / 100 * bar_len)
-                    bar = "█" * filled + "░" * (bar_len - filled)
-
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=status_msg_id,
-                        text=(
-                            "⬇️ <b>Mengunduh...</b>\n\n"
-                            f"<code>{bar} {percent:.1f}%</code>\n"
-                            f"🚀 {speed}\n"
-                            f"⏳ {eta}"
-                        ),
-                        parse_mode="HTML"
-                    )
-                    last_edit = now
-            except Exception:
-                pass
-
-        # =====================
-        # EXIT CODE
-        # =====================
-        rc = await proc.wait()
-        if rc != 0:
-            err = await proc.stderr.read()
-            log.error("[DL] yt-dlp failed")
-            log.error(err.decode(errors="ignore"))
-            return None
-
-        # =====================
-        # SCAN FILE
-        # =====================
-        for f in os.listdir(TMP_DIR):
-            if video_id in f:
-                path = os.path.join(TMP_DIR, f)
-                if os.path.getsize(path) > 0:
-                    log.info(f"[DL] DONE: {path}")
-                    return path
-
-        log.error("[DL] output file not found")
-        return None
-
-    finally:
-        if proc.returncode is None:
-            proc.kill()
-
-# =====================
-# GALLERY-DL FALLBACK
-# =====================
-async def gallerydl_download(
-    url: str,
-    bot,
-    chat_id: int,
-    status_msg_id: int
-):
-    import glob, os, asyncio, time
-
-    out_dir = TMP_DIR  # reuse TMP_DIR
-    before = set(
-        glob.glob(f"{out_dir}/**/*.mp4", recursive=True)
-    )
-
-    cmd = [
-        "gallery-dl",
-        "-d", out_dir,
-        url
-    ]
-
-    log.info(f"[GALLERY-DL] CMD: {' '.join(cmd)}")
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    # gallery-dl ga ada progress → kasih status statis
-    await bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=status_msg_id,
-        text="🔁 <b>Fallback ke gallery-dl...</b>",
-        parse_mode="HTML"
-    )
-
-    await proc.wait()
-
-    if proc.returncode != 0:
-        err = await proc.stderr.read()
-        log.error("[GALLERY-DL] failed")
-        log.error(err.decode(errors="ignore"))
-        return None
-
-    # cari file baru
-    after = set(
-        glob.glob(f"{out_dir}/**/*.mp4", recursive=True)
-    )
-
-    new_files = list(after - before)
-    if not new_files:
-        log.error("[GALLERY-DL] output file not found")
-        return None
-
-    # ambil paling baru
-    newest = max(new_files, key=os.path.getctime)
-    log.info(f"[GALLERY-DL] DONE: {newest}")
-    return newest
-    
-# =====================
-# WORKER (INI YANG TADI HILANG)
-# =====================
-async def _dl_worker(
-    app,
-    chat_id: int,
-    reply_to: int,
-    raw_url: str,
-    fmt_key: str,
-    status_msg_id: int
-):
-    bot = app.bot
-    file_path = None
-
-    try:
-        url = raw_url
-        if "tiktok.com" in url:
-            url = await resolve_tiktok_url(url)
-
-        # ===== 1️⃣ COBA yt-dlp =====
-        file_path = await download_media(
-            url, fmt_key, bot, chat_id, status_msg_id
-        )
-
-        # ===== 2️⃣ FALLBACK gallery-dl =====
-        if not file_path:
-            log.warning("[DL] yt-dlp error, fallback to gallery-dl")
-
-            try:
+        raw = line.decode().strip()
+        if "|" in raw:
+            pct, *_ = raw.split("|", 2)
+            pct = float(pct.replace("%", ""))
+            if time.time() - last >= 1.2:
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="⚠️ <b>yt-dlp error</b>\n🔁 Fallback ke gallery-dl...",
+                    text=(
+                        "⬇️ <b>yt-dlp fallback...</b>\n\n"
+                        f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                    ),
                     parse_mode="HTML"
                 )
-            except:
-                pass
+                last = time.time()
 
-            file_path = await gallerydl_download(
-                url, bot, chat_id, status_msg_id
+    await proc.wait()
+
+    for f in os.listdir(TMP_DIR):
+        if vid in f:
+            return os.path.join(TMP_DIR, f)
+
+    return None
+
+# =====================
+# WORKER
+# =====================
+async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
+    bot = app.bot
+    path = None
+
+    try:
+        url = await resolve_tiktok_url(raw_url)
+
+        try:
+            path = await douyin_download(url, bot, chat_id, status_msg_id)
+        except Exception:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text="⚠️ Douyin gagal, fallback ke yt-dlp...",
+                parse_mode="HTML"
             )
+            path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
-            if not file_path:
-                raise RuntimeError("download failed (yt-dlp + gallery-dl)")
+        if not path:
+            raise RuntimeError("Download gagal")
 
-        # ===== 3️⃣ UPLOAD =====
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=status_msg_id,
-            text="⬆️ <b>Mengunggah ke Telegram...</b>",
+            text="⬆️ <b>Mengunggah...</b>",
             parse_mode="HTML"
         )
 
-        with open(file_path, "rb") as f:
+        with open(path, "rb") as f:
             if fmt_key == "mp3":
-                await bot.send_audio(
-                    chat_id,
-                    f,
-                    reply_to_message_id=reply_to
-                )
+                await bot.send_audio(chat_id, f, reply_to_message_id=reply_to)
             else:
-                await bot.send_video(
-                    chat_id,
-                    f,
-                    reply_to_message_id=reply_to
-                )
+                await bot.send_video(chat_id, f, reply_to_message_id=reply_to)
 
         await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
-        log.exception("DL ERROR")
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text=f"❌ Gagal: {e}"
-            )
-        except:
-            pass
-
-    finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
-
-# =====================
-# COMMAND /dl
-# =====================
-async def gdl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text("❌ Kirim link")
-
-    url = context.args[0]
-
-    status = await update.message.reply_text("⬇️ <b>Gallery-dl download...</b>", parse_mode="HTML")
-
-    file_path = await gallerydl_download(
-        url,
-        context.application.bot,
-        update.effective_chat.id,
-        status.message_id
-    )
-
-    if not file_path:
-        return await status.edit_text("❌ Gallery-dl gagal")
-
-    await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
-
-    with open(file_path, "rb") as f:
-        await update.effective_chat.send_video(
-            video=f,
-            reply_to_message_id=update.message.message_id
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text=f"❌ Gagal: {e}"
         )
 
-    await status.delete()
-    os.remove(file_path)
-    
+    finally:
+        if path and os.path.exists(path):
+            os.remove(path)
+
+# =====================
+# /dl COMMAND
+# =====================
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kirim link TikTok / IG")
+        return await update.message.reply_text("❌ Kirim link TikTok")
 
     url = context.args[0]
     if is_youtube(url):
@@ -513,7 +358,8 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
         "url": url,
-        "user": update.effective_user.id
+        "user": update.effective_user.id,
+        "reply_to": update.message.message_id
     }
 
     await update.message.reply_text(
@@ -530,8 +376,8 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     _, dl_id, choice = q.data.split(":", 2)
-
     data = DL_CACHE.get(dl_id)
+
     if not data:
         return await q.edit_message_text("❌ Data expired")
 
@@ -545,7 +391,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     DL_CACHE.pop(dl_id, None)
 
     await q.edit_message_text(
-        f"⬇️ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
+        f"⏳ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
         parse_mode="HTML"
     )
 
@@ -553,265 +399,12 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _dl_worker(
             app=context.application,
             chat_id=q.message.chat.id,
-            reply_to=q.message.reply_to_message.message_id
-                if q.message.reply_to_message else None,
+            reply_to=data["reply_to"],
             raw_url=data["url"],
             fmt_key=choice,
             status_msg_id=q.message.message_id
         )
     )
-
-# =====================
-# FORMAT MAP
-# =====================
-DL3_FORMATS = {
-    "video": {"label": "🎥 Video"},
-    "mp3": {"label": "🎵 MP3"},
-}
-
-DL3_CACHE = {}
-
-# =====================
-# UI
-# =====================
-def progress_bar(percent: float, length: int = 10) -> str:
-    filled = int(percent / 100 * length)
-    return "█" * filled + "░" * (length - filled)
-
-def dl3_keyboard(dl_id: str):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🎥 Video", callback_data=f"dl3:{dl_id}:video"),
-            InlineKeyboardButton("🎵 MP3", callback_data=f"dl3:{dl_id}:mp3"),
-        ],
-        [
-            InlineKeyboardButton("❌ Cancel", callback_data=f"dl3:{dl_id}:cancel")
-        ]
-    ])
-
-# =====================
-# MP3 CONVERTER
-# =====================
-async def convert_to_mp3(video_path: str) -> str:
-    mp3_path = video_path.rsplit(".", 1)[0] + ".mp3"
-
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y",
-        "-i", video_path,
-        "-vn",
-        "-ab", "192k",
-        mp3_path,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL
-    )
-    await proc.wait()
-
-    if not os.path.exists(mp3_path):
-        raise RuntimeError("Convert MP3 gagal")
-
-    return mp3_path
-
-# =====================
-# DOUYIN API DOWNLOAD (WITH PROGRESS)
-# =====================
-async def douyin_api_download(
-    url: str,
-    bot,
-    chat_id: int,
-    status_msg_id: int
-) -> str:
-    uid = uuid.uuid4().hex
-    out_path = f"{TMP_DIR}/{uid}.mp4"
-
-    api_url = "https://www.tikwm.com/api/"
-
-    # 1️⃣ Call API
-    async with aiohttp.ClientSession(
-        headers={"User-Agent": "Mozilla/5.0"}
-    ) as session:
-        async with session.post(
-            api_url,
-            data={"url": url},
-            timeout=aiohttp.ClientTimeout(total=20)
-        ) as r:
-            if r.status != 200:
-                raise RuntimeError("Douyin API HTTP error")
-
-            data = await r.json()
-
-    if data.get("code") != 0:
-        raise RuntimeError(data.get("msg", "Douyin API error"))
-
-    video_url = data["data"].get("play")
-    if not video_url:
-        raise RuntimeError("Video URL kosong")
-
-    # 2️⃣ Stream download
-    async with aiohttp.ClientSession() as session:
-        async with session.get(video_url) as resp:
-            if resp.status != 200:
-                raise RuntimeError("Gagal download stream")
-
-            total = int(resp.headers.get("Content-Length", 0))
-            downloaded = 0
-            last_edit = 0
-
-            with open(out_path, "wb") as f:
-                async for chunk in resp.content.iter_chunked(64 * 1024):
-                    if not chunk:
-                        continue
-
-                    f.write(chunk)
-                    downloaded += len(chunk)
-
-                    if total > 0:
-                        percent = downloaded / total * 100
-                        now = time.time()
-
-                        if now - last_edit >= 1.2:
-                            bar = progress_bar(percent)
-                            await bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=status_msg_id,
-                                text=(
-                                    "⬇️ <b>Mengunduh via Douyin API...</b>\n\n"
-                                    f"<code>{bar} {percent:.1f}%</code>\n"
-                                    f"📦 {downloaded//1024//1024} MB"
-                                ),
-                                parse_mode="HTML"
-                            )
-                            last_edit = now
-
-    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-        raise RuntimeError("File kosong")
-
-    if os.path.getsize(out_path) > MAX_TG_SIZE:
-        os.remove(out_path)
-        raise RuntimeError("File terlalu besar untuk Telegram")
-
-    return out_path
-
-# =====================
-# /dl3 COMMAND
-# =====================
-async def dl3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text("❌ Kirim link TikTok")
-
-    url = context.args[0]
-
-    dl_id = uuid.uuid4().hex[:8]
-    DL3_CACHE[dl_id] = {
-        "url": url,
-        "user": update.effective_user.id,
-        "reply_to": update.message.message_id
-    }
-
-    await update.message.reply_text(
-        "📥 <b>Pilih format (Douyin API)</b>",
-        reply_markup=dl3_keyboard(dl_id),
-        parse_mode="HTML"
-    )
-
-# =====================
-# CALLBACK
-# =====================
-async def dl3_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-
-    _, dl_id, choice = q.data.split(":", 2)
-    data = DL3_CACHE.get(dl_id)
-
-    if not data:
-        return await q.edit_message_text("❌ Data expired")
-
-    if q.from_user.id != data["user"]:
-        return await q.answer("Bukan request lu", show_alert=True)
-
-    if choice == "cancel":
-        DL3_CACHE.pop(dl_id, None)
-        return await q.edit_message_text("❌ Dibatalkan")
-
-    DL3_CACHE.pop(dl_id, None)
-
-    await q.edit_message_text(
-        f"⏳ <b>Memproses {DL3_FORMATS[choice]['label']}...</b>",
-        parse_mode="HTML"
-    )
-
-    context.application.create_task(
-        _dl3_worker(
-            app=context.application,
-            chat_id=q.message.chat.id,
-            reply_to=data["reply_to"],
-            url=data["url"],
-            fmt_key=choice,
-            status_msg_id=q.message.message_id
-        )
-    )
-
-# =====================
-# WORKER
-# =====================
-async def _dl3_worker(
-    app,
-    chat_id: int,
-    reply_to: int,
-    url: str,
-    fmt_key: str,
-    status_msg_id: int
-):
-    bot = app.bot
-    video_path = None
-    final_path = None
-
-    try:
-        video_path = await douyin_api_download(
-            url, bot, chat_id, status_msg_id
-        )
-
-        if fmt_key == "mp3":
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text="🎧 <b>Convert ke MP3...</b>",
-                parse_mode="HTML"
-            )
-            final_path = await convert_to_mp3(video_path)
-        else:
-            final_path = video_path
-
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="⬆️ <b>Mengunggah...</b>",
-            parse_mode="HTML"
-        )
-
-        with open(final_path, "rb") as f:
-            if fmt_key == "mp3":
-                await bot.send_audio(chat_id, f, reply_to_message_id=reply_to)
-            else:
-                await bot.send_video(chat_id, f, reply_to_message_id=reply_to)
-
-        await bot.delete_message(chat_id, status_msg_id)
-
-    except Exception as e:
-        log.exception("DL3 ERROR")
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text=f"❌ Gagal: {e}"
-            )
-        except:
-            pass
-
-    finally:
-        for p in (video_path, final_path):
-            if p and os.path.exists(p):
-                os.remove(p)
 
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
