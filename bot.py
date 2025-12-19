@@ -1164,36 +1164,6 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 🔞 NSFW
-    if data == "help:nsfw":
-        text = (
-            "🔞 <b>NSFW</b>\n\n"
-            "• /nsfw — Generate gambar NSFW\n\n"
-            "<i>Gunakan dengan bijak.\n"
-            "Disarankan hanya di private chat.</i>"
-        )
-        await query.edit_message_text(
-            text,
-            reply_markup=help_back_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    # 👤 CREATOR
-    if data == "help:creator":
-        text = (
-            "👤 <b>Creator</b>\n\n"
-            "Bot dibuat oleh ꦠꦾꦎꦴꦭꦶꦪ\n"
-            "@hirohitokiyoshi\n\n"
-            "<i>Promote bot sebagai admin untuk fitur penuh.</i>"
-        )
-        await query.edit_message_text(
-            text,
-            reply_markup=help_back_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
 # --- Helper & stats
 try:
     import psutil
