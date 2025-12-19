@@ -110,7 +110,7 @@ def save_ai_mode(data):
 _ai_mode = load_ai_mode()
 
 # =========================
-# ASUPAN TIKTOK (TIKWM ONLY + PREFETCH)
+# ASUPAN TIKTOK (TIKWM SEARCH + PREFETCH)
 # =========================
 import aiohttp, random, logging, asyncio
 from telegram import (
@@ -136,7 +136,7 @@ def asupan_keyboard():
     ])
 
 # =========================
-# FETCH ASUPAN VIA TIKWM
+# FETCH ASUPAN VIA TIKWM SEARCH
 # =========================
 async def fetch_asupan_tikwm():
     keywords = [
@@ -154,15 +154,22 @@ async def fetch_asupan_tikwm():
         "asupan cewek"
     ]
 
-    api_url = "https://www.tikwm.com/api/"
     keyword = random.choice(keywords)
+    api_url = "https://www.tikwm.com/api/feed/search"
+
+    payload = {
+        "keywords": keyword,
+        "count": 20,
+        "cursor": 0,
+        "region": "ID"
+    }
 
     async with aiohttp.ClientSession(
         headers={"User-Agent": "Mozilla/5.0"}
     ) as session:
         async with session.post(
             api_url,
-            data={"keyword": keyword},
+            json=payload,
             timeout=aiohttp.ClientTimeout(total=15)
         ) as r:
             data = await r.json()
@@ -191,12 +198,10 @@ async def warm_asupan_cache():
         return
 
     ASUPAN_FETCHING = True
-
     try:
         while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
             try:
-                data = await fetch_asupan_tikwm()
-                ASUPAN_CACHE.append(data)
+                ASUPAN_CACHE.append(await fetch_asupan_tikwm())
             except Exception as e:
                 log.warning(f"[ASUPAN PREFETCH] {e}")
                 break
@@ -209,7 +214,6 @@ async def warm_asupan_cache():
 async def get_asupan_fast():
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
-
     return await fetch_asupan_tikwm()
 
 # =========================
@@ -228,7 +232,6 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await msg.delete()
-
         context.application.create_task(warm_asupan_cache())
 
     except Exception as e:
@@ -251,7 +254,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.application.create_task(warm_asupan_cache())
 
-    except Exception as e:
+    except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
         
 # =====================
@@ -2455,7 +2458,7 @@ def main():
             ("dl", "Download video (TikTok/Instagram)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
-            ("asupan", "Asupan 😋"),            
+            ("asupan", "Asupannnn"),            
             ("tr", "Translate text"),
         ]
         try:
