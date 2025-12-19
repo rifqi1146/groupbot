@@ -198,7 +198,7 @@ async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "/usr/bin/yt-dlp",
+        "/opt/yt-dlp/groupbot/yt-dlp",
         "-f", fmt["format"],
         "--newline",
         "--progress-template",
