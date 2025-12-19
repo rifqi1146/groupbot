@@ -117,9 +117,18 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 # ===== inject venv asupan =====
-ASUPAN_VENV = "/root/groupbot/asupan/lib/python3.13/site-packages"
-if ASUPAN_VENV not in sys.path:
-    sys.path.insert(0, ASUPAN_VENV)
+import sys, os
+
+ASUPAN_SITE_PACKAGES = os.path.join(
+    os.path.dirname(__file__),
+    "asupan",
+    "asupan_venv",
+    "lib"
+)
+
+for root, dirs, files in os.walk(ASUPAN_SITE_PACKAGES):
+    if root.endswith("site-packages") and root not in sys.path:
+        sys.path.insert(0, root)
 
 from TikTokApi import TikTokApi
 
