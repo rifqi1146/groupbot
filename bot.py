@@ -184,141 +184,156 @@ def get_file_size(path: str) -> int:
 # =====================
 # DOWNLOAD CORE
 # =====================
-async def download_media_with_format(url: str, fmt: dict, status_msg):
-    uid = uuid.uuid4().hex
+async def download_media_with_format(url: str, status_msg, fmt: dict):
+    uid = str(uuid.uuid4())
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
-    is_audio = fmt["ext"] == "mp3"
+    cmd = [
+        "/usr/bin/yt-dlp",
+        "-f", fmt["format"],
+        "--merge-output-format", fmt["ext"],
+        "--extractor-args", "tiktok:watermark=0",
+        "--no-playlist",
+        "--newline",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+        "-o", out_tpl,
+        url
+    ]
 
-    if is_audio:
-        cmd = [
-            "/usr/bin/yt-dlp",
-            "--no-playlist",
-            "-f", "bestaudio/best",
-            "-x",
+    # MP3 NEEDS THIS
+    if fmt["ext"] == "mp3":
+        cmd += [
+            "--extract-audio",
             "--audio-format", "mp3",
-            "--audio-quality", "0",
-            "--prefer-ffmpeg",
-            "--newline",
-            "--progress-template",
-            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "-o", out_tpl,
-            url
-        ]
-    else:
-        cmd = [
-            "/usr/bin/yt-dlp",
-            "--no-playlist",
-            "-f", "bv*+ba/b",
-            "-S", f"res:{fmt['height']},fps,codec:h264",
-            "--merge-output-format", "mp4",
-            "--newline",
-            "--progress-template",
-            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "-o", out_tpl,
-            url
+            "--audio-quality", "0"
         ]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE  # ⬅️ PENTING
+        stderr=asyncio.subprocess.DEVNULL
     )
 
-    last = 0
+    last_update = 0
+
     while True:
         line = await proc.stdout.readline()
         if not line:
             break
 
         raw = line.decode(errors="ignore").strip()
-        if "|" not in raw:
+        if "%" not in raw or "|" not in raw:
             continue
 
         try:
-            p, speed, eta = raw.split("|")
-            percent = float(p.replace("%", "").strip())
+            percent_str, speed, eta = raw.split("|")
+            percent = float(percent_str.replace("%", "").strip())
+
             now = time.time()
-            if now - last >= 3:
+            if now - last_update >= 3:
+                bar = progress_bar(percent)
                 await status_msg.edit_text(
-                    f"⬇️ <b>Mengunduh...</b>\n\n"
-                    f"<code>{progress_bar(percent)} {percent:.1f}%</code>\n"
-                    f"🚀 {speed}\n"
-                    f"⏳ {eta}",
+                    f"⬇️ <b>Mengunduh media...</b>\n\n"
+                    f"<code>{bar} {percent:.1f}%</code>\n"
+                    f"🚀 Speed: <b>{speed}</b>\n"
+                    f"⏳ ETA: <b>{eta}</b>",
                     parse_mode="HTML"
                 )
-                last = now
+                last_update = now
         except:
             pass
 
-    _, stderr = await proc.communicate()
-
+    await proc.wait()
     if proc.returncode != 0:
-        log.error("yt-dlp failed: %s", stderr.decode(errors="ignore"))
         return None
 
-    # 🔥 FILE DETECTION YANG BENAR
-    candidates = []
     for f in os.listdir(TMP_DIR):
-        if uid in f:
-            candidates.append(os.path.join(TMP_DIR, f))
+        if f.startswith(uid):
+            return os.path.join(TMP_DIR, f)
 
-    if not candidates:
-        log.error("NO OUTPUT FILE FOUND")
-        return None
-
-    # PRIORITAS MP3
-    if is_audio:
-        for f in candidates:
-            if f.endswith(".mp3"):
-                return f
-
-    return candidates[0]
+    return None
 
 
 # =====================
 # WORKER
 # =====================
-async def _dl_worker_with_format(update, context, raw_url, fmt, status):
+async def _dl_worker_with_format(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    raw_url: str,
+    fmt_key: str,
+    status
+):
     file_path = None
+
     try:
+        # =====================
+        # FORMAT
+        # =====================
+        if fmt_key not in DL_FORMATS:
+            raise RuntimeError("Invalid format selected")
+
+        fmt = DL_FORMATS[fmt_key]
+
+        # =====================
+        # URL RESOLVE
+        # =====================
         url = raw_url
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
-        file_path = await download_media_with_format(url, fmt, status)
-        if not file_path:
+        # =====================
+        # DOWNLOAD
+        # =====================
+        file_path = await download_media_with_format(
+            url=url,
+            status_msg=status,
+            fmt=fmt
+        )
+
+        if not file_path or not os.path.exists(file_path):
             raise RuntimeError("download failed")
 
         size = get_file_size(file_path)
+
+        # =====================
+        # TELEGRAM LIMIT
+        # =====================
         if size > MAX_TG_SIZE:
-            return await status.edit_text(
-                "⚠️ <b>File terlalu besar</b>\n"
-                f"📦 {size // (1024*1024)} MB",
-                parse_mode="HTML"
+            await status.edit_text(
+                "⚠️ <b>File terlalu besar untuk Telegram</b>\n\n"
+                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
+                "🔗 Download manual:\n"
+                f"{url}",
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
+            return
 
-        # 🟡 UPLOAD
-await status.edit_text(
-    "⬆️ <b>Mengunggah ke Telegram...</b>",
-    parse_mode="HTML"
-)
+        # =====================
+        # UPLOAD
+        # =====================
+        await status.edit_text(
+            "⬆️ <b>Mengunggah ke Telegram...</b>",
+            parse_mode="HTML"
+        )
 
-if fmt["ext"] == "mp3":
-    await update.message.reply_audio(
-        audio=open(file_path, "rb")
-    )
-else:
-    await update.message.reply_video(
-        video=open(file_path, "rb")
-    )
+        with open(file_path, "rb") as f:
+            if fmt["ext"] == "mp3":
+                await update.message.reply_audio(audio=f)
+            else:
+                await update.message.reply_video(video=f)
 
-await status.delete()
+        await status.delete()
 
-    except Exception:
+    except Exception as e:
         log.exception("DL ERROR")
         try:
-            await status.edit_text("❌ Gagal mengunduh media")
+            await status.edit_text(
+                "❌ Gagal mengunduh media\n"
+                "ℹ️ Coba ulang beberapa saat lagi"
+            )
         except:
             pass
 
