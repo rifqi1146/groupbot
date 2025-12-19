@@ -188,38 +188,30 @@ async def download_media_with_format(url: str, fmt: dict, status_msg):
     uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
-    # =====================
-    # FORMAT VIDEO
-    # =====================
-    if fmt["ext"] == "mp4":
+    is_audio = fmt["ext"] == "mp3"
+
+    if is_audio:
         cmd = [
             "/usr/bin/yt-dlp",
             "--no-playlist",
-            "--merge-output-format", "mp4",
-
-            # 🔑 PENTING: SORT RESOLUSI (INI YANG BIKIN BEDA)
-            "-f", "bv*+ba/b",
-            "-S", f"res:{fmt['height']},fps,codec:h264",
-
+            "-f", "bestaudio/best",
+            "-x",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+            "--prefer-ffmpeg",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url
         ]
-
-    # =====================
-    # FORMAT MP3
-    # =====================
     else:
         cmd = [
             "/usr/bin/yt-dlp",
             "--no-playlist",
-            "-f", "bestaudio",
-            "-x",
-            "--audio-format", "mp3",
-            "--audio-quality", "0",
-
+            "-f", "bv*+ba/b",
+            "-S", f"res:{fmt['height']},fps,codec:h264",
+            "--merge-output-format", "mp4",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -230,7 +222,7 @@ async def download_media_with_format(url: str, fmt: dict, status_msg):
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.PIPE  # ⬅️ PENTING
     )
 
     last = 0
@@ -239,7 +231,7 @@ async def download_media_with_format(url: str, fmt: dict, status_msg):
         if not line:
             break
 
-        raw = line.decode(errors="ignore")
+        raw = line.decode(errors="ignore").strip()
         if "|" not in raw:
             continue
 
@@ -259,15 +251,29 @@ async def download_media_with_format(url: str, fmt: dict, status_msg):
         except:
             pass
 
-    await proc.wait()
+    _, stderr = await proc.communicate()
+
     if proc.returncode != 0:
+        log.error("yt-dlp failed: %s", stderr.decode(errors="ignore"))
         return None
 
+    # 🔥 FILE DETECTION YANG BENAR
+    candidates = []
     for f in os.listdir(TMP_DIR):
-        if f.startswith(uid):
-            return os.path.join(TMP_DIR, f)
+        if uid in f:
+            candidates.append(os.path.join(TMP_DIR, f))
 
-    return None
+    if not candidates:
+        log.error("NO OUTPUT FILE FOUND")
+        return None
+
+    # PRIORITAS MP3
+    if is_audio:
+        for f in candidates:
+            if f.endswith(".mp3"):
+                return f
+
+    return candidates[0]
 
 
 # =====================
@@ -292,14 +298,22 @@ async def _dl_worker_with_format(update, context, raw_url, fmt, status):
                 parse_mode="HTML"
             )
 
-        await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
+        # 🟡 UPLOAD
+await status.edit_text(
+    "⬆️ <b>Mengunggah ke Telegram...</b>",
+    parse_mode="HTML"
+)
 
-        if fmt["ext"] == "mp3":
-            await update.effective_chat.send_audio(audio=open(file_path, "rb"))
-        else:
-            await update.effective_chat.send_video(video=open(file_path, "rb"))
+if fmt["ext"] == "mp3":
+    await update.message.reply_audio(
+        audio=open(file_path, "rb")
+    )
+else:
+    await update.message.reply_video(
+        video=open(file_path, "rb")
+    )
 
-        await status.delete()
+await status.delete()
 
     except Exception:
         log.exception("DL ERROR")
