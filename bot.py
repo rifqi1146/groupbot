@@ -195,42 +195,37 @@ async def download_media(
     chat_id: int,
     status_msg_id: int
 ):
-    uid = uuid.uuid4().hex
-    out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
+    out_tpl = f"{TMP_DIR}/%(id)s.%(ext)s"
+    final_path = None
 
     # ===== BASE CMD =====
     cmd = [
-    "/opt/yt-dlp/groupbot/yt-dlp",
+        "/opt/yt-dlp/groupbot/yt-dlp",
 
-    "-f", "bv*[ext=mp4]/b",
-    "--merge-output-format", "mp4",
+        "--newline",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
 
-    # ⛔ MATIKAN IMPERSONATION
-    "--extractor-args", "tiktok:watermark=0;impersonate=false",
+        # 🔑 AMBIL PATH FILE FINAL
+        "--print", "after_move:filepath",
 
-    # 📱 MOBILE FINGERPRINT
-    "--user-agent",
-    "Mozilla/5.0 (Linux; Android 13; SM-S911B) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Mobile Safari/537.36",
+        # 📱 MOBILE UA
+        "--user-agent",
+        "Mozilla/5.0 (Linux; Android 13; SM-S911B) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Mobile Safari/537.36",
 
-    "--add-header", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
-    "--add-header", "Referer: https://www.tiktok.com/",
+        "--add-header", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
+        "--add-header", "Referer: https://www.tiktok.com/",
 
-    # 🌐 NETWORK STABILITY
-    "--force-ipv4",
-    "--sleep-interval", "1",
-    "--max-sleep-interval", "3",
-    "--no-playlist",
+        "--force-ipv4",
+        "--sleep-interval", "1",
+        "--max-sleep-interval", "3",
+        "--no-playlist",
 
-    # 📊 PROGRESS
-    "--newline",
-    "--progress-template",
-    "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-
-    "-o", out_tpl,
-    url,
-]
+        "-o", out_tpl,
+        url,
+    ]
 
     # ===== FORMAT =====
     if fmt_key == "mp3":
@@ -246,7 +241,7 @@ async def download_media(
             "/opt/yt-dlp/groupbot/yt-dlp",
             "-f", "bv*[ext=mp4]/b",
             "--merge-output-format", "mp4",
-            "--extractor-args", "tiktok:watermark=0",
+            "--extractor-args", "tiktok:watermark=0;impersonate=false",
         ] + cmd[1:]
 
     log.info(f"[DL] CMD: {' '.join(cmd)}")
@@ -268,30 +263,33 @@ async def download_media(
             raw = line.decode(errors="ignore").strip()
             log.debug(f"[yt-dlp] {raw}")
 
-            if "|" not in raw:
-                continue
+            # 🟢 PROGRESS
+            if "|" in raw:
+                try:
+                    percent_s, speed, eta = raw.split("|", 2)
+                    percent = float(percent_s.replace("%", "").strip())
 
-            try:
-                percent_s, speed, eta = raw.split("|", 2)
-                percent = float(percent_s.replace("%", "").strip())
+                    now = time.time()
+                    if now - last_edit >= 1.2:
+                        bar = progress_bar(percent)
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=status_msg_id,
+                            text=(
+                                "⬇️ <b>Mengunduh...</b>\n\n"
+                                f"<code>{bar} {percent:.1f}%</code>\n"
+                                f"🚀 {speed}\n"
+                                f"⏳ {eta}"
+                            ),
+                            parse_mode="HTML"
+                        )
+                        last_edit = now
+                except:
+                    pass
 
-                now = time.time()
-                if now - last_edit >= 1.2:
-                    bar = progress_bar(percent)
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=status_msg_id,
-                        text=(
-                            "⬇️ <b>Mengunduh...</b>\n\n"
-                            f"<code>{bar} {percent:.1f}%</code>\n"
-                            f"🚀 {speed}\n"
-                            f"⏳ {eta}"
-                        ),
-                        parse_mode="HTML"
-                    )
-                    last_edit = now
-            except:
-                pass
+            # 🔑 PATH FINAL
+            elif raw.startswith(TMP_DIR):
+                final_path = raw
 
         rc = await proc.wait()
         if rc != 0:
@@ -299,13 +297,11 @@ async def download_media(
             log.error(err.decode(errors="ignore"))
             return None
 
-        for f in os.listdir(TMP_DIR):
-            if f.startswith(uid):
-                path = os.path.join(TMP_DIR, f)
-                if os.path.getsize(path) > 0:
-                    return path
+        if not final_path or not os.path.exists(final_path):
+            log.error("[DL] output file not found")
+            return None
 
-        return None
+        return final_path
 
     finally:
         if proc.returncode is None:
