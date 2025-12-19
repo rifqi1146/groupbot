@@ -109,6 +109,10 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
+ASUPAN_CACHE = []
+ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_FETCHING = False
+
 # =========================
 # ASUPAN TIKTOK (TIKWM ONLY)
 # =========================
@@ -143,54 +147,97 @@ def asupan_keyboard():
 # FETCH ASUPAN VIA TIKWM
 # =========================
 async def fetch_asupan_tikwm():
-    keyword = random.choice(ASUPAN_KEYWORDS)
+    import aiohttp, random
 
-    api_url = "https://www.tikwm.com/api/feed/search"
-    payload = {
-        "keywords": keyword,
-        "count": 20,
-        "cursor": 0
-    }
+    keywords = [
+        "asupan indo",
+        "cewek viral",
+        "cewek fyp",
+        "cewek cantik",
+        "cewek indo",
+    "cewek tiktok indo",
+    "cewek joget indo",
+    "cewek cantik indo",
+    "cewek hijab",
+    "cewek jawa",
+    "cewek lucu indo"
+        "asupan cewek"
+    ]
+
+    api_url = "https://www.tikwm.com/api/"
+    keyword = random.choice(keywords)
 
     async with aiohttp.ClientSession(
         headers={"User-Agent": "Mozilla/5.0"}
     ) as session:
-        async with session.post(api_url, data=payload, timeout=20) as r:
-            if r.status != 200:
-                raise RuntimeError("TikWM HTTP error")
-
+        async with session.post(
+            api_url,
+            data={"keyword": keyword},
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as r:
             data = await r.json()
 
-    videos = data.get("data", {}).get("videos", [])
+    if data.get("code") != 0:
+        raise RuntimeError("TikWM API error")
+
+    videos = data["data"].get("videos") or []
     if not videos:
         raise RuntimeError("Asupan kosong")
 
     v = random.choice(videos)
 
     return {
-        "video": v["play"],
-        "desc": v.get("title") or "asupan 🔥"
+        "url": v["play"],
+        "desc": v.get("title") or "🔥 ASUPAN INDO"
     }
 
+async def warm_asupan_cache():
+    global ASUPAN_FETCHING
+
+    if ASUPAN_FETCHING:
+        return
+
+    ASUPAN_FETCHING = True
+
+    try:
+        while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
+            try:
+                data = await fetch_asupan_tikwm()
+                ASUPAN_CACHE.append(data)
+            except:
+                break
+    finally:
+        ASUPAN_FETCHING = False
+  
+async def get_asupan_fast():
+    if ASUPAN_CACHE:
+        return ASUPAN_CACHE.pop(0)
+
+    # fallback kalau cache kosong
+    return await fetch_asupan_tikwm()
+    
 # =========================
 # /asupan COMMAND
 # =========================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status = await update.message.reply_text("⏳ Nyari asupan indo...")
+    msg = await update.message.reply_text("🔥 Nyari asupan...")
 
     try:
-        data = await fetch_asupan_tikwm()
-
-        await status.delete()
+        data = await get_asupan_fast()
 
         await update.effective_chat.send_video(
-    video=data["video"],
-    reply_to_message_id=update.message.message_id,
-    reply_markup=asupan_keyboard()
-)
+            video=data["url"],
+            reply_to_message_id=update.message.message_id,
+            reply_markup=asupan_keyboard()
+        )
+
+        await msg.delete()
+
+        # panasin cache lagi di background
+        context.application.create_task(warm_asupan_cache())
 
     except Exception as e:
-        await status.edit_text(f"❌ Gagal: {e}")
+        await msg.edit_text(f"❌ Gagal: {e}")
 
 # =========================
 # CALLBACK: GANTI ASUPAN
@@ -199,20 +246,24 @@ from telegram import InputMediaVideo
 
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer()
+    await q.answer("🔄 Ganti asupan...")
 
     try:
-        data = await fetch_asupan_tikwm()
+        data = await get_asupan_fast()
 
         await q.message.edit_media(
-            media=InputMediaVideo(
-                media=data["video"]
-            ),
+            media={
+                "type": "video",
+                "media": data["url"]
+            },
             reply_markup=asupan_keyboard()
         )
 
+        # prefetch lagi
+        context.application.create_task(warm_asupan_cache())
+
     except Exception as e:
-        await q.message.reply_text(f"❌ Gagal: {e}")
+        await q.answer("❌ Gagal ambil asupan", show_alert=True)
         
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
