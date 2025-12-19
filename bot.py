@@ -184,12 +184,10 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.delete()
 
         await update.effective_chat.send_video(
-            video=data["video"],
-            caption=f"🔥 <b>ASUPAN INDO</b>\n\n{data['desc']}",
-            parse_mode="HTML",
-            reply_to_message_id=update.message.message_id,
-            reply_markup=asupan_keyboard()
-        )
+    video=data["video"],
+    reply_to_message_id=update.message.message_id,
+    reply_markup=asupan_keyboard()
+)
 
     except Exception as e:
         await status.edit_text(f"❌ Gagal: {e}")
@@ -197,6 +195,8 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 # CALLBACK: GANTI ASUPAN
 # =========================
+from telegram import InputMediaVideo
+
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -204,10 +204,10 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         data = await fetch_asupan_tikwm()
 
-        await q.message.reply_video(
-            video=data["video"],
-            caption=f"🔥 <b>ASUPAN INDO</b>\n\n{data['desc']}",
-            parse_mode="HTML",
+        await q.message.edit_media(
+            media=InputMediaVideo(
+                media=data["video"]
+            ),
             reply_markup=asupan_keyboard()
         )
 
