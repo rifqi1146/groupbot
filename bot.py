@@ -1399,14 +1399,14 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ✨ FEATURES
     if data == "help:features":
-    text = (
-        "✨ <b>Features</b>\n\n"
-        "• 🏓 /ping — Cek latency bot\n"
-        "• ⬇️ /dl — Download video (TT / IG / YT)\n"
-        "• 😋 /asupan — Asupan TikTok\n"
-        "• 🔍 /gsearch — Cari di Google\n"
-        "• 🌐 /tr — Translate teks\n"
-    )
+        text = (
+    "✨ <b>Features</b>\n\n"
+    "• 🏓 /ping — Cek latency bot\n"
+    "• ⬇️ /dl — Download video (TT / IG / YT)\n"
+    "• 😋 /asupan — Asupan TikTok\n"
+    "• 🔍 /gsearch — Cari di Google\n"
+    "• 🌐 /tr — Translate teks\n"
+)
         await query.edit_message_text(
             text,
             reply_markup=help_back_keyboard(),
