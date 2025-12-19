@@ -120,14 +120,56 @@ def progress_bar(percent: float) -> str:
     empty = 10 - filled
     return "█" * filled + "░" * empty
 
-#dl core
+## =====================
+# DL CONFIG
+# =====================
 import asyncio, aiohttp, os, uuid, time, logging
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-async def resolve_tiktok_url(url: str) -> str:
-    log.info(f"[DL] resolve tiktok url: {url}")
+DL_FORMATS = {
+    "1080": {
+        "label": "🎥 1080p",
+        "format": "bv*[height<=1080][ext=mp4]/b",
+        "ext": "mp4",
+    },
+    "720": {
+        "label": "🎥 720p",
+        "format": "bv*[height<=720][ext=mp4]/b",
+        "ext": "mp4",
+    },
+    "480": {
+        "label": "🎥 480p",
+        "format": "bv*[height<=480][ext=mp4]/b",
+        "ext": "mp4",
+    },
+    "mp3": {
+        "label": "🎵 MP3",
+        "format": "bestaudio",
+        "ext": "mp3",
+    },
+}
 
+DL_CACHE = {}
+
+def dl_quality_keyboard(dl_id: str):
+    rows = []
+    for k, v in DL_FORMATS.items():
+        rows.append([
+            InlineKeyboardButton(v["label"], callback_data=f"dlq:{dl_id}:{k}")
+        ])
+    rows.append([
+        InlineKeyboardButton("❌ Cancel", callback_data=f"dlq:{dl_id}:cancel")
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+# =====================
+# RESOLVE TIKTOK
+# =====================
+async def resolve_tiktok_url(url: str) -> str:
     timeout = aiohttp.ClientTimeout(total=15)
     headers = {
         "User-Agent": (
@@ -141,16 +183,12 @@ async def resolve_tiktok_url(url: str) -> str:
         async with s.get(url, allow_redirects=True) as r:
             final = str(r.url)
 
-    # 🔴 CLEAN HARD
-    final = final.replace("\n", "").replace("\r", "").strip()
-    final = final.split("?")[0]
-
-    # 🔒 VALIDASI
+    final = final.split("?")[0].strip()
     if "/video/" not in final:
-        raise RuntimeError(f"Invalid TikTok URL resolved: {final}")
+        raise RuntimeError(f"Invalid TikTok URL: {final}")
 
-    log.info(f"[DL] resolved url: {final}")
     return final
+
 
 def get_file_size(path: str) -> int:
     try:
@@ -158,70 +196,17 @@ def get_file_size(path: str) -> int:
     except:
         return 0
 
-async def _dl_worker(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_url: str, status):
-    file_path = None
 
-    try:
-        url = raw_url
-        if "tiktok.com" in raw_url:
-            url = await resolve_tiktok_url(raw_url)
-
-        file_path = await download_media_with_progress(url, status)
-        if not file_path:
-            raise RuntimeError("download failed")
-
-        size = get_file_size(file_path)
-
-        # 🔴 LIMIT TELEGRAM
-        if size > MAX_TG_SIZE:
-            await status.edit_text(
-                "⚠️ <b>File terlalu besar untuk Telegram</b>\n\n"
-                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
-                "🔗 Download manual:\n"
-                f"{url}",
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-            return
-
-        # 🟡 UPLOAD
-        await status.edit_text(
-            "⬆️ <b>Mengunggah ke Telegram...</b>",
-            parse_mode="HTML"
-        )
-
-        await update.message.reply_video(
-            video=open(file_path, "rb")
-        )
-
-        await status.delete()
-
-    except Exception:
-        logger.exception("DL ERROR")
-        try:
-            await status.edit_text(
-                "❌ Gagal mengunduh media\n"
-                "ℹ️ Coba ulang beberapa saat lagi"
-            )
-        except:
-            pass
-
-    finally:
-        try:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-        except:
-            pass
-                         
-async def download_media_with_progress(url: str, status_msg):
-    uid = str(uuid.uuid4())
+# =====================
+# DOWNLOAD CORE
+# =====================
+async def download_media_with_format(url: str, fmt: dict, status_msg):
+    uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
         "/usr/bin/yt-dlp",
-         "-f", "mp4/best",
-        "--merge-output-format", "mp4",
-        "--extractor-args", "tiktok:watermark=0",
+        "-f", fmt["format"],
         "--no-playlist",
         "--newline",
         "--progress-template",
@@ -230,38 +215,38 @@ async def download_media_with_progress(url: str, status_msg):
         url
     ]
 
+    if fmt["ext"] == "mp3":
+        cmd += ["--extract-audio", "--audio-format", "mp3"]
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL
     )
 
-    last_update = 0
-
+    last = 0
     while True:
         line = await proc.stdout.readline()
         if not line:
             break
 
-        raw = line.decode(errors="ignore").strip()
-        if "%" not in raw or "|" not in raw:
+        raw = line.decode(errors="ignore")
+        if "|" not in raw:
             continue
 
         try:
-            percent_str, speed, eta = raw.split("|")
-            percent = float(percent_str.replace("%", "").strip())
-
+            p, speed, eta = raw.split("|")
+            percent = float(p.replace("%", "").strip())
             now = time.time()
-            if now - last_update >= 3:  # ⏱️ 3 detik
-                bar = progress_bar(percent)
+            if now - last >= 3:
                 await status_msg.edit_text(
-                    f"⬇️ <b>Mengunduh media...</b>\n\n"
-                    f"<code>{bar} {percent:.1f}%</code>\n"
-                    f"🚀 Speed: <b>{speed}</b>\n"
-                    f"⏳ ETA: <b>{eta}</b>",
+                    f"⬇️ <b>Mengunduh...</b>\n\n"
+                    f"<code>{progress_bar(percent)} {percent:.1f}%</code>\n"
+                    f"🚀 {speed}\n"
+                    f"⏳ {eta}",
                     parse_mode="HTML"
                 )
-                last_update = now
+                last = now
         except:
             pass
 
@@ -277,6 +262,52 @@ async def download_media_with_progress(url: str, status_msg):
 
 
 # =====================
+# WORKER
+# =====================
+async def _dl_worker_with_format(update, context, raw_url, fmt, status):
+    file_path = None
+    try:
+        url = raw_url
+        if "tiktok.com" in raw_url:
+            url = await resolve_tiktok_url(raw_url)
+
+        file_path = await download_media_with_format(url, fmt, status)
+        if not file_path:
+            raise RuntimeError("download failed")
+
+        size = get_file_size(file_path)
+        if size > MAX_TG_SIZE:
+            return await status.edit_text(
+                "⚠️ <b>File terlalu besar</b>\n"
+                f"📦 {size // (1024*1024)} MB",
+                parse_mode="HTML"
+            )
+
+        await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
+
+        if fmt["ext"] == "mp3":
+            await update.effective_chat.send_audio(audio=open(file_path, "rb"))
+        else:
+            await update.effective_chat.send_video(video=open(file_path, "rb"))
+
+        await status.delete()
+
+    except Exception:
+        log.exception("DL ERROR")
+        try:
+            await status.edit_text("❌ Gagal mengunduh media")
+        except:
+            pass
+
+    finally:
+        try:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+        except:
+            pass
+
+
+# =====================
 # COMMAND /dl
 # =====================
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -284,10 +315,56 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link video")
 
     raw_url = context.args[0]
-    status = await update.message.reply_text("🔄 Memproses...")
-    
+    dl_id = uuid.uuid4().hex[:8]
+
+    DL_CACHE[dl_id] = {
+        "url": raw_url,
+        "user": update.effective_user.id,
+    }
+
+    await update.message.reply_text(
+        "🎬 <b>Pilih kualitas download</b>",
+        reply_markup=dl_quality_keyboard(dl_id),
+        parse_mode="HTML"
+    )
+
+
+# =====================
+# CALLBACK
+# =====================
+async def dl_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    try:
+        _, dl_id, choice = q.data.split(":", 2)
+    except:
+        return
+
+    data = DL_CACHE.get(dl_id)
+    if not data:
+        return await q.edit_message_text("❌ Data expired")
+
+    if q.from_user.id != data["user"]:
+        return await q.answer("Bukan request lu", show_alert=True)
+
+    if choice == "cancel":
+        DL_CACHE.pop(dl_id, None)
+        return await q.edit_message_text("❌ Download dibatalkan")
+
+    fmt = DL_FORMATS.get(choice)
+    if not fmt:
+        return await q.edit_message_text("❌ Format invalid")
+
+    DL_CACHE.pop(dl_id, None)
+
+    status = await q.edit_message_text(
+        f"⬇️ <b>Menyiapkan {fmt['label']}...</b>",
+        parse_mode="HTML"
+    )
+
     context.application.create_task(
-        _dl_worker(update, context, raw_url, status)
+        _dl_worker_with_format(update, context, data["url"], fmt, status)
     )
 
 # utils_groq_poll18.py
@@ -2139,6 +2216,7 @@ def main():
     # ======================
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+    app.add_handler(CallbackQueryHandler(dl_quality_callback, pattern="^dlq:"))
 
     # ======================
     # MESSAGE ROUTER
