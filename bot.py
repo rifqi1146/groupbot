@@ -109,31 +109,23 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
-ASUPAN_CACHE = []
-ASUPAN_PREFETCH_SIZE = 5
-ASUPAN_FETCHING = False
-
 # =========================
-# ASUPAN TIKTOK (TIKWM ONLY)
+# ASUPAN TIKTOK (TIKWM ONLY + PREFETCH)
 # =========================
-import aiohttp, random, logging
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import aiohttp, random, logging, asyncio
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+    InputMediaVideo
+)
 from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-# =========================
-# KEYWORDS ASUPAN INDO
-# =========================
-ASUPAN_KEYWORDS = [
-    "cewek indo",
-    "cewek tiktok indo",
-    "cewek joget indo",
-    "cewek cantik indo",
-    "cewek hijab",
-    "cewek jawa",
-    "cewek lucu indo"
-]
+ASUPAN_CACHE = []
+ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_FETCHING = False
 
 # =========================
 # INLINE KEYBOARD
@@ -147,20 +139,18 @@ def asupan_keyboard():
 # FETCH ASUPAN VIA TIKWM
 # =========================
 async def fetch_asupan_tikwm():
-    import aiohttp, random
-
     keywords = [
         "asupan indo",
         "cewek viral",
         "cewek fyp",
         "cewek cantik",
         "cewek indo",
-    "cewek tiktok indo",
-    "cewek joget indo",
-    "cewek cantik indo",
-    "cewek hijab",
-    "cewek jawa",
-    "cewek lucu indo"
+        "cewek tiktok indo",
+        "cewek joget indo",
+        "cewek cantik indo",
+        "cewek hijab",
+        "cewek jawa",
+        "cewek lucu indo",
         "asupan cewek"
     ]
 
@@ -178,9 +168,9 @@ async def fetch_asupan_tikwm():
             data = await r.json()
 
     if data.get("code") != 0:
-        raise RuntimeError("TikWM API error")
+        raise RuntimeError(f"TikWM API error: {data.get('msg')}")
 
-    videos = data["data"].get("videos") or []
+    videos = data.get("data", {}).get("videos") or []
     if not videos:
         raise RuntimeError("Asupan kosong")
 
@@ -191,6 +181,9 @@ async def fetch_asupan_tikwm():
         "desc": v.get("title") or "🔥 ASUPAN INDO"
     }
 
+# =========================
+# PREFETCH CACHE
+# =========================
 async def warm_asupan_cache():
     global ASUPAN_FETCHING
 
@@ -204,18 +197,21 @@ async def warm_asupan_cache():
             try:
                 data = await fetch_asupan_tikwm()
                 ASUPAN_CACHE.append(data)
-            except:
+            except Exception as e:
+                log.warning(f"[ASUPAN PREFETCH] {e}")
                 break
     finally:
         ASUPAN_FETCHING = False
-  
+
+# =========================
+# GET ASUPAN FAST
+# =========================
 async def get_asupan_fast():
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
 
-    # fallback kalau cache kosong
     return await fetch_asupan_tikwm()
-    
+
 # =========================
 # /asupan COMMAND
 # =========================
@@ -233,17 +229,14 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.delete()
 
-        # panasin cache lagi di background
         context.application.create_task(warm_asupan_cache())
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
 
 # =========================
-# CALLBACK: GANTI ASUPAN
+# CALLBACK: GANTI ASUPAN (EDIT VIDEO)
 # =========================
-from telegram import InputMediaVideo
-
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer("🔄 Ganti asupan...")
@@ -252,14 +245,10 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = await get_asupan_fast()
 
         await q.message.edit_media(
-            media={
-                "type": "video",
-                "media": data["url"]
-            },
+            media=InputMediaVideo(media=data["url"]),
             reply_markup=asupan_keyboard()
         )
 
-        # prefetch lagi
         context.application.create_task(warm_asupan_cache())
 
     except Exception as e:
@@ -2466,6 +2455,7 @@ def main():
             ("dl", "Download video (TikTok/Instagram)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
+            ("asupan", "Asupan 😋"),            
             ("tr", "Translate text"),
         ]
         try:
