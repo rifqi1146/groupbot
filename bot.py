@@ -2240,8 +2240,6 @@ def main():
     app.add_handler(CommandHandler("domain", domain_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
-    app.add_handler(CommandHandler("dl3", dl3_cmd))
-    app.add_handler(CommandHandler("dl2", gdl_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CommandHandler("tr", tr_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
@@ -2262,8 +2260,7 @@ def main():
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern="^dl:"))
-    app.add_handler(CallbackQueryHandler(dl3_callback, pattern="^dl3:"))
-
+    
     # ======================
     # MESSAGE ROUTER
     # ======================
