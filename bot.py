@@ -130,26 +130,10 @@ from telegram.ext import ContextTypes
 log = logging.getLogger(__name__)
 
 DL_FORMATS = {
-    "1080": {
-        "label": "🎥 1080p",
-        "format": "bv*[height<=1080][ext=mp4]/b",
-        "ext": "mp4",
-    },
-    "720": {
-        "label": "🎥 720p",
-        "format": "bv*[height<=720][ext=mp4]/b",
-        "ext": "mp4",
-    },
-    "480": {
-        "label": "🎥 480p",
-        "format": "bv*[height<=480][ext=mp4]/b",
-        "ext": "mp4",
-    },
-    "mp3": {
-        "label": "🎵 MP3",
-        "format": "bestaudio",
-        "ext": "mp3",
-    },
+    "1080": {"label": "🎥 1080p", "ext": "mp4", "height": 1080},
+    "720":  {"label": "🎥 720p",  "ext": "mp4", "height": 720},
+    "480":  {"label": "🎥 480p",  "ext": "mp4", "height": 480},
+    "mp3":  {"label": "🎵 MP3",    "ext": "mp3"},
 }
 
 DL_CACHE = {}
@@ -204,19 +188,44 @@ async def download_media_with_format(url: str, fmt: dict, status_msg):
     uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
-    cmd = [
-        "/usr/bin/yt-dlp",
-        "-f", fmt["format"],
-        "--no-playlist",
-        "--newline",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "-o", out_tpl,
-        url
-    ]
+    # =====================
+    # FORMAT VIDEO
+    # =====================
+    if fmt["ext"] == "mp4":
+        cmd = [
+            "/usr/bin/yt-dlp",
+            "--no-playlist",
+            "--merge-output-format", "mp4",
 
-    if fmt["ext"] == "mp3":
-        cmd += ["--extract-audio", "--audio-format", "mp3"]
+            # 🔑 PENTING: SORT RESOLUSI (INI YANG BIKIN BEDA)
+            "-f", "bv*+ba/b",
+            "-S", f"res:{fmt['height']},fps,codec:h264",
+
+            "--newline",
+            "--progress-template",
+            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url
+        ]
+
+    # =====================
+    # FORMAT MP3
+    # =====================
+    else:
+        cmd = [
+            "/usr/bin/yt-dlp",
+            "--no-playlist",
+            "-f", "bestaudio",
+            "-x",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+
+            "--newline",
+            "--progress-template",
+            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url
+        ]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
