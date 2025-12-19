@@ -561,29 +561,88 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
-#douyin
+# =====================
+# DOUYIN / TIKWM DOWNLOADER (STANDALONE)
+# =====================
+import asyncio, aiohttp, os, uuid, time, logging, re
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
+log = logging.getLogger(__name__)
+
+TMP_DIR = "downloads"
+os.makedirs(TMP_DIR, exist_ok=True)
+
+MAX_TG_SIZE = 1900 * 1024 * 1024  # ~1.9GB
+
+# =====================
+# FORMAT MAP
+# =====================
+DL3_FORMATS = {
+    "video": {"label": "🎥 Video"},
+    "mp3": {"label": "🎵 MP3"},
+}
+
+DL3_CACHE = {}
+
+# =====================
+# UI
+# =====================
+def progress_bar(percent: float, length: int = 10) -> str:
+    filled = int(percent / 100 * length)
+    return "█" * filled + "░" * (length - filled)
+
+def dl3_keyboard(dl_id: str):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🎥 Video", callback_data=f"dl3:{dl_id}:video"),
+            InlineKeyboardButton("🎵 MP3", callback_data=f"dl3:{dl_id}:mp3"),
+        ],
+        [
+            InlineKeyboardButton("❌ Cancel", callback_data=f"dl3:{dl_id}:cancel")
+        ]
+    ])
+
+# =====================
+# MP3 CONVERTER
+# =====================
+async def convert_to_mp3(video_path: str) -> str:
+    mp3_path = video_path.rsplit(".", 1)[0] + ".mp3"
+
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-vn",
+        "-ab", "192k",
+        mp3_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL
+    )
+    await proc.wait()
+
+    if not os.path.exists(mp3_path):
+        raise RuntimeError("Convert MP3 gagal")
+
+    return mp3_path
+
+# =====================
+# DOUYIN API DOWNLOAD (WITH PROGRESS)
+# =====================
 async def douyin_api_download(
     url: str,
     bot,
     chat_id: int,
     status_msg_id: int
-):
-    import aiohttp, os, time, uuid, logging
-
-    log = logging.getLogger(__name__)
-
-    TMP_DIR = "downloads"
-    os.makedirs(TMP_DIR, exist_ok=True)
-
+) -> str:
     uid = uuid.uuid4().hex
     out_path = f"{TMP_DIR}/{uid}.mp4"
 
-    # =====================
-    # 1️⃣ CALL DOUYIN API
-    # =====================
     api_url = "https://www.tikwm.com/api/"
 
-    async with aiohttp.ClientSession() as session:
+    # 1️⃣ Call API
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "Mozilla/5.0"}
+    ) as session:
         async with session.post(
             api_url,
             data={"url": url},
@@ -595,21 +654,17 @@ async def douyin_api_download(
             data = await r.json()
 
     if data.get("code") != 0:
-        raise RuntimeError(f"Douyin API error: {data.get('msg')}")
+        raise RuntimeError(data.get("msg", "Douyin API error"))
 
     video_url = data["data"].get("play")
     if not video_url:
-        raise RuntimeError("Douyin API: video URL kosong")
+        raise RuntimeError("Video URL kosong")
 
-    log.info(f"[DOUYIN] video_url={video_url}")
-
-    # =====================
-    # 2️⃣ STREAM DOWNLOAD
-    # =====================
+    # 2️⃣ Stream download
     async with aiohttp.ClientSession() as session:
         async with session.get(video_url) as resp:
             if resp.status != 200:
-                raise RuntimeError("Failed download video stream")
+                raise RuntimeError("Gagal download stream")
 
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
@@ -628,10 +683,7 @@ async def douyin_api_download(
                         now = time.time()
 
                         if now - last_edit >= 1.2:
-                            bar_len = 10
-                            filled = int(percent / 100 * bar_len)
-                            bar = "█" * filled + "░" * (bar_len - filled)
-
+                            bar = progress_bar(percent)
                             await bot.edit_message_text(
                                 chat_id=chat_id,
                                 message_id=status_msg_id,
@@ -645,49 +697,136 @@ async def douyin_api_download(
                             last_edit = now
 
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-        raise RuntimeError("Download gagal (file kosong)")
+        raise RuntimeError("File kosong")
 
-    log.info(f"[DOUYIN] DONE: {out_path}")
+    if os.path.getsize(out_path) > MAX_TG_SIZE:
+        os.remove(out_path)
+        raise RuntimeError("File terlalu besar untuk Telegram")
+
     return out_path
-    
+
+# =====================
+# /dl3 COMMAND
+# =====================
 async def dl3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("❌ Kirim link TikTok")
 
     url = context.args[0]
-    user_msg_id = update.message.message_id  # 🔑 ini kuncinya
 
-    status = await update.message.reply_text(
-        "⏳ <b>Memproses Douyin API...</b>",
+    dl_id = uuid.uuid4().hex[:8]
+    DL3_CACHE[dl_id] = {
+        "url": url,
+        "user": update.effective_user.id,
+        "reply_to": update.message.message_id
+    }
+
+    await update.message.reply_text(
+        "📥 <b>Pilih format (Douyin API)</b>",
+        reply_markup=dl3_keyboard(dl_id),
         parse_mode="HTML"
     )
 
-    path = None
+# =====================
+# CALLBACK
+# =====================
+async def dl3_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    _, dl_id, choice = q.data.split(":", 2)
+    data = DL3_CACHE.get(dl_id)
+
+    if not data:
+        return await q.edit_message_text("❌ Data expired")
+
+    if q.from_user.id != data["user"]:
+        return await q.answer("Bukan request lu", show_alert=True)
+
+    if choice == "cancel":
+        DL3_CACHE.pop(dl_id, None)
+        return await q.edit_message_text("❌ Dibatalkan")
+
+    DL3_CACHE.pop(dl_id, None)
+
+    await q.edit_message_text(
+        f"⏳ <b>Memproses {DL3_FORMATS[choice]['label']}...</b>",
+        parse_mode="HTML"
+    )
+
+    context.application.create_task(
+        _dl3_worker(
+            app=context.application,
+            chat_id=q.message.chat.id,
+            reply_to=data["reply_to"],
+            url=data["url"],
+            fmt_key=choice,
+            status_msg_id=q.message.message_id
+        )
+    )
+
+# =====================
+# WORKER
+# =====================
+async def _dl3_worker(
+    app,
+    chat_id: int,
+    reply_to: int,
+    url: str,
+    fmt_key: str,
+    status_msg_id: int
+):
+    bot = app.bot
+    video_path = None
+    final_path = None
+
     try:
-        path = await douyin_api_download(
-            url,
-            context.application.bot,
-            update.effective_chat.id,
-            status.message_id
+        video_path = await douyin_api_download(
+            url, bot, chat_id, status_msg_id
         )
 
-        await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
-
-        with open(path, "rb") as f:
-            await update.effective_chat.send_video(
-                video=f,
-                reply_to_message_id=user_msg_id  # ✅ reply ke command user
+        if fmt_key == "mp3":
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text="🎧 <b>Convert ke MP3...</b>",
+                parse_mode="HTML"
             )
+            final_path = await convert_to_mp3(video_path)
+        else:
+            final_path = video_path
 
-        await status.delete()
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="⬆️ <b>Mengunggah...</b>",
+            parse_mode="HTML"
+        )
+
+        with open(final_path, "rb") as f:
+            if fmt_key == "mp3":
+                await bot.send_audio(chat_id, f, reply_to_message_id=reply_to)
+            else:
+                await bot.send_video(chat_id, f, reply_to_message_id=reply_to)
+
+        await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
-        await status.edit_text(f"❌ Gagal: {e}")
+        log.exception("DL3 ERROR")
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"❌ Gagal: {e}"
+            )
+        except:
+            pass
 
     finally:
-        if path and os.path.exists(path):
-            os.remove(path)
-            
+        for p in (video_path, final_path):
+            if p and os.path.exists(p):
+                os.remove(p)
+
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
@@ -2544,6 +2683,7 @@ def main():
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern="^dl:"))
+    app.add_handler(CallbackQueryHandler(dl3_callback, pattern="^dl3:"))
 
     # ======================
     # MESSAGE ROUTER
