@@ -562,20 +562,6 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =====================
-# DOUYIN / TIKWM DOWNLOADER (STANDALONE)
-# =====================
-import asyncio, aiohttp, os, uuid, time, logging, re
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
-
-log = logging.getLogger(__name__)
-
-TMP_DIR = "downloads"
-os.makedirs(TMP_DIR, exist_ok=True)
-
-MAX_TG_SIZE = 1900 * 1024 * 1024  # ~1.9GB
-
-# =====================
 # FORMAT MAP
 # =====================
 DL3_FORMATS = {
