@@ -200,22 +200,37 @@ async def download_media(
 
     # ===== BASE CMD =====
     cmd = [
-        "/opt/yt-dlp/groupbot/yt-dlp",
-        "--newline",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "--user-agent",
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-        "--add-header", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
-        "--add-header", "Referer: https://www.tiktok.com/",
-        "--force-ipv4",
-        "--sleep-interval", "1",
-        "--max-sleep-interval", "3",
-        "--no-playlist",
-        "-o", out_tpl,
-        url,
-    ]
+    "/opt/yt-dlp/groupbot/yt-dlp",
+
+    "-f", "bv*[ext=mp4]/b",
+    "--merge-output-format", "mp4",
+
+    # ⛔ MATIKAN IMPERSONATION
+    "--extractor-args", "tiktok:watermark=0;impersonate=false",
+
+    # 📱 MOBILE FINGERPRINT
+    "--user-agent",
+    "Mozilla/5.0 (Linux; Android 13; SM-S911B) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Mobile Safari/537.36",
+
+    "--add-header", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
+    "--add-header", "Referer: https://www.tiktok.com/",
+
+    # 🌐 NETWORK STABILITY
+    "--force-ipv4",
+    "--sleep-interval", "1",
+    "--max-sleep-interval", "3",
+    "--no-playlist",
+
+    # 📊 PROGRESS
+    "--newline",
+    "--progress-template",
+    "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+
+    "-o", out_tpl,
+    url,
+]
 
     # ===== FORMAT =====
     if fmt_key == "mp3":
