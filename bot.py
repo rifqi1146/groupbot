@@ -152,10 +152,16 @@ def dl_keyboard(dl_id: str):
     ])
 
 # =====================
-# BLOCK YOUTUBE
+# PLATFORM CHECK
 # =====================
 def is_youtube(url: str) -> bool:
     return any(x in url for x in ("youtube.com", "youtu.be", "music.youtube.com"))
+
+def is_tiktok(url: str) -> bool:
+    return "tiktok.com" in url or "vt.tiktok.com" in url
+
+def is_instagram(url: str) -> bool:
+    return "instagram.com" in url or "instagr.am" in url
 
 # =====================
 # RESOLVE TIKTOK SHORT URL
@@ -174,7 +180,7 @@ async def resolve_tiktok_url(url: str) -> str:
     return final
 
 # =====================
-# DOUYIN API DOWNLOAD (PRIMARY)
+# DOUYIN API DOWNLOAD (TIKTOK ONLY)
 # =====================
 async def douyin_download(url, bot, chat_id, status_msg_id):
     uid = uuid.uuid4().hex
@@ -208,28 +214,27 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
                     f.write(chunk)
                     downloaded += len(chunk)
 
-                    if total:
+                    if total and time.time() - last >= 1.2:
                         pct = downloaded / total * 100
-                        if time.time() - last >= 1.2:
-                            await bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=status_msg_id,
-                                text=(
-                                    "⬇️ <b>Douyin download...</b>\n\n"
-                                    f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
-                                ),
-                                parse_mode="HTML"
-                            )
-                            last = time.time()
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=status_msg_id,
+                            text=(
+                                "⬇️ <b>Douyin download...</b>\n\n"
+                                f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                            ),
+                            parse_mode="HTML"
+                        )
+                        last = time.time()
 
     return out_path
 
 # =====================
-# YT-DLP FALLBACK
+# YT-DLP FALLBACK (IG + TT)
 # =====================
 async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
-    vid = re.search(r"/video/(\d+)", url)
-    vid = vid.group(1) if vid else uuid.uuid4().hex
+    vid = re.search(r"/(video|reel)/(\d+)", url)
+    vid = vid.group(2) if vid else uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{vid}.%(ext)s"
 
     if fmt_key == "mp3":
@@ -250,7 +255,6 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             "/opt/yt-dlp/userbot/yt-dlp",
             "-f", "mp4/best",
             "--merge-output-format", "mp4",
-            "--extractor-args", "tiktok:watermark=0",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -270,16 +274,15 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         if not line:
             break
 
-        raw = line.decode().strip()
+        raw = line.decode(errors="ignore").strip()
         if "|" in raw:
-            pct, *_ = raw.split("|", 2)
-            pct = float(pct.replace("%", ""))
+            pct = float(raw.split("|", 1)[0].replace("%", ""))
             if time.time() - last >= 1.2:
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
                     text=(
-                        "⬇️ <b>yt-dlp fallback...</b>\n\n"
+                        "⬇️ <b>yt-dlp download...</b>\n\n"
                         f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                     ),
                     parse_mode="HTML"
@@ -302,18 +305,26 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     path = None
 
     try:
-        url = await resolve_tiktok_url(raw_url)
+        # TikTok → Douyin → yt-dlp
+        if is_tiktok(raw_url):
+            url = await resolve_tiktok_url(raw_url)
+            try:
+                path = await douyin_download(url, bot, chat_id, status_msg_id)
+            except Exception:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text="⚠️ Douyin gagal, fallback ke yt-dlp...",
+                    parse_mode="HTML"
+                )
+                path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
-        try:
-            path = await douyin_download(url, bot, chat_id, status_msg_id)
-        except Exception:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text="⚠️ Douyin gagal, fallback ke yt-dlp...",
-                parse_mode="HTML"
-            )
-            path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+        # Instagram → yt-dlp langsung
+        elif is_instagram(raw_url):
+            path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
+
+        else:
+            raise RuntimeError("Platform tidak didukung")
 
         if not path:
             raise RuntimeError("Download gagal")
@@ -349,7 +360,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 # =====================
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kirim link TikTok")
+        return await update.message.reply_text("❌ Kirim link TikTok / IG")
 
     url = context.args[0]
     if is_youtube(url):
