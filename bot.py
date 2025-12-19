@@ -561,6 +561,128 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
+#douyin
+async def douyin_api_download(
+    url: str,
+    bot,
+    chat_id: int,
+    status_msg_id: int
+):
+    import aiohttp, os, time, uuid, logging
+
+    log = logging.getLogger(__name__)
+
+    TMP_DIR = "downloads"
+    os.makedirs(TMP_DIR, exist_ok=True)
+
+    uid = uuid.uuid4().hex
+    out_path = f"{TMP_DIR}/{uid}.mp4"
+
+    # =====================
+    # 1️⃣ CALL DOUYIN API
+    # =====================
+    api_url = "https://www.tikwm.com/api/"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            api_url,
+            data={"url": url},
+            timeout=aiohttp.ClientTimeout(total=20)
+        ) as r:
+            if r.status != 200:
+                raise RuntimeError("Douyin API HTTP error")
+
+            data = await r.json()
+
+    if data.get("code") != 0:
+        raise RuntimeError(f"Douyin API error: {data.get('msg')}")
+
+    video_url = data["data"].get("play")
+    if not video_url:
+        raise RuntimeError("Douyin API: video URL kosong")
+
+    log.info(f"[DOUYIN] video_url={video_url}")
+
+    # =====================
+    # 2️⃣ STREAM DOWNLOAD
+    # =====================
+    async with aiohttp.ClientSession() as session:
+        async with session.get(video_url) as resp:
+            if resp.status != 200:
+                raise RuntimeError("Failed download video stream")
+
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            last_edit = 0
+
+            with open(out_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(64 * 1024):
+                    if not chunk:
+                        continue
+
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if total > 0:
+                        percent = downloaded / total * 100
+                        now = time.time()
+
+                        if now - last_edit >= 1.2:
+                            bar_len = 10
+                            filled = int(percent / 100 * bar_len)
+                            bar = "█" * filled + "░" * (bar_len - filled)
+
+                            await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=status_msg_id,
+                                text=(
+                                    "⬇️ <b>Mengunduh via Douyin API...</b>\n\n"
+                                    f"<code>{bar} {percent:.1f}%</code>\n"
+                                    f"📦 {downloaded//1024//1024} MB"
+                                ),
+                                parse_mode="HTML"
+                            )
+                            last_edit = now
+
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError("Download gagal (file kosong)")
+
+    log.info(f"[DOUYIN] DONE: {out_path}")
+    return out_path
+    
+async def dl3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text("❌ Kirim link TikTok")
+
+    url = context.args[0]
+
+    status = await update.message.reply_text(
+        "⏳ <b>Memproses Douyin API...</b>",
+        parse_mode="HTML"
+    )
+
+    try:
+        path = await douyin_api_download(
+            url,
+            context.application.bot,
+            update.effective_chat.id,
+            status.message_id
+        )
+
+        await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
+
+        with open(path, "rb") as f:
+            await update.effective_chat.send_video(f)
+
+        await status.delete()
+
+    except Exception as e:
+        await status.edit_text(f"❌ Gagal: {e}")
+
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+            
 # utils_groq_poll18.py
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
@@ -2395,6 +2517,7 @@ def main():
     app.add_handler(CommandHandler("domain", domain_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("dl3", dl3_cmd))
     app.add_handler(CommandHandler("dl2", gdl_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CommandHandler("tr", tr_cmd))
