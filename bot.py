@@ -127,10 +127,7 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-
-os.makedirs(TMP_DIR, exist_ok=True)
-
-MAX_TG_SIZE = 50 * 1024 * 1024  # 50MB aman
+MAX_TG_SIZE = 1000 * 1024 * 1024  # 50MB aman
 
 DL_FORMATS = {
     "1080": {"label": "🎥 1080p", "ext": "mp4", "height": 1080},
