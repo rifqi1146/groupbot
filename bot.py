@@ -285,13 +285,15 @@ async def download_media_with_format(url: str, status_msg, fmt: dict):
 # WORKER
 # =====================
 async def _dl_worker_with_format(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    app,                 # application instance
+    chat_id: int,
+    reply_to: int,
     raw_url: str,
     fmt_key: str,
-    status
+    status_msg_id: int
 ):
     file_path = None
+    bot = app.bot
 
     try:
         fmt = normalize_format(fmt_key)
@@ -300,33 +302,57 @@ async def _dl_worker_with_format(
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
+        # ===== DOWNLOAD =====
+        status = await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="⬇️ <b>Mengunduh...</b>",
+            parse_mode="HTML"
+        )
+
         file_path = await download_media_with_format(url, status, fmt)
         if not file_path:
             raise RuntimeError("download failed")
 
         size = os.path.getsize(file_path)
         if size > MAX_TG_SIZE:
-            return await status.edit_text(
-                f"⚠️ File terlalu besar ({size//(1024*1024)} MB)"
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"⚠️ File terlalu besar ({size//(1024*1024)} MB)"
             )
+            return
 
-        await status.edit_text("⬆️ Mengunggah...")
-
+        # ===== UPLOAD (NO EDIT MESSAGE) =====
         if fmt["ext"] == "mp3":
-            await update.effective_chat.send_audio(
-                audio=open(file_path, "rb")
-            )
+            with open(file_path, "rb") as f:
+                await bot.send_audio(
+                    chat_id=chat_id,
+                    audio=f,
+                    reply_to_message_id=reply_to
+                )
         else:
-            await update.effective_chat.send_video(
-                video=open(file_path, "rb")
-            )
+            with open(file_path, "rb") as f:
+                await bot.send_video(
+                    chat_id=chat_id,
+                    video=f,
+                    reply_to_message_id=reply_to
+                )
 
-        await status.delete()
+        # hapus status
+        try:
+            await bot.delete_message(chat_id, status_msg_id)
+        except:
+            pass
 
     except Exception as e:
         log.exception("DL ERROR")
         try:
-            await status.edit_text(f"❌ Gagal: {e}")
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"❌ Gagal: {e}"
+            )
         except:
             pass
 
@@ -387,13 +413,16 @@ async def dl_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode="HTML"
     )
 
+    # 🔥 SPAWN BACKGROUND TASK
     context.application.create_task(
         _dl_worker_with_format(
-            update,
-            context,
-            data["url"],
-            choice,
-            q.message
+            app=context.application,
+            chat_id=q.message.chat.id,
+            reply_to=q.message.reply_to_message.message_id
+                if q.message.reply_to_message else None,
+            raw_url=data["url"],
+            fmt_key=choice,
+            status_msg_id=q.message.message_id
         )
     )
 
