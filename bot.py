@@ -203,93 +203,97 @@ async def download_media(
     uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
+    # =====================
+    # BASE CMD (WAJIB STABIL)
+    # =====================
     cmd = [
-    "/opt/yt-dlp/groupbot/yt-dlp",
-    "--impersonate", "chrome",
-    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "--add-header", "Accept-Language:en-US,en;q=0.9",
-    "-f", fmt["format"],
-    "--newline",
-    "--progress-template",
-    "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-    "-o", out_tpl,
-    url
-]
+        "/opt/yt-dlp/groupbot/yt-dlp",
 
+        "--newline",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+
+        "--user-agent",
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+
+        "--add-header", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
+        "--add-header", "Referer: https://www.tiktok.com/",
+
+        "--force-ipv4",
+        "--sleep-interval", "1",
+        "--max-sleep-interval", "3",
+        "--no-playlist",
+
+        "-o", out_tpl,
+        url,
+    ]
+
+    # =====================
+    # FORMAT HANDLING
+    # =====================
     if fmt["ext"] == "mp3":
-        cmd += [
+        cmd = [
+            "/opt/yt-dlp/groupbot/yt-dlp",
+            "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
-            "--audio-quality", "0"
-        ]
+            "--audio-quality", "0",
+        ] + cmd[1:]
     else:
-        cmd += [
+        cmd = [
+            "/opt/yt-dlp/groupbot/yt-dlp",
+            "-f", "bv*[ext=mp4]/b",
             "--merge-output-format", "mp4",
-            "--extractor-args", "tiktok:watermark=0"
-        ]
+            "--extractor-args", "tiktok:watermark=0",
+        ] + cmd[1:]
 
     log.info(f"[DL] CMD: {' '.join(cmd)}")
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.PIPE,
     )
 
     last_edit = 0
 
-    # 🔥 TASK WAJIB (ANTI asyncio.wait ERROR)
-    stdout_task = asyncio.create_task(proc.stdout.readline())
-    wait_task = asyncio.create_task(proc.wait())
-
     try:
         while True:
-            done, pending = await asyncio.wait(
-                {stdout_task, wait_task},
-                return_when=asyncio.FIRST_COMPLETED
-            )
-
-            # 🟥 PROCESS SELESAI
-            if wait_task in done:
+            line = await proc.stdout.readline()
+            if not line:
                 break
 
-            # 🟩 PROGRESS LINE
-            if stdout_task in done:
-                line = stdout_task.result()
-                if not line:
-                    break
+            raw = line.decode(errors="ignore").strip()
+            log.debug(f"[yt-dlp] {raw}")
 
-                raw = line.decode(errors="ignore").strip()
-                log.debug(f"[yt-dlp] {raw}")
+            if "|" not in raw:
+                continue
 
-                if "|" in raw:
-                    try:
-                        percent_s, speed, eta = raw.split("|", 2)
-                        percent = float(percent_s.replace("%", "").strip())
+            try:
+                percent_s, speed, eta = raw.split("|", 2)
+                percent = float(percent_s.replace("%", "").strip())
 
-                        now = time.time()
-                        if now - last_edit >= 1.2:
-                            bar_len = 10
-                            filled = int(percent / 100 * bar_len)
-                            bar = "█" * filled + "░" * (bar_len - filled)
+                now = time.time()
+                if now - last_edit >= 1.2:
+                    bar_len = 10
+                    filled = int(percent / 100 * bar_len)
+                    bar = "█" * filled + "░" * (bar_len - filled)
 
-                            await bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=status_msg_id,
-                                text=(
-                                    "⬇️ <b>Mengunduh...</b>\n\n"
-                                    f"<code>{bar} {percent:.1f}%</code>\n"
-                                    f"🚀 {speed}\n"
-                                    f"⏳ {eta}"
-                                ),
-                                parse_mode="HTML"
-                            )
-                            last_edit = now
-                    except Exception:
-                        pass
-
-                # 🔁 BUAT TASK BARU (WAJIB)
-                stdout_task = asyncio.create_task(proc.stdout.readline())
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text=(
+                            "⬇️ <b>Mengunduh...</b>\n\n"
+                            f"<code>{bar} {percent:.1f}%</code>\n"
+                            f"🚀 {speed}\n"
+                            f"⏳ {eta}"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    last_edit = now
+            except Exception:
+                pass
 
         rc = await proc.wait()
         if rc != 0:
@@ -298,7 +302,9 @@ async def download_media(
             log.error(err.decode(errors="ignore"))
             return None
 
-        # 🔎 CARI FILE
+        # =====================
+        # FIND RESULT FILE
+        # =====================
         for f in os.listdir(TMP_DIR):
             if f.startswith(uid):
                 path = os.path.join(TMP_DIR, f)
@@ -310,83 +316,11 @@ async def download_media(
         return None
 
     finally:
-        for t in (stdout_task, wait_task):
-            if not t.done():
-                t.cancel()
-
-# =====================
-# WORKER (BACKGROUND)
-# =====================
-async def _dl_worker(
-    app,
-    chat_id: int,
-    reply_to: int,
-    raw_url: str,
-    fmt_key: str,
-    status_msg_id: int
-):
-    bot = app.bot
-    file_path = None
-
-    try:
-        fmt = DL_FORMATS[fmt_key]
-
-        url = raw_url
-        if "tiktok.com" in url:
-            url = await resolve_tiktok_url(url)
-
-        file_path = await download_media(
-            url, fmt, bot, chat_id, status_msg_id
-        )
-        if not file_path:
-            raise RuntimeError("download failed")
-
-        size = os.path.getsize(file_path)
-        if size > MAX_TG_SIZE:
-            raise RuntimeError("file terlalu besar")
-
-        # 🔼 UPLOAD STATUS
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="⬆️ <b>Mengunggah ke Telegram...</b>",
-            parse_mode="HTML"
-        )
-
-        if fmt["ext"] == "mp3":
-            with open(file_path, "rb") as f:
-                await bot.send_audio(
-                    chat_id=chat_id,
-                    audio=f,
-                    reply_to_message_id=reply_to
-                )
-        else:
-            with open(file_path, "rb") as f:
-                await bot.send_video(
-                    chat_id=chat_id,
-                    video=f,
-                    reply_to_message_id=reply_to
-                )
-
         try:
-            await bot.delete_message(chat_id, status_msg_id)
+            if proc.returncode is None:
+                proc.kill()
         except:
             pass
-
-    except Exception as e:
-        log.exception("DL ERROR")
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text=f"❌ Gagal: {e}"
-            )
-        except:
-            pass
-
-    finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
 
 # =====================
 # COMMAND /dl
