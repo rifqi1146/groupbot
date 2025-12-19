@@ -190,51 +190,78 @@ async def resolve_tiktok_url(url: str) -> str:
 # =====================
 async def download_media(
     url: str,
-    fmt_key: str,
+    fmt_key: str,          # "video" / "mp3"
     bot,
     chat_id: int,
     status_msg_id: int
 ):
-    out_tpl = f"{TMP_DIR}/%(id)s.%(ext)s"
-    final_path = None
+    import re, os, time, asyncio, uuid, logging
 
+    log = logging.getLogger(__name__)
+
+    TMP_DIR = "downloads"
+    os.makedirs(TMP_DIR, exist_ok=True)
+
+    # =====================
+    # AMBIL VIDEO ID (KUNCI UTAMA)
+    # =====================
+    video_id = None
+    m = re.search(r"/video/(\d+)", url)
+    if m:
+        video_id = m.group(1)
+    else:
+        video_id = uuid.uuid4().hex  # fallback
+
+    out_tpl = f"{TMP_DIR}/{video_id}.%(ext)s"
+
+    # =====================
+    # BASE CMD (SAMA PERSIS KAYA USERBOT)
+    # =====================
     if fmt_key == "mp3":
         cmd = [
-            "/opt/yt-dlp/groupbot/yt-dlp",
+            "/opt/yt-dlp/userbot/yt-dlp",
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
             "--audio-quality", "0",
+            "--no-playlist",
+            "--newline",
+            "--progress-template",
+            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url
         ]
     else:
         cmd = [
-            "/opt/yt-dlp/userbot/yt-dlp",   # ← samain userbot
+            "/opt/yt-dlp/userbot/yt-dlp",
             "-f", "mp4/best",
             "--merge-output-format", "mp4",
             "--extractor-args", "tiktok:watermark=0",
+            "--no-playlist",
+            "--newline",
+            "--progress-template",
+            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url
         ]
-
-    cmd += [
-        "--no-playlist",
-        "--newline",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "--print", "after_move:filepath",
-        "-o", out_tpl,
-        url,
-    ]
 
     log.info(f"[DL] CMD: {' '.join(cmd)}")
 
+    # =====================
+    # SPAWN PROCESS
+    # =====================
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
     )
 
     last_edit = 0
 
     try:
+        # =====================
+        # PROGRESS LOOP
+        # =====================
         while True:
             line = await proc.stdout.readline()
             if not line:
@@ -243,45 +270,55 @@ async def download_media(
             raw = line.decode(errors="ignore").strip()
             log.debug(f"[yt-dlp] {raw}")
 
-            # 📊 PROGRESS
-            if "|" in raw:
-                try:
-                    percent_s, speed, eta = raw.split("|", 2)
-                    percent = float(percent_s.replace("%", "").strip())
+            if "|" not in raw:
+                continue
 
-                    now = time.time()
-                    if now - last_edit >= 1.2:
-                        bar = progress_bar(percent)
-                        await bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=status_msg_id,
-                            text=(
-                                "⬇️ <b>Mengunduh...</b>\n\n"
-                                f"<code>{bar} {percent:.1f}%</code>\n"
-                                f"🚀 {speed}\n"
-                                f"⏳ {eta}"
-                            ),
-                            parse_mode="HTML"
-                        )
-                        last_edit = now
-                except:
-                    pass
+            try:
+                percent_s, speed, eta = raw.split("|", 2)
+                percent = float(percent_s.replace("%", "").strip())
 
-            # 📁 FILEPATH FINAL
-            elif raw.startswith(TMP_DIR):
-                final_path = raw
+                now = time.time()
+                if now - last_edit >= 1.2:
+                    bar_len = 10
+                    filled = int(percent / 100 * bar_len)
+                    bar = "█" * filled + "░" * (bar_len - filled)
 
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text=(
+                            "⬇️ <b>Mengunduh...</b>\n\n"
+                            f"<code>{bar} {percent:.1f}%</code>\n"
+                            f"🚀 {speed}\n"
+                            f"⏳ {eta}"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    last_edit = now
+            except Exception:
+                pass
+
+        # =====================
+        # CEK EXIT CODE
+        # =====================
         rc = await proc.wait()
         if rc != 0:
             err = await proc.stderr.read()
             log.error(err.decode(errors="ignore"))
             return None
 
-        if not final_path or not os.path.exists(final_path):
-            log.error("[DL] output file not found")
-            return None
+        # =====================
+        # SCAN FILESYSTEM (ANTI GAGAL)
+        # =====================
+        for f in os.listdir(TMP_DIR):
+            if video_id in f:
+                path = os.path.join(TMP_DIR, f)
+                if os.path.getsize(path) > 0:
+                    log.info(f"[DL] DONE: {path}")
+                    return path
 
-        return final_path
+        log.error("[DL] output file not found")
+        return None
 
     finally:
         if proc.returncode is None:
