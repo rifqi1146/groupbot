@@ -262,19 +262,17 @@ async def _dl_worker_with_format(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     raw_url: str,
-    fmt_key: str,
+    fmt: dict,   # ⬅️ LANGSUNG DICT
     status
 ):
     file_path = None
 
     try:
         # =====================
-        # FORMAT
+        # VALIDASI FORMAT
         # =====================
-        if fmt_key not in DL_FORMATS:
-            raise RuntimeError("Invalid format selected")
-
-        fmt = DL_FORMATS[fmt_key]
+        if not isinstance(fmt, dict):
+            raise RuntimeError("Invalid format data")
 
         # =====================
         # URL RESOLVE
@@ -298,7 +296,7 @@ async def _dl_worker_with_format(
         size = get_file_size(file_path)
 
         # =====================
-        # TELEGRAM LIMIT
+        # TELEGRAM SIZE LIMIT
         # =====================
         if size > MAX_TG_SIZE:
             await status.edit_text(
@@ -327,7 +325,7 @@ async def _dl_worker_with_format(
 
         await status.delete()
 
-    except Exception as e:
+    except Exception:
         log.exception("DL ERROR")
         try:
             await status.edit_text(
@@ -394,15 +392,27 @@ async def dl_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not fmt:
         return await q.edit_message_text("❌ Format invalid")
 
+    # 🔒 HAPUS CACHE BIAR GA DOUBLE CLICK
     DL_CACHE.pop(dl_id, None)
 
-    status = await q.edit_message_text(
+    # ✅ EDIT MESSAGE (TAPI JANGAN PAKE RETURN VALUE)
+    await q.edit_message_text(
         f"⬇️ <b>Menyiapkan {fmt['label']}...</b>",
         parse_mode="HTML"
     )
 
+    # ✅ MESSAGE OBJECT YANG BENER
+    status = q.message
+
+    # 🚀 JALANKAN WORKER
     context.application.create_task(
-        _dl_worker_with_format(update, context, data["url"], fmt, status)
+        _dl_worker_with_format(
+            update,
+            context,
+            data["url"],
+            fmt,
+            status
+        )
     )
 
 # utils_groq_poll18.py
