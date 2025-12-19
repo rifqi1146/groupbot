@@ -325,6 +325,67 @@ async def download_media(
             proc.kill()
 
 # =====================
+# GALLERY-DL FALLBACK
+# =====================
+async def gallerydl_download(
+    url: str,
+    bot,
+    chat_id: int,
+    status_msg_id: int
+):
+    import glob, os, asyncio, time
+
+    out_dir = TMP_DIR  # reuse TMP_DIR
+    before = set(
+        glob.glob(f"{out_dir}/**/*.mp4", recursive=True)
+    )
+
+    cmd = [
+        "gallery-dl",
+        "-d", out_dir,
+        url
+    ]
+
+    log.info(f"[GALLERY-DL] CMD: {' '.join(cmd)}")
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
+    # gallery-dl ga ada progress → kasih status statis
+    await bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=status_msg_id,
+        text="🔁 <b>Fallback ke gallery-dl...</b>",
+        parse_mode="HTML"
+    )
+
+    await proc.wait()
+
+    if proc.returncode != 0:
+        err = await proc.stderr.read()
+        log.error("[GALLERY-DL] failed")
+        log.error(err.decode(errors="ignore"))
+        return None
+
+    # cari file baru
+    after = set(
+        glob.glob(f"{out_dir}/**/*.mp4", recursive=True)
+    )
+
+    new_files = list(after - before)
+    if not new_files:
+        log.error("[GALLERY-DL] output file not found")
+        return None
+
+    # ambil paling baru
+    newest = max(new_files, key=os.path.getctime)
+    log.info(f"[GALLERY-DL] DONE: {newest}")
+    return newest
+    
+# =====================
 # WORKER (INI YANG TADI HILANG)
 # =====================
 async def _dl_worker(
@@ -343,13 +404,33 @@ async def _dl_worker(
         if "tiktok.com" in url:
             url = await resolve_tiktok_url(url)
 
+        # ===== 1️⃣ COBA yt-dlp =====
         file_path = await download_media(
             url, fmt_key, bot, chat_id, status_msg_id
         )
 
+        # ===== 2️⃣ FALLBACK gallery-dl =====
         if not file_path:
-            raise RuntimeError("download failed")
+            log.warning("[DL] yt-dlp error, fallback to gallery-dl")
 
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text="⚠️ <b>yt-dlp error</b>\n🔁 Fallback ke gallery-dl...",
+                    parse_mode="HTML"
+                )
+            except:
+                pass
+
+            file_path = await gallerydl_download(
+                url, bot, chat_id, status_msg_id
+            )
+
+            if not file_path:
+                raise RuntimeError("download failed (yt-dlp + gallery-dl)")
+
+        # ===== 3️⃣ UPLOAD =====
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=status_msg_id,
@@ -359,9 +440,17 @@ async def _dl_worker(
 
         with open(file_path, "rb") as f:
             if fmt_key == "mp3":
-                await bot.send_audio(chat_id, f, reply_to_message_id=reply_to)
+                await bot.send_audio(
+                    chat_id,
+                    f,
+                    reply_to_message_id=reply_to
+                )
             else:
-                await bot.send_video(chat_id, f, reply_to_message_id=reply_to)
+                await bot.send_video(
+                    chat_id,
+                    f,
+                    reply_to_message_id=reply_to
+                )
 
         await bot.delete_message(chat_id, status_msg_id)
 
@@ -383,6 +472,35 @@ async def _dl_worker(
 # =====================
 # COMMAND /dl
 # =====================
+async def gdl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text("❌ Kirim link")
+
+    url = context.args[0]
+
+    status = await update.message.reply_text("⬇️ <b>Gallery-dl download...</b>", parse_mode="HTML")
+
+    file_path = await gallerydl_download(
+        url,
+        context.application.bot,
+        update.effective_chat.id,
+        status.message_id
+    )
+
+    if not file_path:
+        return await status.edit_text("❌ Gallery-dl gagal")
+
+    await status.edit_text("⬆️ <b>Mengunggah...</b>", parse_mode="HTML")
+
+    with open(file_path, "rb") as f:
+        await update.effective_chat.send_video(
+            video=f,
+            reply_to_message_id=update.message.message_id
+        )
+
+    await status.delete()
+    os.remove(file_path)
+    
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("❌ Kirim link TikTok / IG")
@@ -2276,6 +2394,7 @@ def main():
     app.add_handler(CommandHandler("domain", domain_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("dl2", gdl_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CommandHandler("tr", tr_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
