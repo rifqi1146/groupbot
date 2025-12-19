@@ -109,6 +109,139 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
+# =========================
+# ASUPAN TIKTOK (SOFT NSFW)
+# =========================
+import sys, os, json, random, asyncio, logging
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
+# ===== inject venv asupan =====
+ASUPAN_VENV = "/root/groupbot/asupan_venv/lib/python3.13/site-packages"
+if ASUPAN_VENV not in sys.path:
+    sys.path.insert(0, ASUPAN_VENV)
+
+from TikTokApi import TikTokApi
+
+log = logging.getLogger(__name__)
+
+ASUPAN_TOKEN_FILE = "asupan_tokens.json"
+
+# =========================
+# TOKEN STORAGE
+# =========================
+def load_tokens():
+    if not os.path.exists(ASUPAN_TOKEN_FILE):
+        return []
+    with open(ASUPAN_TOKEN_FILE, "r") as f:
+        return json.load(f)
+
+def save_tokens(tokens):
+    with open(ASUPAN_TOKEN_FILE, "w") as f:
+        json.dump(tokens, f)
+
+def get_random_token():
+    tokens = load_tokens()
+    if not tokens:
+        raise RuntimeError("ms_token kosong, update dulu")
+    return random.choice(tokens)
+
+# =========================
+# INLINE KEYBOARD
+# =========================
+def asupan_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")]
+    ])
+
+# =========================
+# FETCH ASUPAN
+# =========================
+async def fetch_asupan():
+    ms_token = get_random_token()
+
+    async with TikTokApi(ms_token=ms_token) as api:
+        videos = []
+        async for v in api.search.videos(
+            "cewek cantik",
+            count=20
+        ):
+            videos.append(v)
+
+    if not videos:
+        raise RuntimeError("Asupan kosong")
+
+    v = random.choice(videos)
+
+    return {
+        "url": v.video.play_addr,
+        "desc": v.desc[:200] if v.desc else "asupan 🔥"
+    }
+
+# =========================
+# /asupan COMMAND
+# =========================
+async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = await update.message.reply_text("⏳ Nyari asupan...")
+
+    try:
+        data = await fetch_asupan()
+
+        await msg.edit_text(
+            f"🔥 <b>ASUPAN</b>\n\n{data['desc']}",
+            parse_mode="HTML"
+        )
+
+        await update.effective_chat.send_video(
+            video=data["url"],
+            reply_to_message_id=update.message.message_id,
+            reply_markup=asupan_keyboard()
+        )
+
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}")
+
+# =========================
+# CALLBACK (GANTI ASUPAN)
+# =========================
+async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    try:
+        data = await fetch_asupan()
+
+        await q.message.reply_video(
+            video=data["url"],
+            caption=f"🔥 <b>ASUPAN</b>\n\n{data['desc']}",
+            parse_mode="HTML",
+            reply_markup=asupan_keyboard()
+        )
+
+    except Exception as e:
+        await q.message.reply_text(f"❌ Gagal: {e}")
+
+# =========================
+# UPDATE MS TOKEN VIA TELEGRAM
+# =========================
+async def asupan_token_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text(
+            "❌ Kirim:\n<code>/asupantoken MS_TOKEN_KAMU</code>",
+            parse_mode="HTML"
+        )
+
+    token = context.args[0].strip()
+    tokens = load_tokens()
+
+    if token not in tokens:
+        tokens.append(token)
+        save_tokens(tokens)
+
+    await update.message.reply_text(
+        f"✅ ms_token ditambahkan\nTotal token: {len(tokens)}"
+    )
+    
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
 # =====================
@@ -2254,6 +2387,9 @@ def main():
     app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CommandHandler("tr", tr_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
+    app.add_handler(CommandHandler("asupan", asupan_cmd))
+    app.add_handler(CommandHandler("asupantoken", asupan_token_cmd))
+
 
     # ======================
     # AI COMMANDS
@@ -2271,6 +2407,7 @@ def main():
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern="^dl:"))
+    appadd_handler(CallbackQueryHandler(asupan_callback, pattern="^asupan:"))
     
     # ======================
     # MESSAGE ROUTER
