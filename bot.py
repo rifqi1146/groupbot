@@ -202,24 +202,23 @@ async def download_media(
     TMP_DIR = "downloads"
     os.makedirs(TMP_DIR, exist_ok=True)
 
+    COOKIES_PATH = "/root/groupbot/cookies/tiktok.txt"
+
     # =====================
-    # AMBIL VIDEO ID (KUNCI UTAMA)
+    # AMBIL VIDEO ID
     # =====================
-    video_id = None
     m = re.search(r"/video/(\d+)", url)
-    if m:
-        video_id = m.group(1)
-    else:
-        video_id = uuid.uuid4().hex  # fallback
+    video_id = m.group(1) if m else uuid.uuid4().hex
 
     out_tpl = f"{TMP_DIR}/{video_id}.%(ext)s"
 
     # =====================
-    # BASE CMD (SAMA PERSIS KAYA USERBOT)
+    # CMD (PERSIS USERBOT + COOKIES)
     # =====================
     if fmt_key == "mp3":
         cmd = [
             "/opt/yt-dlp/userbot/yt-dlp",
+            "--cookies", COOKIES_PATH,
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
@@ -234,6 +233,7 @@ async def download_media(
     else:
         cmd = [
             "/opt/yt-dlp/userbot/yt-dlp",
+            "--cookies", COOKIES_PATH,
             "-f", "mp4/best",
             "--merge-output-format", "mp4",
             "--extractor-args", "tiktok:watermark=0",
@@ -299,16 +299,17 @@ async def download_media(
                 pass
 
         # =====================
-        # CEK EXIT CODE
+        # EXIT CODE
         # =====================
         rc = await proc.wait()
         if rc != 0:
             err = await proc.stderr.read()
+            log.error("[DL] yt-dlp failed")
             log.error(err.decode(errors="ignore"))
             return None
 
         # =====================
-        # SCAN FILESYSTEM (ANTI GAGAL)
+        # SCAN FILE
         # =====================
         for f in os.listdir(TMP_DIR):
             if video_id in f:
