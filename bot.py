@@ -262,85 +262,60 @@ async def _dl_worker_with_format(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     raw_url: str,
-    fmt: dict,   # ⬅️ LANGSUNG DICT
+    fmt_key: str,
     status
 ):
     file_path = None
 
     try:
-        # =====================
-        # VALIDASI FORMAT
-        # =====================
-        if not isinstance(fmt, dict):
-            raise RuntimeError("Invalid format data")
+        if fmt_key not in DL_FORMATS:
+            raise RuntimeError("invalid format key")
 
-        # =====================
-        # URL RESOLVE
-        # =====================
+        fmt = DL_FORMATS[fmt_key]
+
         url = raw_url
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
-        # =====================
-        # DOWNLOAD
-        # =====================
         file_path = await download_media_with_format(
             url=url,
             status_msg=status,
             fmt=fmt
         )
 
-        if not file_path or not os.path.exists(file_path):
+        if not file_path:
             raise RuntimeError("download failed")
 
-        size = get_file_size(file_path)
+        size = os.path.getsize(file_path)
 
-        # =====================
-        # TELEGRAM SIZE LIMIT
-        # =====================
         if size > MAX_TG_SIZE:
-            await status.edit_text(
-                "⚠️ <b>File terlalu besar untuk Telegram</b>\n\n"
-                f"📦 Size: <code>{size // (1024*1024)} MB</code>\n"
-                "🔗 Download manual:\n"
-                f"{url}",
-                parse_mode="HTML",
-                disable_web_page_preview=True
+            return await status.edit_text(
+                f"⚠️ File terlalu besar\n{size//(1024*1024)} MB"
             )
-            return
 
-        # =====================
-        # UPLOAD
-        # =====================
-        await status.edit_text(
-            "⬆️ <b>Mengunggah ke Telegram...</b>",
-            parse_mode="HTML"
-        )
+        await status.edit_text("⬆️ Mengunggah...")
 
-        with open(file_path, "rb") as f:
-            if fmt["ext"] == "mp3":
-                await update.message.reply_audio(audio=f)
-            else:
-                await update.message.reply_video(video=f)
+        if fmt["ext"] == "mp3":
+            await update.effective_chat.send_audio(
+                audio=open(file_path, "rb")
+            )
+        else:
+            await update.effective_chat.send_video(
+                video=open(file_path, "rb")
+            )
 
         await status.delete()
 
-    except Exception:
+    except Exception as e:
         log.exception("DL ERROR")
         try:
-            await status.edit_text(
-                "❌ Gagal mengunduh media\n"
-                "ℹ️ Coba ulang beberapa saat lagi"
-            )
+            await status.edit_text(f"❌ Gagal: {e}")
         except:
             pass
 
     finally:
-        try:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-        except:
-            pass
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
 
 
 # =====================
@@ -388,29 +363,25 @@ async def dl_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         DL_CACHE.pop(dl_id, None)
         return await q.edit_message_text("❌ Download dibatalkan")
 
-    fmt = DL_FORMATS.get(choice)
-    if not fmt:
+    if choice not in DL_FORMATS:
         return await q.edit_message_text("❌ Format invalid")
 
-    # 🔒 HAPUS CACHE BIAR GA DOUBLE CLICK
+    # hapus cache
     DL_CACHE.pop(dl_id, None)
 
-    # ✅ EDIT MESSAGE (TAPI JANGAN PAKE RETURN VALUE)
     await q.edit_message_text(
-        f"⬇️ <b>Menyiapkan {fmt['label']}...</b>",
+        f"⬇️ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
         parse_mode="HTML"
     )
 
-    # ✅ MESSAGE OBJECT YANG BENER
     status = q.message
 
-    # 🚀 JALANKAN WORKER
     context.application.create_task(
         _dl_worker_with_format(
             update,
             context,
             data["url"],
-            fmt,
+            choice,   # ⬅️ KIRIM KEY, BUKAN DICT
             status
         )
     )
