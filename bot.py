@@ -86,9 +86,6 @@ if not BOT_TOKEN:
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
-TMP_DIR = "downloads"
-os.makedirs(TMP_DIR, exist_ok=True)
-MAX_TG_SIZE = 1000 * 1024 * 1024
 # ---- simple JSON helpers ----
 def load_json_file(path, default):
     try:
@@ -139,12 +136,10 @@ DL_FORMATS = {
     "video": {
         "label": "🎥 Video",
         "ext": "mp4",
-        "format": "bv*[ext=mp4]/b"
     },
     "mp3": {
         "label": "🎵 MP3",
         "ext": "mp3",
-        "format": "bestaudio/best"
     }
 }
 
@@ -191,11 +186,11 @@ async def resolve_tiktok_url(url: str) -> str:
     return final
 
 # =====================
-# DOWNLOAD CORE (WITH PROGRESS)
+# DOWNLOAD CORE (PROGRESS)
 # =====================
 async def download_media(
     url: str,
-    fmt: dict,
+    fmt_key: str,
     bot,
     chat_id: int,
     status_msg_id: int
@@ -203,36 +198,27 @@ async def download_media(
     uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
-    # =====================
-    # BASE CMD (WAJIB STABIL)
-    # =====================
+    # ===== BASE CMD =====
     cmd = [
         "/opt/yt-dlp/groupbot/yt-dlp",
-
         "--newline",
         "--progress-template",
         "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-
         "--user-agent",
         "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-
         "--add-header", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
         "--add-header", "Referer: https://www.tiktok.com/",
-
         "--force-ipv4",
         "--sleep-interval", "1",
         "--max-sleep-interval", "3",
         "--no-playlist",
-
         "-o", out_tpl,
         url,
     ]
 
-    # =====================
-    # FORMAT HANDLING
-    # =====================
-    if fmt["ext"] == "mp3":
+    # ===== FORMAT =====
+    if fmt_key == "mp3":
         cmd = [
             "/opt/yt-dlp/groupbot/yt-dlp",
             "-f", "bestaudio/best",
@@ -276,10 +262,7 @@ async def download_media(
 
                 now = time.time()
                 if now - last_edit >= 1.2:
-                    bar_len = 10
-                    filled = int(percent / 100 * bar_len)
-                    bar = "█" * filled + "░" * (bar_len - filled)
-
+                    bar = progress_bar(percent)
                     await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=status_msg_id,
@@ -292,35 +275,82 @@ async def download_media(
                         parse_mode="HTML"
                     )
                     last_edit = now
-            except Exception:
+            except:
                 pass
 
         rc = await proc.wait()
         if rc != 0:
             err = await proc.stderr.read()
-            log.error(f"[DL] yt-dlp failed rc={rc}")
             log.error(err.decode(errors="ignore"))
             return None
 
-        # =====================
-        # FIND RESULT FILE
-        # =====================
         for f in os.listdir(TMP_DIR):
             if f.startswith(uid):
                 path = os.path.join(TMP_DIR, f)
                 if os.path.getsize(path) > 0:
-                    log.info(f"[DL] DONE: {path}")
                     return path
 
-        log.error("[DL] file not found")
         return None
 
     finally:
+        if proc.returncode is None:
+            proc.kill()
+
+# =====================
+# WORKER (INI YANG TADI HILANG)
+# =====================
+async def _dl_worker(
+    app,
+    chat_id: int,
+    reply_to: int,
+    raw_url: str,
+    fmt_key: str,
+    status_msg_id: int
+):
+    bot = app.bot
+    file_path = None
+
+    try:
+        url = raw_url
+        if "tiktok.com" in url:
+            url = await resolve_tiktok_url(url)
+
+        file_path = await download_media(
+            url, fmt_key, bot, chat_id, status_msg_id
+        )
+
+        if not file_path:
+            raise RuntimeError("download failed")
+
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="⬆️ <b>Mengunggah ke Telegram...</b>",
+            parse_mode="HTML"
+        )
+
+        with open(file_path, "rb") as f:
+            if fmt_key == "mp3":
+                await bot.send_audio(chat_id, f, reply_to_message_id=reply_to)
+            else:
+                await bot.send_video(chat_id, f, reply_to_message_id=reply_to)
+
+        await bot.delete_message(chat_id, status_msg_id)
+
+    except Exception as e:
+        log.exception("DL ERROR")
         try:
-            if proc.returncode is None:
-                proc.kill()
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"❌ Gagal: {e}"
+            )
         except:
             pass
+
+    finally:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
 
 # =====================
 # COMMAND /dl
@@ -330,12 +360,8 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link TikTok / IG")
 
     url = context.args[0]
-
     if is_youtube(url):
-        return await update.message.reply_text(
-            "❌ YouTube tidak didukung\n"
-            "✔️ Gunakan TikTok / Instagram"
-        )
+        return await update.message.reply_text("❌ YouTube tidak didukung")
 
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
@@ -356,10 +382,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    try:
-        _, dl_id, choice = q.data.split(":", 2)
-    except:
-        return
+    _, dl_id, choice = q.data.split(":", 2)
 
     data = DL_CACHE.get(dl_id)
     if not data:
