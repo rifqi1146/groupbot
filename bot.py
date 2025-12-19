@@ -124,20 +124,16 @@ from telegram.ext import ContextTypes
 log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []
-ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-# =========================
-# INLINE KEYBOARD
-# =========================
+#inline keyboard
 def asupan_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")]
     ])
 
-# =========================
-# FETCH ASUPAN VIA TIKWM SEARCH
-# =========================
+#keywords
 async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
@@ -149,7 +145,20 @@ async def fetch_asupan_tikwm():
         "cewek joget indo",
         "cewek cantik indo",
         "cewek hijab",
+        "fakebody",
+        "tobrut style",
         "cewek jawa",
+        "cewek sunda",
+        "asupan malam",
+        "asupan pagi,"
+        "asuoan harian,"
+        "tobrut",
+        "pemersatubangsa",
+        "cucimata",
+        "bhncrt",
+        "geolgeol",
+        "zaraxhel",
+        "verllyyaling",
         "cewek lucu indo",
         "asupan cewek"
     ]
@@ -185,7 +194,7 @@ async def fetch_asupan_tikwm():
 
     return {
         "url": v["play"],
-        "desc": v.get("title") or "🔥 ASUPAN INDO"
+        "desc": v.get("title") or "Asupann 😋"
     }
 
 # =========================
@@ -220,7 +229,7 @@ async def get_asupan_fast():
 # /asupan COMMAND
 # =========================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("🔥 Nyari asupan...")
+    msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
         data = await get_asupan_fast()
@@ -1390,13 +1399,14 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ✨ FEATURES
     if data == "help:features":
-        text = (
-    "✨ <b>Features</b>\n\n"
-    "• 🏓 /ping — Cek latency bot\n"
-    "• ⬇️ /dl — Download video (TT / IG / YT)\n"
-    "• 🔍 /gsearch — Cari di Google\n"
-    "• 🌐 /tr — Translate teks\n"
-)
+    text = (
+        "✨ <b>Features</b>\n\n"
+        "• 🏓 /ping — Cek latency bot\n"
+        "• ⬇️ /dl — Download video (TT / IG / YT)\n"
+        "• 😋 /asupan — Asupan TikTok\n"
+        "• 🔍 /gsearch — Cari di Google\n"
+        "• 🌐 /tr — Translate teks\n"
+    )
         await query.edit_message_text(
             text,
             reply_markup=help_back_keyboard(),
@@ -2458,7 +2468,7 @@ def main():
             ("dl", "Download video (TikTok/Instagram)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
-            ("asupan", "Asupannnn"),            
+            ("asupan", "Asupannnn 😋"),            
             ("tr", "Translate text"),
         ]
         try:
