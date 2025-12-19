@@ -111,12 +111,13 @@ _ai_mode = load_ai_mode()
 
 # =========================
 # ASUPAN TIKTOK (SOFT NSFW)
+# TikTokApi v7 FIXED
 # =========================
 import sys, os, json, random, asyncio, logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-# ===== inject venv asupan =====
+# ===== inject asupan venv =====
 ASUPAN_SITE_PACKAGES = os.path.join(
     os.path.dirname(__file__),
     "asupan",
@@ -154,18 +155,16 @@ def get_random_token():
     return random.choice(tokens)
 
 # =========================
-# KEYWORDS (SOFT NSFW)
+# KEYWORDS (SOFT ONLY)
 # =========================
 ASUPAN_KEYWORDS = [
     "cewek cantik",
     "cewek tiktok",
+    "cewek joget",
     "dance tiktok girl",
     "cosplay girl",
     "cewek aesthetic",
-    "cewek lucu",
-    "tiktok girl outfit",
-    "cewek joget",
-    "soft girl tiktok"
+    "soft girl tiktok",
 ]
 
 # =========================
@@ -177,29 +176,26 @@ def asupan_keyboard():
     ])
 
 # =========================
-# INIT TIKTOK API (FIX v7)
-# =========================
-def get_tiktok_api():
-    ms_token = get_random_token()
-
-    api = TikTokApi()
-    api.create_sessions(
-        ms_tokens=[ms_token],
-        num_sessions=1,
-        sleep_after=3
-    )
-    return api
-
-# =========================
-# FETCH ASUPAN
+# FETCH ASUPAN (FIXED)
 # =========================
 async def fetch_asupan():
+    ms_token = get_random_token()
     keyword = random.choice(ASUPAN_KEYWORDS)
-    api = get_tiktok_api()
 
-    videos = []
-    async for v in api.search.videos(keyword, count=15):
-        videos.append(v)
+    async with TikTokApi() as api:
+        await api.create_sessions(
+            ms_tokens=[ms_token],
+            num_sessions=1,
+            sleep_after=3
+        )
+
+        videos = []
+        async for v in api.search(
+            keyword,
+            search_type="video",
+            count=15
+        ):
+            videos.append(v)
 
     if not videos:
         raise RuntimeError("Asupan kosong")
