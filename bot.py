@@ -83,11 +83,10 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise SystemExit("BOT_TOKEN missing in .env")
 
-app = Application.builder().token(TOKEN).concurrent_updates(True).build()
-
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
+TMP_DIR = "downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 MAX_TG_SIZE = 1000 * 1024 * 1024
 # ---- simple JSON helpers ----
@@ -128,7 +127,7 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-TMP_DIR = "downloads"
+
 os.makedirs(TMP_DIR, exist_ok=True)
 
 MAX_TG_SIZE = 50 * 1024 * 1024  # 50MB aman
