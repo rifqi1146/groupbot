@@ -2416,7 +2416,7 @@ def main():
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern="^dl:"))
-    appadd_handler(CallbackQueryHandler(asupan_callback, pattern="^asupan:"))
+    app.add_handler(CallbackQueryHandler(asupan_callback, pattern="^asupan:"))
     
     # ======================
     # MESSAGE ROUTER
