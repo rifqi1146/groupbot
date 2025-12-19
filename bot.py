@@ -200,6 +200,11 @@ async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
     cmd = [
         "/opt/yt-dlp/groupbot/yt-dlp",
         "-f", fmt["format"],
+        "--no-update",
+        "--no-call-home",
+        "--retries", "5",
+        "--fragment-retries", "5",
+        "--retry-sleep", "3",
         "--newline",
         "--progress-template",
         "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -219,6 +224,8 @@ async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
             "--extractor-args", "tiktok:watermark=0"
         ]
 
+    log.info(f"[DL] CMD: {' '.join(cmd)}")
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -226,40 +233,67 @@ async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
     )
 
     last_edit = 0
+    stdout_done = False
+    stderr_done = False
 
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
+    while not (stdout_done and stderr_done):
+        tasks = []
 
-        raw = line.decode(errors="ignore").strip()
-        if "|" not in raw:
-            continue
+        if not stdout_done:
+            tasks.append(proc.stdout.readline())
+        if not stderr_done:
+            tasks.append(proc.stderr.readline())
 
-        try:
-            percent_s, speed, eta = raw.split("|")
-            percent = float(percent_s.replace("%", "").strip())
+        done, _ = await asyncio.wait(
+            tasks,
+            return_when=asyncio.FIRST_COMPLETED
+        )
 
-            now = time.time()
-            if now - last_edit >= 1:
-                bar = progress_bar(percent)
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=(
-                        "⬇️ <b>Mengunduh...</b>\n\n"
-                        f"<code>{bar} {percent:.1f}%</code>\n"
-                        f"🚀 {speed}\n"
-                        f"⏳ {eta}"
-                    ),
-                    parse_mode="HTML"
-                )
-                last_edit = now
-        except:
-            pass
+        for fut in done:
+            line = fut.result()
 
-    await proc.wait()
-    if proc.returncode != 0:
+            # EOF
+            if not line:
+                coro = fut.get_coro()
+                if coro.cr_frame and coro.cr_frame.f_locals.get("self") is proc.stdout:
+                    stdout_done = True
+                else:
+                    stderr_done = True
+                continue
+
+            text = line.decode(errors="ignore").strip()
+
+            # ===== PROGRESS (STDOUT) =====
+            if "|" in text:
+                try:
+                    percent_s, speed, eta = text.split("|")
+                    percent = float(percent_s.replace("%", "").strip())
+
+                    now = time.time()
+                    if now - last_edit >= 1:
+                        bar = progress_bar(percent)
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=status_msg_id,
+                            text=(
+                                "⬇️ <b>Mengunduh...</b>\n\n"
+                                f"<code>{bar} {percent:.1f}%</code>\n"
+                                f"🚀 {speed}\n"
+                                f"⏳ {eta}"
+                            ),
+                            parse_mode="HTML"
+                        )
+                        last_edit = now
+                except Exception:
+                    pass
+            else:
+                # ===== STDERR / LOG ASLI =====
+                log.warning(f"[yt-dlp] {text}")
+
+    rc = await proc.wait()
+    log.info(f"[DL] yt-dlp exit code = {rc}")
+
+    if rc != 0:
         return None
 
     for f in os.listdir(TMP_DIR):
