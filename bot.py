@@ -82,16 +82,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
     raise SystemExit("BOT_TOKEN missing in .env")
-    
-app = (
-     ApplicationBuilder()
-    .token(BOT_TOKEN)
-    .read_timeout(300)
-    .write_timeout(300)
-    .connect_timeout(300)
-    .pool_timeout(300)
-    .build()
-)
+
+app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
