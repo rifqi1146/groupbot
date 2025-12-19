@@ -193,18 +193,20 @@ async def resolve_tiktok_url(url: str) -> str:
 # =====================
 # DOWNLOAD CORE (WITH PROGRESS)
 # =====================
-async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
+async def download_media(
+    url: str,
+    fmt: dict,
+    bot,
+    chat_id: int,
+    status_msg_id: int
+):
     uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
-        "/opt/yt-dlp/groupbot/yt-dlp",
+        "/opt/yt-dlp/groupbot/yt-dlp",   # ⬅️ pastiin path bener
         "-f", fmt["format"],
-        "--no-update",
-        "--no-call-home",
-        "--retries", "5",
-        "--fragment-retries", "5",
-        "--retry-sleep", "3",
+        "--no-playlist",
         "--newline",
         "--progress-template",
         "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -233,74 +235,82 @@ async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
     )
 
     last_edit = 0
-    stdout_done = False
-    stderr_done = False
 
-    while not (stdout_done and stderr_done):
-        tasks = []
+    # 🔥 TASK WAJIB (ANTI asyncio.wait ERROR)
+    stdout_task = asyncio.create_task(proc.stdout.readline())
+    wait_task = asyncio.create_task(proc.wait())
 
-        if not stdout_done:
-            tasks.append(proc.stdout.readline())
-        if not stderr_done:
-            tasks.append(proc.stderr.readline())
+    try:
+        while True:
+            done, pending = await asyncio.wait(
+                {stdout_task, wait_task},
+                return_when=asyncio.FIRST_COMPLETED
+            )
 
-        done, _ = await asyncio.wait(
-            tasks,
-            return_when=asyncio.FIRST_COMPLETED
-        )
+            # 🟥 PROCESS SELESAI
+            if wait_task in done:
+                break
 
-        for fut in done:
-            line = fut.result()
+            # 🟩 PROGRESS LINE
+            if stdout_task in done:
+                line = stdout_task.result()
+                if not line:
+                    break
 
-            # EOF
-            if not line:
-                coro = fut.get_coro()
-                if coro.cr_frame and coro.cr_frame.f_locals.get("self") is proc.stdout:
-                    stdout_done = True
-                else:
-                    stderr_done = True
-                continue
+                raw = line.decode(errors="ignore").strip()
+                log.debug(f"[yt-dlp] {raw}")
 
-            text = line.decode(errors="ignore").strip()
+                if "|" in raw:
+                    try:
+                        percent_s, speed, eta = raw.split("|", 2)
+                        percent = float(percent_s.replace("%", "").strip())
 
-            # ===== PROGRESS (STDOUT) =====
-            if "|" in text:
-                try:
-                    percent_s, speed, eta = text.split("|")
-                    percent = float(percent_s.replace("%", "").strip())
+                        now = time.time()
+                        if now - last_edit >= 1.2:
+                            bar_len = 10
+                            filled = int(percent / 100 * bar_len)
+                            bar = "█" * filled + "░" * (bar_len - filled)
 
-                    now = time.time()
-                    if now - last_edit >= 1:
-                        bar = progress_bar(percent)
-                        await bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=status_msg_id,
-                            text=(
-                                "⬇️ <b>Mengunduh...</b>\n\n"
-                                f"<code>{bar} {percent:.1f}%</code>\n"
-                                f"🚀 {speed}\n"
-                                f"⏳ {eta}"
-                            ),
-                            parse_mode="HTML"
-                        )
-                        last_edit = now
-                except Exception:
-                    pass
-            else:
-                # ===== STDERR / LOG ASLI =====
-                log.warning(f"[yt-dlp] {text}")
+                            await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=status_msg_id,
+                                text=(
+                                    "⬇️ <b>Mengunduh...</b>\n\n"
+                                    f"<code>{bar} {percent:.1f}%</code>\n"
+                                    f"🚀 {speed}\n"
+                                    f"⏳ {eta}"
+                                ),
+                                parse_mode="HTML"
+                            )
+                            last_edit = now
+                    except Exception:
+                        pass
 
-    rc = await proc.wait()
-    log.info(f"[DL] yt-dlp exit code = {rc}")
+                # 🔁 BUAT TASK BARU (WAJIB)
+                stdout_task = asyncio.create_task(proc.stdout.readline())
 
-    if rc != 0:
+        rc = await proc.wait()
+        if rc != 0:
+            err = await proc.stderr.read()
+            log.error(f"[DL] yt-dlp failed rc={rc}")
+            log.error(err.decode(errors="ignore"))
+            return None
+
+        # 🔎 CARI FILE
+        for f in os.listdir(TMP_DIR):
+            if f.startswith(uid):
+                path = os.path.join(TMP_DIR, f)
+                if os.path.getsize(path) > 0:
+                    log.info(f"[DL] DONE: {path}")
+                    return path
+
+        log.error("[DL] file not found")
         return None
 
-    for f in os.listdir(TMP_DIR):
-        if f.startswith(uid):
-            return os.path.join(TMP_DIR, f)
-
-    return None
+    finally:
+        for t in (stdout_task, wait_task):
+            if not t.done():
+                t.cancel()
 
 # =====================
 # WORKER (BACKGROUND)
