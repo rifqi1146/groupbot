@@ -117,7 +117,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 # ===== inject venv asupan =====
-ASUPAN_VENV = "/root/groupbot/asupan_venv/lib/python3.13/site-packages"
+ASUPAN_VENV = "/root/groupbot/asupan/lib/python3.13/site-packages"
 if ASUPAN_VENV not in sys.path:
     sys.path.insert(0, ASUPAN_VENV)
 
