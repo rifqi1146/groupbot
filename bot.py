@@ -117,8 +117,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 # ===== inject venv asupan =====
-import sys, os
-
 ASUPAN_SITE_PACKAGES = os.path.join(
     os.path.dirname(__file__),
     "asupan",
@@ -152,8 +150,23 @@ def save_tokens(tokens):
 def get_random_token():
     tokens = load_tokens()
     if not tokens:
-        raise RuntimeError("ms_token kosong, update dulu")
+        raise RuntimeError("ms_token kosong, pakai /asupantoken dulu")
     return random.choice(tokens)
+
+# =========================
+# KEYWORDS (SOFT NSFW)
+# =========================
+ASUPAN_KEYWORDS = [
+    "cewek cantik",
+    "cewek tiktok",
+    "dance tiktok girl",
+    "cosplay girl",
+    "cewek aesthetic",
+    "cewek lucu",
+    "tiktok girl outfit",
+    "cewek joget",
+    "soft girl tiktok"
+]
 
 # =========================
 # INLINE KEYBOARD
@@ -164,18 +177,29 @@ def asupan_keyboard():
     ])
 
 # =========================
+# INIT TIKTOK API (FIX v7)
+# =========================
+def get_tiktok_api():
+    ms_token = get_random_token()
+
+    api = TikTokApi()
+    api.create_sessions(
+        ms_tokens=[ms_token],
+        num_sessions=1,
+        sleep_after=3
+    )
+    return api
+
+# =========================
 # FETCH ASUPAN
 # =========================
 async def fetch_asupan():
-    ms_token = get_random_token()
+    keyword = random.choice(ASUPAN_KEYWORDS)
+    api = get_tiktok_api()
 
-    async with TikTokApi(ms_token=ms_token) as api:
-        videos = []
-        async for v in api.search.videos(
-            "cewek cantik",
-            count=20
-        ):
-            videos.append(v)
+    videos = []
+    async for v in api.search.videos(keyword, count=15):
+        videos.append(v)
 
     if not videos:
         raise RuntimeError("Asupan kosong")
@@ -184,7 +208,8 @@ async def fetch_asupan():
 
     return {
         "url": v.video.play_addr,
-        "desc": v.desc[:200] if v.desc else "asupan 🔥"
+        "desc": (v.desc[:200] if v.desc else "asupan 🔥"),
+        "keyword": keyword
     }
 
 # =========================
@@ -197,7 +222,9 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = await fetch_asupan()
 
         await msg.edit_text(
-            f"🔥 <b>ASUPAN</b>\n\n{data['desc']}",
+            f"🔥 <b>ASUPAN</b>\n"
+            f"🔎 <i>{data['keyword']}</i>\n\n"
+            f"{data['desc']}",
             parse_mode="HTML"
         )
 
@@ -222,7 +249,11 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await q.message.reply_video(
             video=data["url"],
-            caption=f"🔥 <b>ASUPAN</b>\n\n{data['desc']}",
+            caption=(
+                f"🔥 <b>ASUPAN</b>\n"
+                f"🔎 <i>{data['keyword']}</i>\n\n"
+                f"{data['desc']}"
+            ),
             parse_mode="HTML",
             reply_markup=asupan_keyboard()
         )
