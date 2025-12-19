@@ -129,6 +129,11 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
+TMP_DIR = "downloads"
+os.makedirs(TMP_DIR, exist_ok=True)
+
+MAX_TG_SIZE = 50 * 1024 * 1024  # 50MB aman
+
 DL_FORMATS = {
     "1080": {"label": "🎥 1080p", "ext": "mp4", "height": 1080},
     "720":  {"label": "🎥 720p",  "ext": "mp4", "height": 720},
@@ -138,6 +143,33 @@ DL_FORMATS = {
 
 DL_CACHE = {}
 
+
+# =====================
+# FORMAT NORMALIZER (KUNCI UTAMA)
+# =====================
+def normalize_format(fmt_key: str) -> dict:
+    if fmt_key not in DL_FORMATS:
+        raise RuntimeError("invalid format key")
+
+    base = DL_FORMATS[fmt_key].copy()
+
+    # 🎵 MP3
+    if base["ext"] == "mp3":
+        base["format"] = "bestaudio/best"
+        return base
+
+    # 🎥 VIDEO (RESOLUTION BASED)
+    h = base.get("height")
+    if not h:
+        raise RuntimeError("invalid video format")
+
+    base["format"] = f"bv*[height<={h}][ext=mp4]/b"
+    return base
+
+
+# =====================
+# KEYBOARD
+# =====================
 def dl_quality_keyboard(dl_id: str):
     rows = []
     for k, v in DL_FORMATS.items():
@@ -174,25 +206,16 @@ async def resolve_tiktok_url(url: str) -> str:
     return final
 
 
-def get_file_size(path: str) -> int:
-    try:
-        return os.path.getsize(path)
-    except:
-        return 0
-
-
 # =====================
 # DOWNLOAD CORE
 # =====================
 async def download_media_with_format(url: str, status_msg, fmt: dict):
-    uid = str(uuid.uuid4())
+    uid = uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{uid}.%(ext)s"
 
     cmd = [
         "/usr/bin/yt-dlp",
         "-f", fmt["format"],
-        "--merge-output-format", fmt["ext"],
-        "--extractor-args", "tiktok:watermark=0",
         "--no-playlist",
         "--newline",
         "--progress-template",
@@ -201,12 +224,17 @@ async def download_media_with_format(url: str, status_msg, fmt: dict):
         url
     ]
 
-    # MP3 NEEDS THIS
+    # 🎵 MP3 FLAGS
     if fmt["ext"] == "mp3":
         cmd += [
             "--extract-audio",
             "--audio-format", "mp3",
-            "--audio-quality", "0"
+            "--audio-quality", "0",
+        ]
+    else:
+        cmd += [
+            "--merge-output-format", "mp4",
+            "--extractor-args", "tiktok:watermark=0",
         ]
 
     proc = await asyncio.create_subprocess_exec(
@@ -223,7 +251,7 @@ async def download_media_with_format(url: str, status_msg, fmt: dict):
             break
 
         raw = line.decode(errors="ignore").strip()
-        if "%" not in raw or "|" not in raw:
+        if "|" not in raw:
             continue
 
         try:
@@ -232,12 +260,12 @@ async def download_media_with_format(url: str, status_msg, fmt: dict):
 
             now = time.time()
             if now - last_update >= 3:
-                bar = progress_bar(percent)
+                bar = int(percent // 10) * "█" + int(10 - percent // 10) * "░"
                 await status_msg.edit_text(
-                    f"⬇️ <b>Mengunduh media...</b>\n\n"
+                    f"⬇️ <b>Mengunduh...</b>\n\n"
                     f"<code>{bar} {percent:.1f}%</code>\n"
-                    f"🚀 Speed: <b>{speed}</b>\n"
-                    f"⏳ ETA: <b>{eta}</b>",
+                    f"🚀 {speed}\n"
+                    f"⏳ {eta}",
                     parse_mode="HTML"
                 )
                 last_update = now
@@ -268,29 +296,20 @@ async def _dl_worker_with_format(
     file_path = None
 
     try:
-        if fmt_key not in DL_FORMATS:
-            raise RuntimeError("invalid format key")
-
-        fmt = DL_FORMATS[fmt_key]
+        fmt = normalize_format(fmt_key)
 
         url = raw_url
         if "tiktok.com" in raw_url:
             url = await resolve_tiktok_url(raw_url)
 
-        file_path = await download_media_with_format(
-            url=url,
-            status_msg=status,
-            fmt=fmt
-        )
-
+        file_path = await download_media_with_format(url, status, fmt)
         if not file_path:
             raise RuntimeError("download failed")
 
         size = os.path.getsize(file_path)
-
         if size > MAX_TG_SIZE:
             return await status.edit_text(
-                f"⚠️ File terlalu besar\n{size//(1024*1024)} MB"
+                f"⚠️ File terlalu besar ({size//(1024*1024)} MB)"
             )
 
         await status.edit_text("⬆️ Mengunggah...")
@@ -363,10 +382,6 @@ async def dl_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         DL_CACHE.pop(dl_id, None)
         return await q.edit_message_text("❌ Download dibatalkan")
 
-    if choice not in DL_FORMATS:
-        return await q.edit_message_text("❌ Format invalid")
-
-    # hapus cache
     DL_CACHE.pop(dl_id, None)
 
     await q.edit_message_text(
@@ -374,15 +389,13 @@ async def dl_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode="HTML"
     )
 
-    status = q.message
-
     context.application.create_task(
         _dl_worker_with_format(
             update,
             context,
             data["url"],
-            choice,   # ⬅️ KIRIM KEY, BUKAN DICT
-            status
+            choice,
+            q.message
         )
     )
 
