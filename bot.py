@@ -2304,7 +2304,7 @@ def main():
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
-            ("dl", "Download video (TT/IG/YT)"),
+            ("dl", "Download video (TikTok/Instagram)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
             ("tr", "Translate text"),
