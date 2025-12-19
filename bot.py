@@ -222,7 +222,7 @@ async def download_media(url: str, fmt: dict, bot, chat_id, status_msg_id):
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.PIPE
     )
 
     last_edit = 0
