@@ -120,7 +120,7 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if user_id != OWNER_ID:
-        return await update.message.reply_text("❌ Lu bukan owner.")
+        return await update.message.reply_text("❌ Owner only.")
 
     await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
 
@@ -268,9 +268,7 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status.edit_text(f"❌ Failed: {e}")
         
-# =========================
-# ASUPAN TIKTOK (TIKWM SEARCH + PREFETCH)
-# =========================
+#asupan
 import aiohttp, random, logging, asyncio
 from telegram import (
     InlineKeyboardButton,
@@ -1593,19 +1591,21 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 🧠 UTILITIES
     if data == "help:utils":
-        text = (
-    "🧠 <b>Utilities</b>\n\n"
-    "• /stats — Info sistem\n"
-    "• /ip — Info IP\n"
-    "• /domain — Info domain\n"
-    "• /whoisdomain — WHOIS domain detail\n\n"
-)
-        await query.edit_message_text(
-            text,
-            reply_markup=help_back_keyboard(),
-            parse_mode="HTML"
-        )
-        return
+    text = (
+        "🧠 <b>Utilities</b>\n\n"
+        "• /stats — Info sistem\n"
+        "• /ip — Info IP\n"
+        "• /domain — Info domain\n"
+        "• /whoisdomain — WHOIS domain detail\n"
+        "• ⚡ /speedtest —  Running speed test\n"
+        "• ♻️ /restart — Restart bot\n\n"
+    )
+    await query.edit_message_text(
+        text,
+        reply_markup=help_back_keyboard(),
+        parse_mode="HTML"
+    )
+    return
 
 # --- Helper & stats
 try:
