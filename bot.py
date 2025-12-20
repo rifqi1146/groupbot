@@ -109,6 +109,28 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
+#restart
+import os, sys
+from telegram import Update
+from telegram.ext import ContextTypes
+
+OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
+
+async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id != OWNER_ID:
+        return await update.message.reply_text("❌ Lu bukan owner.")
+
+    await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
+
+    # flush logs biar aman
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    # restart process
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+    
 #speedtest
 import os, json, time, math, asyncio, subprocess, logging
 from io import BytesIO
@@ -2472,6 +2494,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
     "ip": ip_cmd,
+    "speedtest": speedtest_cmd,
     "whoisdomain": whoisdomain_cmd,
     "domain": domain_cmd,
     "tr": tr_cmd,
@@ -2552,6 +2575,7 @@ def main():
     app.add_handler(CommandHandler("tr", tr_cmd))
     app.add_handler(CommandHandler("gsearch", gsearch_cmd))
     app.add_handler(CommandHandler("asupan", asupan_cmd))
+    app.add_handler(CommandHandler("restart", restart_cmd))
 
 
     # ======================
