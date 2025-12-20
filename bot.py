@@ -2616,7 +2616,7 @@ def main():
     app.add_handler(CommandHandler("ping", ping_cmd))
 
     # ======================
-    # UTIL / IO COMMANDS (UNBLOCK)
+    # UTIL / IO COMMANDS
     # ======================
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False))
     app.add_handler(CommandHandler("ip", ip_cmd, block=False))
@@ -2630,7 +2630,7 @@ def main():
     app.add_handler(CommandHandler("restart", restart_cmd, block=False))
 
     # ======================
-    # AI COMMANDS (WAJIB UNBLOCK)
+    # AI COMMANDS
     # ======================
     app.add_handler(CommandHandler("ai", ai_cmd, block=False))
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False))
@@ -2640,36 +2640,35 @@ def main():
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False))
 
     # ======================
-    # CALLBACKS (UNBLOCK)
+    # CALLBACKS
     # ======================
-    app.add_handler(
-        CallbackQueryHandler(help_callback, pattern=r"^help:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(dl_callback, pattern=r"^dl:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:")
-    )
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+    app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
+    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
 
-    # ======================
-    # MESSAGE ROUTER (OPTIMIZED FOR BIG GROUP)
-    # ======================
+    # ==================================================
+    # 🔥 COMMAND ROUTER (ANTI HARUS @USERNAME)
+    # PRIORITY TINGGI BUAT GRUP GEDE
+    # ==================================================
     app.add_handler(
         MessageHandler(
-            filters.TEXT
-            & ~filters.COMMAND
-            & ~filters.UpdateType.EDITED_MESSAGE,
-            dollar_router
+            filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE,
+            command_router
         ),
-        group=0
+        group=-1
     )
 
     # ======================
-    # BANNER + STARTUP INFO
+    # MESSAGE ROUTER BIASA
+    # ======================
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        group=1
+    )
+
+    # ======================
+    # BANNER
     # ======================
     try:
         banner = r"""
@@ -2692,13 +2691,13 @@ def main():
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
-            ("dl", "Download video (TikTok / Instagram)"),
+            ("dl", "Download video"),
             ("stats", "System statistics"),
             ("gsearch", "Google search"),
             ("asupan", "Asupan 😋"),
             ("tr", "Translate text"),
             ("speedtest", "Run speed test"),
-            ("restart", "Restart bot (owner only)"),
+            ("restart", "Restart bot"),
         ]
         try:
             await app.bot.set_my_commands(cmds)
@@ -2708,12 +2707,33 @@ def main():
     app.post_init = _set_commands
 
     # ======================
-    # RUN BOT
+    # RUN
     # ======================
     logger.info("Launching polling loop...")
-    print("Launching... (listening for updates)")
     app.run_polling()
 
 
-if __name__ == "__main__":
-    main()
+# =====================================
+# 🔥 COMMAND ROUTER FUNCTION
+# =====================================
+async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text.startswith("/ping"):
+        return await ping_cmd(update, context)
+    if text.startswith("/asupan"):
+        return await asupan_cmd(update, context)
+    if text.startswith("/dl"):
+        return await dl_cmd(update, context)
+    if text.startswith("/stats"):
+        return await stats_cmd(update, context)
+    if text.startswith("/speedtest"):
+        return await speedtest_cmd(update, context)
+    if text.startswith("/ip"):
+        return await ip_cmd(update, context)
+    if text.startswith("/domain"):
+        return await domain_cmd(update, context)
+    if text.startswith("/whoisdomain"):
+        return await whoisdomain_cmd(update, context)
+    if text.startswith("/tr"):
+        return await tr_cmd(update, context)
