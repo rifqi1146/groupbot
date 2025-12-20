@@ -787,12 +787,14 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    start = update.message.date.timestamp()
-    now = time.time()
+    start = time.perf_counter()
 
-    latency = int((now - start) * 1000)
+    msg = await update.message.reply_text("🏓 Pong...")
 
-    await update.message.reply_text(
+    end = time.perf_counter()
+    latency = int((end - start) * 1000)
+
+    await msg.edit_text(
         f"⚡ <b>Pong!</b>\n⏱️ Latency: <code>{latency} ms</code>",
         parse_mode="HTML"
     )
