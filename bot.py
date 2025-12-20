@@ -109,125 +109,137 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
-# ===============================
-# ADVANCED SPEEDTEST (IMAGE)
-# OWNER ONLY - ENV BASED
-# ===============================
-import os
-import time
-import socket
-import platform
-import speedtest
-import psutil
-from datetime import datetime
+#speedtest
+import os, json, time, math, asyncio, subprocess, logging
+from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
-# ===============================
-# CONFIG
-# ===============================
+log = logging.getLogger(__name__)
+
 OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
-TMP_DIR = "downloads"
-os.makedirs(TMP_DIR, exist_ok=True)
+IMG_W, IMG_H = 900, 520
 
-# ===============================
-# HELPER
-# ===============================
-def get_system_info():
-    return {
-        "os": platform.system(),
-        "kernel": platform.release(),
-        "cpu_cores": psutil.cpu_count(logical=True),
-        "ram_total": round(psutil.virtual_memory().total / (1024**3), 2),
-        "hostname": socket.gethostname(),
-    }
+# =========================
+# UTIL
+# =========================
+def is_owner(user_id: int) -> bool:
+    return user_id == OWNER_ID
 
-def draw_speedtest_image(data: dict, output_path: str):
-    img = Image.new("RGB", (900, 520), color=(15, 17, 22))
+def run_speedtest():
+    p = subprocess.run(
+        ["speedtest", "--accept-license", "--accept-gdpr", "-f", "json"],
+        capture_output=True, text=True
+    )
+    if p.returncode != 0:
+        raise RuntimeError("Speedtest failed")
+    return json.loads(p.stdout)
+
+# =========================
+# DRAW OOKLA STYLE IMAGE
+# =========================
+def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
+    start = 135
+    end = 405
+    angle = start + (min(value, max_val) / max_val) * (end - start)
+
+    # arc bg
+    draw.arc(
+        [cx-r, cy-r, cx+r, cy+r],
+        start=start, end=end,
+        fill=(60,60,60), width=18
+    )
+    # arc fg
+    draw.arc(
+        [cx-r, cy-r, cx+r, cy+r],
+        start=start, end=angle,
+        fill=(0,170,255), width=18
+    )
+
+    draw.text((cx, cy-10), f"{value:.1f}",
+              fill="white", anchor="mm", font=FONT_BIG)
+    draw.text((cx, cy+35), unit,
+              fill=(180,180,180), anchor="mm", font=FONT_UNIT)
+    draw.text((cx, cy+r-10), label,
+              fill=(160,160,160), anchor="mm", font=FONT_LABEL)
+
+# =========================
+# IMAGE GENERATOR
+# =========================
+def generate_image(data):
+    img = Image.new("RGB", (IMG_W, IMG_H), (18,18,18))
     draw = ImageDraw.Draw(img)
 
-    try:
-        font_big = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
-        font_med = ImageFont.truetype("DejaVuSans.ttf", 24)
-        font_small = ImageFont.truetype("DejaVuSans.ttf", 18)
-    except:
-        font_big = font_med = font_small = ImageFont.load_default()
+    # header
+    draw.text((40, 30), "Speedtest",
+              fill="white", font=FONT_TITLE)
+    draw.text((40, 65), "by Ookla",
+              fill=(0,170,255), font=FONT_SMALL)
 
-    y = 20
-    draw.text((30, y), "⚡ SPEEDTEST RESULT", font=font_big, fill=(255, 255, 255))
-    y += 60
+    ping = data["ping"]["latency"]
+    down = data["download"]["bandwidth"] * 8 / 1e6
+    up   = data["upload"]["bandwidth"] * 8 / 1e6
+    isp  = data["isp"]
+    srv  = data["server"]["location"]
 
-    lines = [
-        f"📡 Provider     : {data['isp']}",
-        f"🌍 IP Address   : {data['ip']}",
-        f"📍 Location     : {data['location']}",
-        "",
-        f"🏓 Ping         : {data['ping']} ms",
-        f"⬇️ Download     : {data['download']} Mbps",
-        f"⬆️ Upload       : {data['upload']} Mbps",
-        "",
-        f"💻 System       : {data['system']}",
-        f"🧠 CPU Cores    : {data['cpu']} cores",
-        f"🧠 RAM          : {data['ram']} GB",
-        "",
-        f"🕒 Finished     : {data['time']}",
-    ]
+    # ping
+    draw.text((IMG_W-40, 40),
+              f"PING  {ping:.1f} ms",
+              fill="white", anchor="ra", font=FONT_LABEL)
 
-    for line in lines:
-        draw.text((30, y), line, font=font_med, fill=(220, 220, 220))
-        y += 34
+    # gauges
+    draw_gauge(draw, 300, 300, 130, down, 500, "DOWNLOAD", "Mbps")
+    draw_gauge(draw, 600, 300, 130, up,   200, "UPLOAD",   "Mbps")
 
-    img.save(output_path)
+    # footer
+    draw.text((40, IMG_H-60),
+              f"Server: {srv}",
+              fill=(180,180,180), font=FONT_SMALL)
+    draw.text((40, IMG_H-35),
+              f"Provider: {isp}",
+              fill=(180,180,180), font=FONT_SMALL)
 
-# ===============================
-# COMMAND HANDLER
-# ===============================
+    draw.text((IMG_W-40, IMG_H-35),
+              time.strftime("%Y-%m-%d %H:%M:%S"),
+              fill=(120,120,120), anchor="ra", font=FONT_SMALL)
+
+    bio = BytesIO()
+    bio.name = "speedtest.png"
+    img.save(bio, "PNG")
+    bio.seek(0)
+    return bio
+
+# =========================
+# LOAD FONTS
+# =========================
+FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
+FONT_BIG   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
+FONT_UNIT  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+FONT_LABEL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+FONT_SMALL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+
+# =========================
+# COMMAND
+# =========================
 async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        return await update.message.reply_text("❌ Command ini khusus owner.")
+    if not is_owner(update.effective_user.id):
+        return await update.message.reply_text("❌ Owner only")
 
-    msg = await update.message.reply_text("🚀 Menjalankan speedtest advanced...")
+    status = await update.message.reply_text("⏳ Running Speedtest...")
 
     try:
-        st = speedtest.Speedtest()
-        st.get_best_server()
+        data = await asyncio.to_thread(run_speedtest)
+        img = await asyncio.to_thread(generate_image, data)
 
-        download = round(st.download() / 1_000_000, 2)
-        upload = round(st.upload() / 1_000_000, 2)
-        ping = round(st.results.ping, 2)
-
-        res = st.results.dict()
-        sysinfo = get_system_info()
-
-        data = {
-            "isp": res["client"]["isp"],
-            "ip": res["client"]["ip"],
-            "location": f"{res['client']['country']} / {res['server']['name']}",
-            "ping": ping,
-            "download": download,
-            "upload": upload,
-            "system": f"{sysinfo['os']} {sysinfo['kernel']}",
-            "cpu": sysinfo["cpu_cores"],
-            "ram": sysinfo["ram_total"],
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
-        out_path = f"{TMP_DIR}/speedtest.png"
-        draw_speedtest_image(data, out_path)
-
-        await msg.delete()
-        await update.effective_chat.send_photo(
-            photo=open(out_path, "rb"),
-            caption="⚡ **Speedtest Advanced Result**",
-            parse_mode="Markdown"
+        await update.message.reply_photo(
+            photo=img,
+            reply_to_message_id=update.message.message_id
         )
-
-        os.remove(out_path)
+        await status.delete()
 
     except Exception as e:
-        await msg.edit_text(f"❌ Speedtest gagal:\n`{e}`")
+        await status.edit_text(f"❌ Failed: {e}")
         
 # =========================
 # ASUPAN TIKTOK (TIKWM SEARCH + PREFETCH)
