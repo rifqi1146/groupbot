@@ -129,7 +129,12 @@ def is_owner(user_id: int) -> bool:
 
 def run_speedtest():
     p = subprocess.run(
-        ["speedtest", "--accept-license", "--accept-gdpr", "-f", "json"],
+        [
+    "/usr/bin/speedtest",
+    "--accept-license",
+    "--accept-gdpr",
+    "-f", "json"
+],
         capture_output=True, text=True
     )
     if p.returncode != 0:
