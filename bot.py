@@ -290,7 +290,7 @@ ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
 ASUPAN_HISTORY_FILE = "asupan_history.json"
-ASUPAN_HISTORY_LIMIT = 300
+ASUPAN_HISTORY_LIMIT = 1000
 
 # =========================
 # LOAD / SAVE HISTORY
@@ -351,6 +351,9 @@ async def fetch_asupan_tikwm():
         "tobrut style",
         "cewek jawa",
         "cewek sunda",
+        "nasi kfc',
+        "buledpadet",
+        "ceker babat",
         "asupan malam",
         "asupan pagi",
         "tobrut",
