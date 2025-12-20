@@ -2537,7 +2537,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await loading.edit_text(final[:4000])
     except Exception:
         await update.message.reply_text(final[:4000])
-
+        
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
@@ -2588,6 +2588,75 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+# =====================================
+# 🔥 COMMAND ROUTER (ALL COMMANDS)
+# =====================================
+async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text
+    cmd = text.split()[0].lower()
+
+    if cmd.startswith("/start"):
+        return await start_cmd(update, context)
+
+    if cmd.startswith("/help") or cmd.startswith("/menu"):
+        return await help_cmd(update, context)
+
+    if cmd.startswith("/ping"):
+        return await ping_cmd(update, context)
+
+    # ========= UTIL / IO =========
+    if cmd.startswith("/speedtest"):
+        return await speedtest_cmd(update, context)
+
+    if cmd.startswith("/ip"):
+        return await ip_cmd(update, context)
+
+    if cmd.startswith("/whoisdomain"):
+        return await whoisdomain_cmd(update, context)
+
+    if cmd.startswith("/domain"):
+        return await domain_cmd(update, context)
+
+    if cmd.startswith("/dl"):
+        return await dl_cmd(update, context)
+
+    if cmd.startswith("/stats"):
+        return await stats_cmd(update, context)
+
+    if cmd.startswith("/tr"):
+        return await tr_cmd(update, context)
+
+    if cmd.startswith("/gsearch"):
+        return await gsearch_cmd(update, context)
+
+    if cmd.startswith("/asupan"):
+        return await asupan_cmd(update, context)
+
+    if cmd.startswith("/restart"):
+        return await restart_cmd(update, context)
+
+    # ========= AI =========
+    if cmd.startswith("/ai"):
+        return await ai_cmd(update, context)
+
+    if cmd.startswith("/setmodeai"):
+        return await setmodeai_cmd(update, context)
+
+    if cmd.startswith("/openai"):
+        return await ai_openai_cmd(update, context)
+
+    if cmd.startswith("/groq"):
+        return await groq_query(update, context)
+
+    if cmd.startswith("/deepseek"):
+        return await ai_deepseek_cmd(update, context)
+
+    if cmd.startswith("/nsfw"):
+        return await pollinations_generate_nsfw(update, context)
+        
 # ======================
 # MAIN ENTRY
 # ======================
@@ -2607,50 +2676,6 @@ def main():
         .build()
     )
 
-    # ======================
-    # CORE COMMANDS (ringan)
-    # ======================
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("menu", help_cmd))
-    app.add_handler(CommandHandler("ping", ping_cmd))
-
-    # ======================
-    # UTIL / IO COMMANDS
-    # ======================
-    app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False))
-    app.add_handler(CommandHandler("ip", ip_cmd, block=False))
-    app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False))
-    app.add_handler(CommandHandler("domain", domain_cmd, block=False))
-    app.add_handler(CommandHandler("dl", dl_cmd, block=False))
-    app.add_handler(CommandHandler("stats", stats_cmd, block=False))
-    app.add_handler(CommandHandler("tr", tr_cmd, block=False))
-    app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False))
-    app.add_handler(CommandHandler("asupan", asupan_cmd, block=False))
-    app.add_handler(CommandHandler("restart", restart_cmd, block=False))
-
-    # ======================
-    # AI COMMANDS
-    # ======================
-    app.add_handler(CommandHandler("ai", ai_cmd, block=False))
-    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False))
-    app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False))
-    app.add_handler(CommandHandler("groq", groq_query, block=False))
-    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False))
-    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False))
-
-    # ======================
-    # CALLBACKS
-    # ======================
-    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
-    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
-    app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
-    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
-
-    # ==================================================
-    # 🔥 COMMAND ROUTER (ANTI HARUS @USERNAME)
-    # PRIORITY TINGGI BUAT GRUP GEDE
-    # ==================================================
     app.add_handler(
         MessageHandler(
             filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE,
@@ -2659,11 +2684,18 @@ def main():
         group=-1
     )
 
-    # ======================
-    # MESSAGE ROUTER BIASA
-    # ======================
+    #callback inline
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+    app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
+    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
+
+    #dolar router
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            dollar_router
+        ),
         group=1
     )
 
@@ -2707,9 +2739,10 @@ def main():
     app.post_init = _set_commands
 
     # ======================
-    # RUN
+    # RUN BOT
     # ======================
     logger.info("Launching polling loop...")
+    print("Launching... (listening for updates)")
     app.run_polling()
 
 
