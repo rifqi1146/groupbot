@@ -354,22 +354,24 @@ async def fetch_asupan_tikwm():
 
     return random.choice(videos)["play"]
 
-# ======================
-# PREFETCH FILE_ID (SELF CHAT)
+# PREFETCH FILE_ID (SELF CHAT - SAFE)
 # ======================
 async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
-    if ASUPAN_FETCHING or PREFETCH_CHAT_ID is None:
+    if ASUPAN_FETCHING:
         return
 
     ASUPAN_FETCHING = True
     try:
+        me = await bot.get_me()
+        prefetch_chat_id = me.id  # Saved Messages bot
+
         while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
             try:
                 url = await fetch_asupan_tikwm()
                 msg = await bot.send_video(
-                    chat_id=PREFETCH_CHAT_ID,
+                    chat_id=prefetch_chat_id,
                     video=url,
                     disable_notification=True
                 )
@@ -383,6 +385,7 @@ async def warm_asupan_cache(bot):
     finally:
         ASUPAN_FETCHING = False
 
+
 # ======================
 # GET ASUPAN FAST
 # ======================
@@ -390,10 +393,11 @@ async def get_asupan_fast(bot):
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
 
-    # fallback (jarang banget)
+    # fallback aman
+    me = await bot.get_me()
     url = await fetch_asupan_tikwm()
     msg = await bot.send_video(
-        chat_id=PREFETCH_CHAT_ID,
+        chat_id=me.id,
         video=url,
         disable_notification=True
     )
