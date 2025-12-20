@@ -2700,7 +2700,6 @@ def main():
         except Exception:
             logger.exception("set_my_commands failed")
             
-    app.post_init = init_asupan_prefetch
     app.post_init = _set_commands
 
     # ======================
