@@ -2308,7 +2308,7 @@ async def ai_openai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     loading = await update.message.reply_text("⏳ Memproses permintaan ke OpenAI...")
 
-    ok, answer = ask_ai_hf(prompt, HF_MODEL_DEFAULT)
+    ok, answer = await ask_ai_hf(prompt, HF_MODEL_DEFAULT)
 
     if not ok:
         try:
@@ -2350,7 +2350,7 @@ async def ai_deepseek_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     loading = await update.message.reply_text("⏳ Memproses permintaan ke DeepSeek...")
 
-    ok, answer = ask_ai_hf(prompt, HF_MODEL_DEEPSEEK)
+    ok, answer = await ask_ai_hf(prompt, HF_MODEL_DEEPSEEK)
 
     if not ok:
         try:
