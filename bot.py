@@ -2736,4 +2736,7 @@ def main():
     # ======================
     logger.info("Launching polling loop...")
     app.run_polling()
-    
+
+
+if __name__ == "__main__":
+    main()
