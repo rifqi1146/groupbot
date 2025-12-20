@@ -351,7 +351,7 @@ async def fetch_asupan_tikwm():
         "tobrut style",
         "cewek jawa",
         "cewek sunda",
-        "nasi kfc',
+        "nasi kfc",
         "buledpadet",
         "ceker babat",
         "asupan malam",
