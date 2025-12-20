@@ -268,8 +268,10 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status.edit_text(f"❌ Failed: {e}")
         
-#asupan
-import aiohttp, random, logging, asyncio
+# =========================
+# ASUPAN TIKTOK (TIKWM ONLY + ANTI DUPLIKAT JSON)
+# =========================
+import aiohttp, random, logging, asyncio, json, os
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -280,17 +282,60 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
+# =========================
+# CONFIG
+# =========================
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-#inline keyboard
+ASUPAN_HISTORY_FILE = "asupan_history.json"
+ASUPAN_HISTORY_LIMIT = 300
+
+# =========================
+# LOAD / SAVE HISTORY
+# =========================
+def load_asupan_history():
+    if not os.path.exists(ASUPAN_HISTORY_FILE):
+        return set()
+    try:
+        with open(ASUPAN_HISTORY_FILE, "r") as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
+
+def save_asupan_history(history: set):
+    try:
+        with open(ASUPAN_HISTORY_FILE, "w") as f:
+            json.dump(list(history), f)
+    except Exception as e:
+        log.warning(f"[ASUPAN] gagal simpan history: {e}")
+
+ASUPAN_HISTORY = load_asupan_history()
+
+def is_duplicate(video_id: str) -> bool:
+    return video_id in ASUPAN_HISTORY
+
+def remember_asupan(video_id: str):
+    ASUPAN_HISTORY.add(video_id)
+
+    if len(ASUPAN_HISTORY) > ASUPAN_HISTORY_LIMIT:
+        for _ in range(len(ASUPAN_HISTORY) - ASUPAN_HISTORY_LIMIT):
+            ASUPAN_HISTORY.pop()
+
+    save_asupan_history(ASUPAN_HISTORY)
+
+# =========================
+# INLINE KEYBOARD
+# =========================
 def asupan_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")]
     ])
 
-#keywords
+# =========================
+# FETCH ASUPAN VIA TIKWM
+# =========================
 async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
@@ -307,8 +352,7 @@ async def fetch_asupan_tikwm():
         "cewek jawa",
         "cewek sunda",
         "asupan malam",
-        "asupan pagi,"
-        "asuoan harian,"
+        "asupan pagi",
         "tobrut",
         "pemersatubangsa",
         "cucimata",
@@ -347,12 +391,24 @@ async def fetch_asupan_tikwm():
     if not videos:
         raise RuntimeError("Asupan kosong")
 
-    v = random.choice(videos)
+    random.shuffle(videos)
 
-    return {
-        "url": v["play"],
-        "desc": v.get("title") or "Asupann 😋"
-    }
+    for v in videos:
+        vid = str(v.get("id"))
+        if not vid:
+            continue
+
+        if is_duplicate(vid):
+            continue
+
+        remember_asupan(vid)
+
+        return {
+            "url": v["play"],
+            "desc": v.get("title") or "Asupann 😋"
+        }
+
+    raise RuntimeError("Asupan kosong (semua duplikat)")
 
 # =========================
 # PREFETCH CACHE
