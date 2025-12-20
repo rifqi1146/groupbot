@@ -2244,7 +2244,7 @@ if not HF_API_TOKEN:
     raise ValueError("HF_API_TOKEN environment variable is missing!")
 
 # --- Fungsi Request ke Hugging Face Router (v1/chat/completions) ---
-def ask_ai_hf(prompt: str, model_name: str) -> (bool, str):
+async def ask_ai_hf(prompt: str, model_name: str) -> (bool, str):
     if not HF_API_TOKEN:
         return False, "HF_API_TOKEN environment variable is missing!"
 
@@ -2258,52 +2258,30 @@ def ask_ai_hf(prompt: str, model_name: str) -> (bool, str):
     }
     payload = {
         "model": model_name,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
+        "messages": [{"role": "user", "content": prompt}],
         "stream": False,
     }
 
+    timeout = aiohttp.ClientTimeout(total=30)
+
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        result = response.json()
-        if isinstance(result, dict) and 'choices' in result and len(result['choices']) > 0:
-            message_content = result['choices'][0].get('message', {}).get('content', '')
-            if message_content:
-                return True, message_content.strip()
-            else:
-                 return True, f"Respons dari Hugging Face (chat) tidak ditemukan konten: {result}"
-        else:
-             return True, f"Respons dari Hugging Face (chat) tidak sesuai format: {result}"
-    except requests.exceptions.HTTPError as he:
-        logger.error(f"HTTP Error request ke Hugging Face: {he}")
-        if he.response is not None:
-            error_detail = he.response.text
-            logger.error(f"Response Body: {error_detail}")
-            status_code = he.response.status_code
-            if status_code == 401:
-                return False, f"Error otentikasi ke Hugging Face (401 Unauthorized). Cek token dan kuota API lu. Error: {error_detail}"
-            elif status_code == 404:
-                 return False, f"Model '{model_name}' tidak ditemukan atau tidak dapat diakses melalui endpoint chat ini. Error: {error_detail}"
-            elif status_code == 503:
-                return False, "Model sedang overload atau maintenance. Coba lagi nanti."
-            elif status_code == 422:
-                return False, f"Permintaan ke Hugging Face tidak valid (mungkin model tidak support chat): {error_detail}"
-            elif status_code == 429:
-                return False, "Kuota request Hugging Face habis atau terlalu cepat. Tunggu sebentar."
-            else:
-                return False, f"Error HTTP {status_code} dari Hugging Face: {error_detail}"
-        return False, f"HTTP Error saat menghubungi Hugging Face: {he}"
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request Exception saat request ke Hugging Face: {e}")
-        return False, f"Error request ke Hugging Face: {e}"
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    return False, f"HF API error {resp.status}: {await resp.text()}"
+
+                result = await resp.json()
+
+        if result.get("choices"):
+            content = result["choices"][0]["message"].get("content", "")
+            return True, content.strip() or "AI tidak mengembalikan teks."
+
+        return False, f"Format response tidak valid: {result}"
+
+    except asyncio.TimeoutError:
+        return False, "Timeout ke Hugging Face"
     except Exception as e:
-        logger.error(f"Error tak terduga dari Hugging Face: {e}")
-        return False, f"Error tak terduga: {e}"
+        return False, f"Error: {e}"
 
 # --- Handler Command OpenAI (via HF Router) ---
 async def ai_openai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2403,34 +2381,62 @@ GEMINI_MODELS = {
     "lite": "gemini-2.0-flash-lite-001",
 }
 
-def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
+def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
     if not GEMINI_API_KEY:
         return False, "API key Gemini belum diset. Set GEMINI_API_KEY di .env"
 
     if not prompt:
         return False, "Tidak ada prompt."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={GEMINI_API_KEY}"
+    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
 
     try:
-        r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=30)
+        r = requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=30
+        )
         r.raise_for_status()
+
         data = r.json()
         candidates = data.get("candidates") or []
+
         if not candidates:
             return True, "Model merespon tapi tanpa candidates."
+
         parts = candidates[0].get("content", {}).get("parts", [])
         if parts:
             return True, parts[0].get("text", "").strip()
+
         return True, json.dumps(candidates[0], ensure_ascii=False)
-    except requests.exceptions.HTTPError:
-        try:
-            return False, f"Gagal memanggil Gemini: {r.status_code} {r.text}"
-        except Exception:
-            return False, "Gagal memanggil Gemini (HTTP error)."
+
     except Exception as e:
         return False, f"Gagal memanggil Gemini: {e}"
+
+
+# ⚠️ NAMA FUNGSI TETEP SAMA
+async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        _ask_ai_gemini_sync,
+        prompt,
+        model
+    )
 
 # ---- set default model per chat ----
 async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
