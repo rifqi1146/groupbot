@@ -2643,30 +2643,30 @@ def main():
     # CALLBACKS (UNBLOCK)
     # ======================
     app.add_handler(
-        CallbackQueryHandler(help_callback, pattern=r"^help:", block=False)
+        CallbackQueryHandler(help_callback, pattern=r"^help:")
     )
     app.add_handler(
-        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:", block=False)
+        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:")
     )
     app.add_handler(
-        CallbackQueryHandler(dl_callback, pattern=r"^dl:", block=False)
+        CallbackQueryHandler(dl_callback, pattern=r"^dl:")
     )
     app.add_handler(
-        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:", block=False)
+        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:")
     )
 
     # ======================
-# MESSAGE ROUTER (OPTIMIZED FOR BIG GROUP)
-# ======================
-app.add_handler(
-    MessageHandler(
-        filters.TEXT
-        & ~filters.COMMAND
-        & ~filters.UpdateType.EDITED_MESSAGE,
-        dollar_router
-    ),
-    group=0
-)
+    # MESSAGE ROUTER (OPTIMIZED FOR BIG GROUP)
+    # ======================
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT
+            & ~filters.COMMAND
+            & ~filters.UpdateType.EDITED_MESSAGE,
+            dollar_router
+        ),
+        group=0
+    )
 
     # ======================
     # BANNER + STARTUP INFO
@@ -2704,7 +2704,7 @@ app.add_handler(
             await app.bot.set_my_commands(cmds)
         except Exception:
             logger.exception("set_my_commands failed")
-            
+
     app.post_init = _set_commands
 
     # ======================
