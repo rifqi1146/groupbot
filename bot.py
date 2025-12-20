@@ -18,8 +18,6 @@ import urllib.parse
 import html
 import dns.resolver
 import uuid
-import uvloop
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 from bs4 import BeautifulSoup
 from typing import List, Tuple, Optional, Tuple
@@ -2553,10 +2551,10 @@ def main():
     app = (
      ApplicationBuilder()
     .token(BOT_TOKEN)
-    .read_timeout(300)
-    .write_timeout(300)
-    .connect_timeout(300)
-    .pool_timeout(300)
+    .connect_timeout(20)
+    .read_timeout(60)
+    .write_timeout(60)
+    .pool_timeout(20)
     .build()
 )
 
