@@ -109,6 +109,126 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
+# ===============================
+# ADVANCED SPEEDTEST (IMAGE)
+# OWNER ONLY - ENV BASED
+# ===============================
+import os
+import time
+import socket
+import platform
+import speedtest
+import psutil
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+# ===============================
+# CONFIG
+# ===============================
+OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
+TMP_DIR = "downloads"
+os.makedirs(TMP_DIR, exist_ok=True)
+
+# ===============================
+# HELPER
+# ===============================
+def get_system_info():
+    return {
+        "os": platform.system(),
+        "kernel": platform.release(),
+        "cpu_cores": psutil.cpu_count(logical=True),
+        "ram_total": round(psutil.virtual_memory().total / (1024**3), 2),
+        "hostname": socket.gethostname(),
+    }
+
+def draw_speedtest_image(data: dict, output_path: str):
+    img = Image.new("RGB", (900, 520), color=(15, 17, 22))
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font_big = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+        font_med = ImageFont.truetype("DejaVuSans.ttf", 24)
+        font_small = ImageFont.truetype("DejaVuSans.ttf", 18)
+    except:
+        font_big = font_med = font_small = ImageFont.load_default()
+
+    y = 20
+    draw.text((30, y), "⚡ SPEEDTEST RESULT", font=font_big, fill=(255, 255, 255))
+    y += 60
+
+    lines = [
+        f"📡 Provider     : {data['isp']}",
+        f"🌍 IP Address   : {data['ip']}",
+        f"📍 Location     : {data['location']}",
+        "",
+        f"🏓 Ping         : {data['ping']} ms",
+        f"⬇️ Download     : {data['download']} Mbps",
+        f"⬆️ Upload       : {data['upload']} Mbps",
+        "",
+        f"💻 System       : {data['system']}",
+        f"🧠 CPU Cores    : {data['cpu']} cores",
+        f"🧠 RAM          : {data['ram']} GB",
+        "",
+        f"🕒 Finished     : {data['time']}",
+    ]
+
+    for line in lines:
+        draw.text((30, y), line, font=font_med, fill=(220, 220, 220))
+        y += 34
+
+    img.save(output_path)
+
+# ===============================
+# COMMAND HANDLER
+# ===============================
+async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Command ini khusus owner.")
+
+    msg = await update.message.reply_text("🚀 Menjalankan speedtest advanced...")
+
+    try:
+        st = speedtest.Speedtest()
+        st.get_best_server()
+
+        download = round(st.download() / 1_000_000, 2)
+        upload = round(st.upload() / 1_000_000, 2)
+        ping = round(st.results.ping, 2)
+
+        res = st.results.dict()
+        sysinfo = get_system_info()
+
+        data = {
+            "isp": res["client"]["isp"],
+            "ip": res["client"]["ip"],
+            "location": f"{res['client']['country']} / {res['server']['name']}",
+            "ping": ping,
+            "download": download,
+            "upload": upload,
+            "system": f"{sysinfo['os']} {sysinfo['kernel']}",
+            "cpu": sysinfo["cpu_cores"],
+            "ram": sysinfo["ram_total"],
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        out_path = f"{TMP_DIR}/speedtest.png"
+        draw_speedtest_image(data, out_path)
+
+        await msg.delete()
+        await update.effective_chat.send_photo(
+            photo=open(out_path, "rb"),
+            caption="⚡ **Speedtest Advanced Result**",
+            parse_mode="Markdown"
+        )
+
+        os.remove(out_path)
+
+    except Exception as e:
+        await msg.edit_text(f"❌ Speedtest gagal:\n`{e}`")
+        
 # =========================
 # ASUPAN TIKTOK (TIKWM SEARCH + PREFETCH)
 # =========================
@@ -1716,6 +1836,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(out, parse_mode="HTML")
 
+#whois
 import socket
 import aiohttp
 import whois
@@ -2403,6 +2524,7 @@ def main():
     # ======================
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("speedtest", speedtest_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
     app.add_handler(CommandHandler("ip", ip_cmd))
     app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd))
