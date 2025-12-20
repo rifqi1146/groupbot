@@ -2656,12 +2656,17 @@ def main():
     )
 
     # ======================
-    # MESSAGE ROUTER (UNBLOCK)
-    # ======================
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router, block=False),
-        group=0
-    )
+# MESSAGE ROUTER (OPTIMIZED FOR BIG GROUP)
+# ======================
+app.add_handler(
+    MessageHandler(
+        filters.TEXT
+        & ~filters.COMMAND
+        & ~filters.UpdateType.EDITED_MESSAGE,
+        dollar_router
+    ),
+    group=0
+)
 
     # ======================
     # BANNER + STARTUP INFO
