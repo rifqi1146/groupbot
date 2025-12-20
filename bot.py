@@ -268,9 +268,9 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text(f"❌ Failed: {e}")
         
 # ======================
-# ASUPAN (FILE_ID MODE - NO FLICKER)
+# ASUPAN (FILE_ID MODE - NO FLICKER + COOLDOWN)
 # ======================
-import aiohttp, random, logging, asyncio
+import aiohttp, random, logging, asyncio, time
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -281,11 +281,15 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-ASUPAN_CACHE = []          # isinya: {"file_id": "..."}
+ASUPAN_CACHE = []          
 ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-PREFETCH_CHAT_ID = None    # chat bot sendiri (Saved Messages)
+ASUPAN_PREFETCH_CHAT_ID = None
+
+# cooldown user (user_id: last_time)
+ASUPAN_COOLDOWN = {}
+ASUPAN_COOLDOWN_SEC = 5
 
 # ======================
 # INLINE KEYBOARD
@@ -355,16 +359,10 @@ async def fetch_asupan_tikwm():
     return random.choice(videos)["play"]
 
 # ======================
-# ASUPAN PREFETCH TARGET
-# ======================
-ASUPAN_PREFETCH_CHAT_ID = None
-
-
-# ======================
-# PREFETCH FILE_ID (SAFE)
+# PREFETCH FILE_ID (AMAN)
 # ======================
 async def warm_asupan_cache(bot):
-    global ASUPAN_FETCHING, ASUPAN_PREFETCH_CHAT_ID
+    global ASUPAN_FETCHING
 
     if ASUPAN_FETCHING or not ASUPAN_PREFETCH_CHAT_ID:
         return
@@ -379,16 +377,13 @@ async def warm_asupan_cache(bot):
                     video=url,
                     disable_notification=True
                 )
-                ASUPAN_CACHE.append({
-                    "file_id": msg.video.file_id
-                })
+                ASUPAN_CACHE.append({"file_id": msg.video.file_id})
                 await msg.delete()
             except Exception as e:
                 log.warning(f"[ASUPAN PREFETCH] {e}")
                 break
     finally:
         ASUPAN_FETCHING = False
-
 
 # ======================
 # GET ASUPAN FAST
@@ -397,7 +392,6 @@ async def get_asupan_fast(bot):
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
 
-    # fallback aman
     url = await fetch_asupan_tikwm()
     msg = await bot.send_video(
         chat_id=ASUPAN_PREFETCH_CHAT_ID,
@@ -414,7 +408,6 @@ async def get_asupan_fast(bot):
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global ASUPAN_PREFETCH_CHAT_ID
 
-    # set chat target pertama
     if ASUPAN_PREFETCH_CHAT_ID is None:
         ASUPAN_PREFETCH_CHAT_ID = update.effective_chat.id
 
@@ -436,10 +429,22 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Gagal: {e}")
 
 # ======================
-# CALLBACK: GANTI ASUPAN (NO FLICKER)
+# CALLBACK: GANTI ASUPAN (SMOOTH + COOLDOWN)
 # ======================
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    user_id = q.from_user.id
+    now = time.time()
+
+    last = ASUPAN_COOLDOWN.get(user_id, 0)
+    if now - last < ASUPAN_COOLDOWN_SEC:
+        await q.answer(
+            f"Tunggu {ASUPAN_COOLDOWN_SEC} detik sebelum ganti asupan lagi.",
+            show_alert=True
+        )
+        return
+
+    ASUPAN_COOLDOWN[user_id] = now
     await q.answer()
 
     try:
@@ -450,21 +455,10 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=asupan_keyboard()
         )
 
-        context.application.create_task(
-            warm_asupan_cache(context.bot)
-        )
+        context.application.create_task(warm_asupan_cache(context.bot))
 
     except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
-
-# ======================
-# INIT PREFETCH CHAT (WAJIB)
-# ======================
-async def init_asupan_prefetch(app):
-    global PREFETCH_CHAT_ID
-    me = await app.bot.get_me()
-    PREFETCH_CHAT_ID = me.id
-    app.create_task(warm_asupan_cache(app.bot))
         
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
