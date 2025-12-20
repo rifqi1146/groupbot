@@ -2479,7 +2479,9 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     model_name = GEMINI_MODELS.get(model_key, GEMINI_MODELS["flash"])
     loading = await update.message.reply_text("⏳ Memproses...")
 
-    ok, answer = ask_ai_gemini(prompt, model=model_name)
+    # 🔥 FIX UTAMA ADA DI SINI
+    ok, answer = await ask_ai_gemini(prompt, model=model_name)
+
     if not ok:
         try:
             await loading.edit_text(f"❗ Error: {answer}")
@@ -2490,6 +2492,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = f"💡 Jawaban ({model_key.upper()})"
     body = answer.strip()
     final = f"{header}\n\n{body}"
+
     try:
         await loading.edit_text(final[:4000])
     except Exception:
