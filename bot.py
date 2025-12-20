@@ -1597,9 +1597,10 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /ip — Info IP\n"
         "• /domain — Info domain\n"
         "• /whoisdomain — WHOIS domain detail\n"
-        "• ⚡ /speedtest —  Running speed test\n"
-        "• ♻️ /restart — Restart bot\n\n"
+        "• ⚡ /speedtest — Network speed test (owner only)\n"
+        "• ♻️ /restart — Restart bot (owner only)\n\n"
     )
+
     await query.edit_message_text(
         text,
         reply_markup=help_back_keyboard(),
