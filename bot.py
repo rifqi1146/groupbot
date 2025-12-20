@@ -343,54 +343,52 @@ async def fetch_asupan_tikwm():
     ]
 
     api_url = "https://www.tikwm.com/api/feed/search"
-    keyword = random.choice(keywords)
 
-    payload = {
-        "keywords": keyword,
-        "count": 20,
-        "cursor": 0,
-        "region": "ID"
-    }
+    # 🔁 retry sampai 3x
+    for attempt in range(3):
+        keyword = random.choice(keywords)
 
-    async with aiohttp.ClientSession(
-        headers={"User-Agent": "Mozilla/5.0"}
-    ) as session:
-        async with session.post(
-            api_url,
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=15)
-        ) as r:
-            data = await r.json()
+        payload = {
+            "keywords": keyword,
+            "count": 20,
+            "cursor": random.randint(0, 50),
+            "region": "ID"
+        }
 
-    if data.get("code") != 0:
-        raise RuntimeError(f"TikWM API error: {data.get('msg')}")
+        async with aiohttp.ClientSession(
+            headers={"User-Agent": "Mozilla/5.0"}
+        ) as session:
+            async with session.post(
+                api_url,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as r:
+                data = await r.json()
 
-    videos = data.get("data", {}).get("videos") or []
-    if not videos:
-        raise RuntimeError("Asupan kosong")
-
-    random.shuffle(videos)
-
-    # cari yang belum pernah dipake
-    for v in videos:
-        vid = v.get("id")
-        if not vid:
+        if data.get("code") != 0:
             continue
 
-        if vid not in ASUPAN_HISTORY:
-            ASUPAN_HISTORY.add(vid)
-            save_asupan_history(ASUPAN_HISTORY)
-            return {
-                "url": v["play"],
-                "desc": v.get("title") or "Asupan 😋"
-            }
+        videos = data.get("data", {}).get("videos") or []
+        random.shuffle(videos)
 
-    # =========================
-    # AUTO RESET JIKA SEMUA DUPLIKAT
-    # =========================
+        for v in videos:
+            vid = v.get("id")
+            if not vid:
+                continue
+
+            if vid not in ASUPAN_HISTORY:
+                ASUPAN_HISTORY.add(vid)
+                save_asupan_history(ASUPAN_HISTORY)
+
+                return {
+                    "url": v["play"],
+                    "desc": v.get("title") or "Asupan 😋"
+                }
+
+    # 🔥 baru reset kalau SEMUA retry gagal
     ASUPAN_HISTORY.clear()
     save_asupan_history(ASUPAN_HISTORY)
-    raise RuntimeError("Asupan kosong (semua duplikat, history di-reset)")
+    raise RuntimeError("Asupan kosong, TikWM ngulang video (history di-reset)")
 
 # =========================
 # PREFETCH CACHE
@@ -467,8 +465,9 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def asupanreset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ASUPAN_HISTORY.clear()
     save_asupan_history(ASUPAN_HISTORY)
-    ASUPAN_CACHE.clear()
 
+    ASUPAN_CACHE.clear()  # ⬅️ PENTING
+    
     await update.message.reply_text(
         "♻️ <b>Asupan history di-reset</b>\nSiap cari yang fresh 😋",
         parse_mode="HTML"
