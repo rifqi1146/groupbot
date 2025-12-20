@@ -305,7 +305,12 @@ def asupan_keyboard():
 async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
+        "eunicetjoaa",
         "cewek viral",
+        "nasikfc",
+        "tanktopstyle",
+        "tanktop",
+        "bahancrt",
         "cewek fyp",
         "cewek cantik",
         "cewek indo",
