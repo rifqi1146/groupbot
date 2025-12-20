@@ -2560,85 +2560,78 @@ def main():
     # BUILD APPLICATION
     # ======================
     app = (
-     ApplicationBuilder()
-    .token(BOT_TOKEN)
-    .connect_timeout(20)
-    .read_timeout(60)
-    .write_timeout(60)
-    .pool_timeout(20)
-    .build()
-)
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .connect_timeout(20)
+        .read_timeout(60)
+        .write_timeout(60)
+        .pool_timeout(20)
+        .build()
+    )
 
     # ======================
-# CORE COMMANDS
-# ======================
+    # CORE COMMANDS
+    # ======================
 
-# ringan → boleh block
-app.add_handler(CommandHandler("start", start_cmd))
-app.add_handler(CommandHandler("help", help_cmd))
-app.add_handler(CommandHandler("menu", help_cmd))
-app.add_handler(CommandHandler("ping", ping_cmd))
+    # ringan → boleh block
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("menu", help_cmd))
+    app.add_handler(CommandHandler("ping", ping_cmd))
 
-# berat / IO → UNBLOCK
-app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False))
-app.add_handler(CommandHandler("ip", ip_cmd, block=False))
-app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False))
-app.add_handler(CommandHandler("domain", domain_cmd, block=False))
-app.add_handler(CommandHandler("dl", dl_cmd, block=False))
-app.add_handler(CommandHandler("stats", stats_cmd, block=False))
-app.add_handler(CommandHandler("tr", tr_cmd, block=False))
-app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False))
-app.add_handler(CommandHandler("asupan", asupan_cmd, block=False))
-app.add_handler(CommandHandler("restart", restart_cmd, block=False))
+    # berat / IO → UNBLOCK
+    app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False))
+    app.add_handler(CommandHandler("ip", ip_cmd, block=False))
+    app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False))
+    app.add_handler(CommandHandler("domain", domain_cmd, block=False))
+    app.add_handler(CommandHandler("dl", dl_cmd, block=False))
+    app.add_handler(CommandHandler("stats", stats_cmd, block=False))
+    app.add_handler(CommandHandler("tr", tr_cmd, block=False))
+    app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False))
+    app.add_handler(CommandHandler("asupan", asupan_cmd, block=False))
+    app.add_handler(CommandHandler("restart", restart_cmd, block=False))
 
+    # ======================
+    # AI COMMANDS (WAJIB UNBLOCK)
+    # ======================
+    app.add_handler(CommandHandler("ai", ai_cmd, block=False))
+    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False))
+    app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False))
+    app.add_handler(CommandHandler("groq", groq_query, block=False))
+    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False))
+    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False))
 
-# ======================
-# AI COMMANDS (WAJIB UNBLOCK)
-# ======================
+    # ======================
+    # INLINE CALLBACKS (WAJIB UNBLOCK)
+    # ======================
+    app.add_handler(
+        CallbackQueryHandler(help_callback, pattern=r"^help:"),
+        block=False
+    )
 
-app.add_handler(CommandHandler("ai", ai_cmd, block=False))
-app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False))
-app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False))
-app.add_handler(CommandHandler("groq", groq_query, block=False))
-app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False))
-app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False))
+    app.add_handler(
+        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"),
+        block=False
+    )
 
+    app.add_handler(
+        CallbackQueryHandler(dl_callback, pattern=r"^dl:"),
+        block=False
+    )
 
-# ======================
-# INLINE CALLBACKS (WAJIB UNBLOCK)
-# ======================
+    app.add_handler(
+        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"),
+        block=False
+    )
 
-app.add_handler(
-    CallbackQueryHandler(help_callback, pattern=r"^help:"),
-    block=False
-)
-
-app.add_handler(
-    CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"),
-    block=False
-)
-
-app.add_handler(
-    CallbackQueryHandler(dl_callback, pattern=r"^dl:"),
-    block=False
-)
-
-app.add_handler(
-    CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"),
-    block=False
-)
-
-
-# ======================
-# MESSAGE ROUTER
-# ======================
-
-# ini bisa berat tergantung logic → UNBLOCK
-app.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
-    block=False,
-    group=0
-)
+    # ======================
+    # MESSAGE ROUTER
+    # ======================
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        block=False,
+        group=0
+    )
 
     # ======================
     # STARTUP INFO
@@ -2667,7 +2660,7 @@ app.add_handler(
             ("dl", "Download video (TikTok/Instagram)"),
             ("stats", "System statistics"),
             ("gsearch", "Cari info via Google"),
-            ("asupan", "Asupannnn 😋"),            
+            ("asupan", "Asupannnn 😋"),
             ("tr", "Translate text"),
         ]
         try:
