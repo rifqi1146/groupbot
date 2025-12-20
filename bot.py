@@ -2570,16 +2570,16 @@ def main():
     )
 
     # ======================
-    # CORE COMMANDS
+    # CORE COMMANDS (ringan)
     # ======================
-
-    # ringan → boleh block
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
 
-    # berat / IO → UNBLOCK
+    # ======================
+    # UTIL / IO COMMANDS (UNBLOCK)
+    # ======================
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False))
     app.add_handler(CommandHandler("ip", ip_cmd, block=False))
     app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False))
@@ -2602,39 +2602,31 @@ def main():
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False))
 
     # ======================
-    # INLINE CALLBACKS (WAJIB UNBLOCK)
+    # CALLBACKS (UNBLOCK)
     # ======================
     app.add_handler(
-        CallbackQueryHandler(help_callback, pattern=r"^help:"),
-        block=False
+        CallbackQueryHandler(help_callback, pattern=r"^help:", block=False)
     )
-
     app.add_handler(
-        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"),
-        block=False
+        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:", block=False)
     )
-
     app.add_handler(
-        CallbackQueryHandler(dl_callback, pattern=r"^dl:"),
-        block=False
+        CallbackQueryHandler(dl_callback, pattern=r"^dl:", block=False)
     )
-
     app.add_handler(
-        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"),
-        block=False
+        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:", block=False)
     )
 
     # ======================
-    # MESSAGE ROUTER
+    # MESSAGE ROUTER (UNBLOCK)
     # ======================
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
-        block=False,
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router, block=False),
         group=0
     )
 
     # ======================
-    # STARTUP INFO
+    # BANNER + STARTUP INFO
     # ======================
     try:
         banner = r"""
@@ -2647,7 +2639,7 @@ def main():
         print(banner)
         logger.info("Bot starting...")
     except Exception:
-        logger.exception("Startup info failed")
+        logger.exception("Banner failed")
 
     # ======================
     # SET BOT COMMANDS
@@ -2657,11 +2649,13 @@ def main():
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
-            ("dl", "Download video (TikTok/Instagram)"),
+            ("dl", "Download video (TikTok / Instagram)"),
             ("stats", "System statistics"),
-            ("gsearch", "Cari info via Google"),
-            ("asupan", "Asupannnn 😋"),
+            ("gsearch", "Google search"),
+            ("asupan", "Asupan 😋"),
             ("tr", "Translate text"),
+            ("speedtest", "Run speed test"),
+            ("restart", "Restart bot (owner only)"),
         ]
         try:
             await app.bot.set_my_commands(cmds)
@@ -2675,7 +2669,7 @@ def main():
     # ======================
     logger.info("Launching polling loop...")
     print("Launching... (listening for updates)")
-    app.run_polling(close_loop=False)
+    app.run_polling()
 
 
 if __name__ == "__main__":
