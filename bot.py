@@ -1557,13 +1557,13 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ✨ FEATURES
     if data == "help:features":
         text = (
-    "✨ <b>Features</b>\n\n"
-    "• 🏓 /ping — Cek latency bot\n"
-    "• ⬇️ /dl — Download video (TT / IG / YT)\n"
-    "• 😋 /asupan — Asupan TikTok\n"
-    "• 🔍 /gsearch — Cari di Google\n"
-    "• 🌐 /tr — Translate teks\n"
-)
+            "✨ <b>Features</b>\n\n"
+            "• 🏓 /ping — Cek latency bot\n"
+            "• ⬇️ /dl — Download video (TT / IG / YT)\n"
+            "• 😋 /asupan — Asupan TikTok\n"
+            "• 🔍 /gsearch — Cari di Google\n"
+            "• 🌐 /tr — Translate teks\n"
+        )
         await query.edit_message_text(
             text,
             reply_markup=help_back_keyboard(),
@@ -1591,22 +1591,21 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 🧠 UTILITIES
     if data == "help:utils":
-    text = (
-        "🧠 <b>Utilities</b>\n\n"
-        "• /stats — Info sistem\n"
-        "• /ip — Info IP\n"
-        "• /domain — Info domain\n"
-        "• /whoisdomain — WHOIS domain detail\n"
-        "• ⚡ /speedtest — Network speed test (owner only)\n"
-        "• ♻️ /restart — Restart bot (owner only)\n\n"
-    )
-
-    await query.edit_message_text(
-        text,
-        reply_markup=help_back_keyboard(),
-        parse_mode="HTML"
-    )
-    return
+        text = (
+            "🧠 <b>Utilities</b>\n\n"
+            "• /stats — Info sistem\n"
+            "• /ip — Info IP\n"
+            "• /domain — Info domain\n"
+            "• /whoisdomain — WHOIS domain detail\n"
+            "• ⚡ /speedtest — Running speed test\n"
+            "• ♻️ /restart — Restart bot\n\n"
+        )
+        await query.edit_message_text(
+            text,
+            reply_markup=help_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
 # --- Helper & stats
 try:
