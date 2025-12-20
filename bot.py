@@ -267,7 +267,9 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status.edit_text(f"❌ Failed: {e}")
         
-#asupan
+# ======================
+# ASUPAN (FILE_ID MODE)
+# ======================
 import aiohttp, random, logging, asyncio
 from telegram import (
     InlineKeyboardButton,
@@ -279,17 +281,21 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-ASUPAN_CACHE = []
+ASUPAN_CACHE = []          # isinya: {"file_id": "..."}
 ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-#inline keyboard
+# ======================
+# INLINE KEYBOARD
+# ======================
 def asupan_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")]
     ])
 
-#keywords
+# ======================
+# FETCH FROM TIKWM
+# ======================
 async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
@@ -306,8 +312,8 @@ async def fetch_asupan_tikwm():
         "cewek jawa",
         "cewek sunda",
         "asupan malam",
-        "asupan pagi,"
-        "asupan harian,"
+        "asupan pagi",
+        "asupan harian",
         "tobrut",
         "pemersatubangsa",
         "cucimata",
@@ -319,11 +325,9 @@ async def fetch_asupan_tikwm():
         "asupan cewek"
     ]
 
-    keyword = random.choice(keywords)
     api_url = "https://www.tikwm.com/api/feed/search"
-
     payload = {
-        "keywords": keyword,
+        "keywords": random.choice(keywords),
         "count": 20,
         "cursor": 0,
         "region": "ID"
@@ -346,17 +350,12 @@ async def fetch_asupan_tikwm():
     if not videos:
         raise RuntimeError("Asupan kosong")
 
-    v = random.choice(videos)
+    return random.choice(videos)["play"]
 
-    return {
-        "url": v["play"],
-        "desc": v.get("title") or "Asupann 😋"
-    }
-
-# =========================
-# PREFETCH CACHE
-# =========================
-async def warm_asupan_cache():
+# ======================
+# PREFETCH FILE_ID
+# ======================
+async def warm_asupan_cache(bot, chat_id):
     global ASUPAN_FETCHING
 
     if ASUPAN_FETCHING:
@@ -366,58 +365,73 @@ async def warm_asupan_cache():
     try:
         while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
             try:
-                ASUPAN_CACHE.append(await fetch_asupan_tikwm())
+                url = await fetch_asupan_tikwm()
+                msg = await bot.send_video(chat_id, video=url)
+                ASUPAN_CACHE.append({
+                    "file_id": msg.video.file_id
+                })
+                await msg.delete()
             except Exception as e:
                 log.warning(f"[ASUPAN PREFETCH] {e}")
                 break
     finally:
         ASUPAN_FETCHING = False
 
-# =========================
+# ======================
 # GET ASUPAN FAST
-# =========================
-async def get_asupan_fast():
+# ======================
+async def get_asupan_fast(bot, chat_id):
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
-    return await fetch_asupan_tikwm()
 
-# =========================
+    # fallback (jarang)
+    url = await fetch_asupan_tikwm()
+    msg = await bot.send_video(chat_id, video=url)
+    file_id = msg.video.file_id
+    await msg.delete()
+    return {"file_id": file_id}
+
+# ======================
 # /asupan COMMAND
-# =========================
+# ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        data = await get_asupan_fast()
+        data = await get_asupan_fast(context.bot, update.effective_chat.id)
 
         await update.effective_chat.send_video(
-            video=data["url"],
+            video=data["file_id"],
             reply_to_message_id=update.message.message_id,
             reply_markup=asupan_keyboard()
         )
 
         await msg.delete()
-        context.application.create_task(warm_asupan_cache())
+        context.application.create_task(
+            warm_asupan_cache(context.bot, update.effective_chat.id)
+        )
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
 
-# =========================
-# CALLBACK: GANTI ASUPAN (EDIT VIDEO)
-# =========================
+# ======================
+# CALLBACK: GANTI ASUPAN
+# ======================
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer("🔄 Ganti asupan...")
+    await q.answer()
 
     try:
-        data = await get_asupan_fast()
+        data = await get_asupan_fast(context.bot, q.message.chat.id)
 
         await q.message.edit_media(
-            media=InputMediaVideo(media=data["url"]),
+            media=InputMediaVideo(media=data["file_id"]),
             reply_markup=asupan_keyboard()
         )
 
-        context.application.create_task(warm_asupan_cache())
+        context.application.create_task(
+            warm_asupan_cache(context.bot, q.message.chat.id)
+        )
 
     except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
