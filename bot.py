@@ -268,7 +268,7 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text(f"❌ Failed: {e}")
         
 # ======================
-# ASUPAN (FILE_ID MODE)
+# ASUPAN (FILE_ID MODE - NO FLICKER)
 # ======================
 import aiohttp, random, logging, asyncio
 from telegram import (
@@ -285,6 +285,8 @@ ASUPAN_CACHE = []          # isinya: {"file_id": "..."}
 ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
+PREFETCH_CHAT_ID = None    # chat bot sendiri (Saved Messages)
+
 # ======================
 # INLINE KEYBOARD
 # ======================
@@ -294,7 +296,7 @@ def asupan_keyboard():
     ])
 
 # ======================
-# FETCH FROM TIKWM
+# FETCH FROM TIKWM (JANGAN DIUBAH)
 # ======================
 async def fetch_asupan_tikwm():
     keywords = [
@@ -353,12 +355,12 @@ async def fetch_asupan_tikwm():
     return random.choice(videos)["play"]
 
 # ======================
-# PREFETCH FILE_ID
+# PREFETCH FILE_ID (SELF CHAT)
 # ======================
-async def warm_asupan_cache(bot, chat_id):
+async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
-    if ASUPAN_FETCHING:
+    if ASUPAN_FETCHING or PREFETCH_CHAT_ID is None:
         return
 
     ASUPAN_FETCHING = True
@@ -366,7 +368,11 @@ async def warm_asupan_cache(bot, chat_id):
         while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
             try:
                 url = await fetch_asupan_tikwm()
-                msg = await bot.send_video(chat_id, video=url)
+                msg = await bot.send_video(
+                    chat_id=PREFETCH_CHAT_ID,
+                    video=url,
+                    disable_notification=True
+                )
                 ASUPAN_CACHE.append({
                     "file_id": msg.video.file_id
                 })
@@ -380,13 +386,17 @@ async def warm_asupan_cache(bot, chat_id):
 # ======================
 # GET ASUPAN FAST
 # ======================
-async def get_asupan_fast(bot, chat_id):
+async def get_asupan_fast(bot):
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
 
-    # fallback (jarang)
+    # fallback (jarang banget)
     url = await fetch_asupan_tikwm()
-    msg = await bot.send_video(chat_id, video=url)
+    msg = await bot.send_video(
+        chat_id=PREFETCH_CHAT_ID,
+        video=url,
+        disable_notification=True
+    )
     file_id = msg.video.file_id
     await msg.delete()
     return {"file_id": file_id}
@@ -398,7 +408,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        data = await get_asupan_fast(context.bot, update.effective_chat.id)
+        data = await get_asupan_fast(context.bot)
 
         await update.effective_chat.send_video(
             video=data["file_id"],
@@ -408,21 +418,21 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.delete()
         context.application.create_task(
-            warm_asupan_cache(context.bot, update.effective_chat.id)
+            warm_asupan_cache(context.bot)
         )
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
 
 # ======================
-# CALLBACK: GANTI ASUPAN
+# CALLBACK: GANTI ASUPAN (NO FLICKER)
 # ======================
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
     try:
-        data = await get_asupan_fast(context.bot, q.message.chat.id)
+        data = await get_asupan_fast(context.bot)
 
         await q.message.edit_media(
             media=InputMediaVideo(media=data["file_id"]),
@@ -430,11 +440,20 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         context.application.create_task(
-            warm_asupan_cache(context.bot, q.message.chat.id)
+            warm_asupan_cache(context.bot)
         )
 
     except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
+
+# ======================
+# INIT PREFETCH CHAT (WAJIB)
+# ======================
+async def init_asupan_prefetch(app):
+    global PREFETCH_CHAT_ID
+    me = await app.bot.get_me()
+    PREFETCH_CHAT_ID = me.id
+    app.create_task(warm_asupan_cache(app.bot))
         
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
