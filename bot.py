@@ -2580,53 +2580,45 @@ def main():
     # ======================
     # UTIL / IO COMMANDS (UNBLOCK)
     # ======================
-    app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False))
-    app.add_handler(CommandHandler("ip", ip_cmd, block=False))
-    app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False))
-    app.add_handler(CommandHandler("domain", domain_cmd, block=False))
-    app.add_handler(CommandHandler("dl", dl_cmd, block=False))
-    app.add_handler(CommandHandler("stats", stats_cmd, block=False))
-    app.add_handler(CommandHandler("tr", tr_cmd, block=False))
-    app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False))
-    app.add_handler(CommandHandler("asupan", asupan_cmd, block=False))
-    app.add_handler(CommandHandler("restart", restart_cmd, block=False))
+    app.add_handler(CommandHandler("speedtest", speedtest_cmd))
+    app.add_handler(CommandHandler("ip", ip_cmd))
+    app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd))
+    app.add_handler(CommandHandler("domain", domain_cmd))
+    app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("tr", tr_cmd))
+    app.add_handler(CommandHandler("gsearch", gsearch_cmd))
+    app.add_handler(CommandHandler("asupan", asupan_cmd))
+    app.add_handler(CommandHandler("restart", restart_cmd))
 
     # ======================
-    # AI COMMANDS (WAJIB UNBLOCK)
+    # AI COMMANDS
     # ======================
-    app.add_handler(CommandHandler("ai", ai_cmd, block=False))
-    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False))
-    app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False))
-    app.add_handler(CommandHandler("groq", groq_query, block=False))
-    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False))
-    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False))
+    app.add_handler(CommandHandler("ai", ai_cmd))
+    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd))
+    app.add_handler(CommandHandler("openai", ai_openai_cmd))
+    app.add_handler(CommandHandler("groq", groq_query))
+    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd))
+    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
 
     # ======================
-    # CALLBACKS (UNBLOCK)
+    # CALLBACKS
     # ======================
-    app.add_handler(
-        CallbackQueryHandler(help_callback, pattern=r"^help:", block=False)
-    )
-    app.add_handler(
-        CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:", block=False)
-    )
-    app.add_handler(
-        CallbackQueryHandler(dl_callback, pattern=r"^dl:", block=False)
-    )
-    app.add_handler(
-        CallbackQueryHandler(asupan_callback, pattern=r"^asupan:", block=False)
-    )
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+    app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
+    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
 
     # ======================
-    # MESSAGE ROUTER (UNBLOCK)
+    # MESSAGE ROUTER
     # ======================
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router, block=False),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=0
     )
 
     # ======================
-    # BANNER + STARTUP INFO
+    # BANNER
     # ======================
     try:
         banner = r"""
@@ -2649,13 +2641,13 @@ def main():
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
-            ("dl", "Download video (TikTok / Instagram)"),
+            ("dl", "Download video"),
             ("stats", "System statistics"),
             ("gsearch", "Google search"),
             ("asupan", "Asupan 😋"),
             ("tr", "Translate text"),
             ("speedtest", "Run speed test"),
-            ("restart", "Restart bot (owner only)"),
+            ("restart", "Restart bot"),
         ]
         try:
             await app.bot.set_my_commands(cmds)
@@ -2665,11 +2657,21 @@ def main():
     app.post_init = _set_commands
 
     # ======================
-    # RUN BOT
+    # WEBHOOK CONFIG
     # ======================
-    logger.info("Launching polling loop...")
-    print("Launching... (listening for updates)")
-    app.run_polling()
+    WEBHOOK_URL = f"https://bot.xyz/webhook"
+    LISTEN = "0.0.0.0"
+    PORT = 8443
+
+    logger.info("Starting webhook...")
+    print("Launching webhook...")
+
+    app.run_webhook(
+        listen=LISTEN,
+        port=PORT,
+        url_path="webhook",
+        webhook_url=WEBHOOK_URL,
+    )
 
 
 if __name__ == "__main__":
