@@ -2694,7 +2694,8 @@ def main():
             await app.bot.set_my_commands(cmds)
         except Exception:
             logger.exception("set_my_commands failed")
-
+            
+    app.post_init = init_asupan_prefetch
     app.post_init = _set_commands
 
     # ======================
