@@ -354,24 +354,28 @@ async def fetch_asupan_tikwm():
 
     return random.choice(videos)["play"]
 
-# PREFETCH FILE_ID (SELF CHAT - SAFE)
+# ======================
+# ASUPAN PREFETCH TARGET
+# ======================
+ASUPAN_PREFETCH_CHAT_ID = None
+
+
+# ======================
+# PREFETCH FILE_ID (SAFE)
 # ======================
 async def warm_asupan_cache(bot):
-    global ASUPAN_FETCHING
+    global ASUPAN_FETCHING, ASUPAN_PREFETCH_CHAT_ID
 
-    if ASUPAN_FETCHING:
+    if ASUPAN_FETCHING or not ASUPAN_PREFETCH_CHAT_ID:
         return
 
     ASUPAN_FETCHING = True
     try:
-        me = await bot.get_me()
-        prefetch_chat_id = me.id  # Saved Messages bot
-
         while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
             try:
                 url = await fetch_asupan_tikwm()
                 msg = await bot.send_video(
-                    chat_id=prefetch_chat_id,
+                    chat_id=ASUPAN_PREFETCH_CHAT_ID,
                     video=url,
                     disable_notification=True
                 )
@@ -394,10 +398,9 @@ async def get_asupan_fast(bot):
         return ASUPAN_CACHE.pop(0)
 
     # fallback aman
-    me = await bot.get_me()
     url = await fetch_asupan_tikwm()
     msg = await bot.send_video(
-        chat_id=me.id,
+        chat_id=ASUPAN_PREFETCH_CHAT_ID,
         video=url,
         disable_notification=True
     )
@@ -409,6 +412,12 @@ async def get_asupan_fast(bot):
 # /asupan COMMAND
 # ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global ASUPAN_PREFETCH_CHAT_ID
+
+    # set chat target pertama
+    if ASUPAN_PREFETCH_CHAT_ID is None:
+        ASUPAN_PREFETCH_CHAT_ID = update.effective_chat.id
+
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
@@ -421,9 +430,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await msg.delete()
-        context.application.create_task(
-            warm_asupan_cache(context.bot)
-        )
+        context.application.create_task(warm_asupan_cache(context.bot))
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
