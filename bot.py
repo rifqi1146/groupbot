@@ -2538,31 +2538,6 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(final[:4000])
 
-# =====================================
-# 🔥 COMMAND ROUTER FUNCTION
-# =====================================
-async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-
-    if text.startswith("/ping"):
-        return await ping_cmd(update, context)
-    if text.startswith("/asupan"):
-        return await asupan_cmd(update, context)
-    if text.startswith("/dl"):
-        return await dl_cmd(update, context)
-    if text.startswith("/stats"):
-        return await stats_cmd(update, context)
-    if text.startswith("/speedtest"):
-        return await speedtest_cmd(update, context)
-    if text.startswith("/ip"):
-        return await ip_cmd(update, context)
-    if text.startswith("/domain"):
-        return await domain_cmd(update, context)
-    if text.startswith("/whoisdomain"):
-        return await whoisdomain_cmd(update, context)
-    if text.startswith("/tr"):
-        return await tr_cmd(update, context)
-        
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
