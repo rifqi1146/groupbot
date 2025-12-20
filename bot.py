@@ -268,10 +268,8 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status.edit_text(f"❌ Failed: {e}")
         
-# =========================
-# ASUPAN TIKTOK (TIKWM ONLY + ANTI DUPLIKAT)
-# =========================
-import aiohttp, random, logging, asyncio, json, os
+#asupan
+import aiohttp, random, logging, asyncio
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -286,39 +284,13 @@ ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-HISTORY_FILE = "asupan_history.json"
-HISTORY_LIMIT = 1000  # biar file ga bengkak
-
-# =========================
-# LOAD / SAVE HISTORY
-# =========================
-def load_asupan_history():
-    if not os.path.exists(HISTORY_FILE):
-        return set()
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            return set(json.load(f))
-    except Exception:
-        return set()
-
-def save_asupan_history(history: set):
-    data = list(history)[-HISTORY_LIMIT:]
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(data, f)
-
-ASUPAN_HISTORY = load_asupan_history()
-
-# =========================
-# INLINE KEYBOARD (TETAP)
-# =========================
+#inline keyboard
 def asupan_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")]
     ])
 
-# =========================
-# FETCH ASUPAN VIA TIKWM
-# =========================
+#keywords
 async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
@@ -335,60 +307,52 @@ async def fetch_asupan_tikwm():
         "cewek jawa",
         "cewek sunda",
         "asupan malam",
+        "asupan pagi,"
+        "asuoan harian,"
         "tobrut",
         "pemersatubangsa",
         "cucimata",
+        "bhncrt",
+        "geolgeol",
+        "zaraxhel",
+        "verllyyaling",
         "cewek lucu indo",
         "asupan cewek"
     ]
 
+    keyword = random.choice(keywords)
     api_url = "https://www.tikwm.com/api/feed/search"
 
-    # 🔁 retry sampai 3x
-    for attempt in range(3):
-        keyword = random.choice(keywords)
+    payload = {
+        "keywords": keyword,
+        "count": 20,
+        "cursor": 0,
+        "region": "ID"
+    }
 
-        payload = {
-            "keywords": keyword,
-            "count": 20,
-            "cursor": random.randint(0, 50),
-            "region": "ID"
-        }
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "Mozilla/5.0"}
+    ) as session:
+        async with session.post(
+            api_url,
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as r:
+            data = await r.json()
 
-        async with aiohttp.ClientSession(
-            headers={"User-Agent": "Mozilla/5.0"}
-        ) as session:
-            async with session.post(
-                api_url,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as r:
-                data = await r.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"TikWM API error: {data.get('msg')}")
 
-        if data.get("code") != 0:
-            continue
+    videos = data.get("data", {}).get("videos") or []
+    if not videos:
+        raise RuntimeError("Asupan kosong")
 
-        videos = data.get("data", {}).get("videos") or []
-        random.shuffle(videos)
+    v = random.choice(videos)
 
-        for v in videos:
-            vid = v.get("id")
-            if not vid:
-                continue
-
-            if vid not in ASUPAN_HISTORY:
-                ASUPAN_HISTORY.add(vid)
-                save_asupan_history(ASUPAN_HISTORY)
-
-                return {
-                    "url": v["play"],
-                    "desc": v.get("title") or "Asupan 😋"
-                }
-
-    # 🔥 baru reset kalau SEMUA retry gagal
-    ASUPAN_HISTORY.clear()
-    save_asupan_history(ASUPAN_HISTORY)
-    raise RuntimeError("Asupan kosong, TikWM ngulang video (history di-reset)")
+    return {
+        "url": v["play"],
+        "desc": v.get("title") or "Asupann 😋"
+    }
 
 # =========================
 # PREFETCH CACHE
@@ -440,7 +404,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Gagal: {e}")
 
 # =========================
-# CALLBACK: GANTI ASUPAN
+# CALLBACK: GANTI ASUPAN (EDIT VIDEO)
 # =========================
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -458,20 +422,6 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
-
-# =========================
-# /asupanreset COMMAND (MANUAL RESET)
-# =========================
-async def asupanreset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ASUPAN_HISTORY.clear()
-    save_asupan_history(ASUPAN_HISTORY)
-
-    ASUPAN_CACHE.clear()  # ⬅️ PENTING
-    
-    await update.message.reply_text(
-        "♻️ <b>Asupan history di-reset</b>\nSiap cari yang fresh 😋",
-        parse_mode="HTML"
-    )
         
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
@@ -2613,7 +2563,6 @@ def main():
     # CORE COMMANDS
     # ======================
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("resethistory", asupanreset_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("speedtest", speedtest_cmd))
     app.add_handler(CommandHandler("menu", help_cmd))
