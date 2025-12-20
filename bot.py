@@ -18,13 +18,14 @@ import urllib.parse
 import html
 import dns.resolver
 import uuid
+import uvloop
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 from bs4 import BeautifulSoup
 from typing import List, Tuple, Optional, Tuple
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
-from telegram.ext import Application
 from telegram import Update
 from telegram.ext import ContextTypes
 
