@@ -2600,66 +2600,68 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    text = update.message.text
-    cmd = text.split()[0].lower()
+    text = update.message.text.strip()
+    raw_cmd = text.split()[0].lower()
+    cmd = raw_cmd.split("@")[0]   # 🔥 FIX PENTING
 
-    if cmd.startswith("/start"):
+    # ========= CORE =========
+    if cmd == "/start":
         return await start_cmd(update, context)
 
-    if cmd.startswith("/help") or cmd.startswith("/menu"):
+    if cmd in ("/help", "/menu"):
         return await help_cmd(update, context)
 
-    if cmd.startswith("/ping"):
+    if cmd == "/ping":
         return await ping_cmd(update, context)
 
-    # ========= UTIL / IO =========
-    if cmd.startswith("/speedtest"):
+    # ========= UTIL =========
+    if cmd == "/speedtest":
         return await speedtest_cmd(update, context)
 
-    if cmd.startswith("/ip"):
+    if cmd == "/ip":
         return await ip_cmd(update, context)
 
-    if cmd.startswith("/whoisdomain"):
+    if cmd == "/whoisdomain":
         return await whoisdomain_cmd(update, context)
 
-    if cmd.startswith("/domain"):
+    if cmd == "/domain":
         return await domain_cmd(update, context)
 
-    if cmd.startswith("/dl"):
+    if cmd == "/dl":
         return await dl_cmd(update, context)
 
-    if cmd.startswith("/stats"):
+    if cmd == "/stats":
         return await stats_cmd(update, context)
 
-    if cmd.startswith("/tr"):
+    if cmd == "/tr":
         return await tr_cmd(update, context)
 
-    if cmd.startswith("/gsearch"):
+    if cmd == "/gsearch":
         return await gsearch_cmd(update, context)
 
-    if cmd.startswith("/asupan"):
+    if cmd == "/asupan":
         return await asupan_cmd(update, context)
 
-    if cmd.startswith("/restart"):
+    if cmd == "/restart":
         return await restart_cmd(update, context)
 
     # ========= AI =========
-    if cmd.startswith("/ai"):
+    if cmd == "/ai":
         return await ai_cmd(update, context)
 
-    if cmd.startswith("/setmodeai"):
+    if cmd == "/setmodeai":
         return await setmodeai_cmd(update, context)
 
-    if cmd.startswith("/openai"):
+    if cmd == "/openai":
         return await ai_openai_cmd(update, context)
 
-    if cmd.startswith("/groq"):
+    if cmd == "/groq":
         return await groq_query(update, context)
 
-    if cmd.startswith("/deepseek"):
+    if cmd == "/deepseek":
         return await ai_deepseek_cmd(update, context)
 
-    if cmd.startswith("/nsfw"):
+    if cmd == "/nsfw":
         return await pollinations_generate_nsfw(update, context)
         
 # ======================
