@@ -2614,6 +2614,11 @@ def main():
     # ======================
     # SET BOT COMMANDS
     # ======================
+    async def _prefetch(_):
+    await warm_asupan_cache(application.bot)
+
+    app.post_init = _prefetch
+    
     async def _set_commands(app):
         cmds = [
             ("start", "Check bot status"),
@@ -2633,11 +2638,6 @@ def main():
             logger.exception("set_my_commands failed")
 
     app.post_init = _set_commands
-    
-    async def _prefetch(_):
-    await warm_asupan_cache(app.bot)
-
-    app.post_init = _prefetch
 
     # ======================
     # RUN BOT
