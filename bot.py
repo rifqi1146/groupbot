@@ -1480,7 +1480,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-# ---- help
+#menu/help
 def help_main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ Features", callback_data="help:features")],
@@ -1491,101 +1491,93 @@ def help_main_keyboard():
 
 def help_back_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Back", callback_data="help:back")],
+        [InlineKeyboardButton("🔙 Back", callback_data="help:menu")],
         [InlineKeyboardButton("❌ Close", callback_data="help:close")],
     ])
 
-
-# ===========================
-# MAIN HELP COMMAND
-# ===========================
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
+HELP_TEXT = {
+    "help:menu": (
         "📋 <b>Help Menu</b>\n"
-        "Pilih kategori di bawah ya✨"
-    )
+        "Pilih kategori di bawah ya ✨"
+    ),
+
+    "help:features": (
+        "✨ <b>Features</b>\n\n"
+        "• 🏓 /ping — Cek latency\n"
+        "• ⬇️ /dl — Download video\n"
+        "• 😋 /asupan — Asupan TikTok\n"
+        "• 🔍 /gsearch — Google search\n"
+        "• 🌐 /tr — Translate\n"
+    ),
+
+    "help:ai": (
+        "🤖 <b>AI</b>\n\n"
+        "• /ai — Chat AI\n"
+        "• /ai flash|pro|lite\n"
+        "• /setmodeai\n"
+        "• /openai\n"
+        "• /groq\n"
+        "• /deepseek\n"
+    ),
+
+    "help:utils": (
+        "🧠 <b>Utilities</b>\n\n"
+        "• /stats — Info sistem\n"
+        "• /ip — Info IP\n"
+        "• /domain — Info domain\n"
+        "• /whoisdomain\n"
+        "• ⚡ /speedtest\n"
+        "• ♻️ /restart\n"
+    ),
+}
+
+#cmd
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        text,
+        HELP_TEXT["help:menu"],
         reply_markup=help_main_keyboard(),
         parse_mode="HTML"
     )
 
-
-# ===========================
-# HELP CALLBACK
-# ===========================
+#helpcallback
 async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if not query:
+    q = update.callback_query
+    if not q:
         return
 
-    data = query.data or ""
+    data = q.data or ""
 
+    #ack
     try:
-        await query.answer()
+        await q.answer()
     except:
         pass
 
-    # ❌ CLOSE
+    # CLOSE
     if data == "help:close":
         try:
-            await query.message.delete()
+            await q.message.delete()
         except:
             pass
         return
 
-    # 🔙 BACK
-    if data == "help:back":
-        await query.edit_message_text(
-            "📋 <b>Help Menu</b>\nPilih kategori di bawah ya✨",
+    # MENU
+    if data == "help:menu":
+        await q.edit_message_text(
+            HELP_TEXT["help:menu"],
             reply_markup=help_main_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    # ✨ FEATURES
-    if data == "help:features":
-        await query.edit_message_text(
-            "✨ <b>Features</b>\n\n"
-            "• 🏓 /ping — Cek latency bot\n"
-            "• ⬇️ /dl — Download video (TT / IG / YT)\n"
-            "• 😋 /asupan — Asupan TikTok\n"
-            "• 🔍 /gsearch — Cari di Google\n"
-            "• 🌐 /tr — Translate teks\n",
+    # CATEGORY
+    text = HELP_TEXT.get(data)
+    if text:
+        await q.edit_message_text(
+            text,
             reply_markup=help_back_keyboard(),
             parse_mode="HTML"
         )
-        return
-
-    # 🤖 AI
-    if data == "help:ai":
-        await query.edit_message_text(
-            "🤖 <b>AI Commands</b>\n\n"
-            "• /ai — Tanya AI (default)\n"
-            "• /ai flash|pro|lite — Pilih model\n"
-            "• /setmodeai — Set default AI\n"
-            "• /openai — OpenAI via HF\n"
-            "• /groq — Groq AI\n"
-            "• /deepseek — DeepSeek AI",
-            reply_markup=help_back_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    # 🧠 UTILITIES
-    if data == "help:utils":
-        await query.edit_message_text(
-            "🧠 <b>Utilities</b>\n\n"
-            "• /stats — Info sistem\n"
-            "• /ip — Info IP\n"
-            "• /domain — Info domain\n"
-            "• /whoisdomain — WHOIS domain detail\n"
-            "• ⚡ /speedtest — Running speed test\n"
-            "• ♻️ /restart — Restart bot\n",
-            reply_markup=help_back_keyboard(),
-            parse_mode="HTML"
-        )
-        return
 
 # --- Helper & stats
 try:
