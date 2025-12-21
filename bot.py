@@ -294,9 +294,12 @@ ASUPAN_COOLDOWN_SEC = 5
 # ======================
 # INLINE KEYBOARD
 # ======================
-def asupan_keyboard():
+def asupan_keyboard(owner_id: int):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Ganti Asupan", callback_data="asupan:next")]
+        [InlineKeyboardButton(
+            "🔄 Ganti Asupan",
+            callback_data=f"asupan:next:{owner_id}"
+        )]
     ])
 
 # ======================
@@ -310,8 +313,7 @@ async def fetch_asupan_tikwm():
         "pragostrend",
         "krisna minta susu",
         "trendsusuberacun",
-        "ah atas bawah cantik",
-        "atas bawah cantik",
+        "arghh atas bawah cantik",
         "eunicetjoaa",
         "cewek viral",
         "nasikfc",
@@ -429,10 +431,10 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = await get_asupan_fast(context.bot)
 
         await update.effective_chat.send_video(
-            video=data["file_id"],
-            reply_to_message_id=update.message.message_id,
-            reply_markup=asupan_keyboard()
-        )
+    video=data["file_id"],
+    reply_to_message_id=update.message.message_id,
+    reply_markup=asupan_keyboard(update.effective_user.id)
+)
 
         await msg.delete()
         context.application.create_task(warm_asupan_cache(context.bot))
@@ -446,8 +448,26 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
-    now = time.time()
 
+    try:
+        _, action, owner_id = q.data.split(":")
+        owner_id = int(owner_id)
+    except:
+        await q.answer("❌ Invalid callback", show_alert=True)
+        return
+
+    # 🚫 BUKAN PEMILIK ASUPAN
+    if user_id != owner_id:
+        await q.answer(
+            "❌ Bukan asupan lu dongo!",
+            show_alert=True
+        )
+        return
+
+    # ======================
+    # COOLDOWN CHECK
+    # ======================
+    now = time.time()
     last = ASUPAN_COOLDOWN.get(user_id, 0)
     if now - last < ASUPAN_COOLDOWN_SEC:
         await q.answer(
@@ -464,12 +484,14 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await q.message.edit_media(
             media=InputMediaVideo(media=data["file_id"]),
-            reply_markup=asupan_keyboard()
+            reply_markup=asupan_keyboard(owner_id)
         )
 
-        context.application.create_task(warm_asupan_cache(context.bot))
+        context.application.create_task(
+            warm_asupan_cache(context.bot)
+        )
 
-    except Exception:
+    except Exception as e:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
         
 # =====================
