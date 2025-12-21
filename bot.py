@@ -108,17 +108,17 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
-import os, asyncio, time, signal, shutil, aiohttp
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
-
-import os, time, asyncio, aiohttp, shutil, signal
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
-
 # ======================
 # CONFIG
 # ======================
+import os, time, asyncio, shutil, signal, aiohttp
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+from telegram.ext import ContextTypes
+
 DOWNLOAD_DIR = "/root/groupbot/downloads"
 MIRROR_LIMIT = 6 * 1024**3      # 6 GB
 LEECH_LIMIT  = 2 * 1024**3      # 2 GB
@@ -150,27 +150,7 @@ async def run_cmd(cmd):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-async def stream_stats(proc, msg, title, keyboard):
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
 
-        text = line.decode(errors="ignore").strip()
-        if "Transferred:" not in text:
-            continue
-
-        display = text[text.find("Transferred:"):]
-
-        try:
-            await msg.edit_text(
-                f"{title}\n\n<code>{display}</code>",
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        except:
-            pass
-            
 # ======================
 # KEYBOARDS
 # ======================
@@ -188,43 +168,46 @@ def leech_keyboard():
     ])
 
 # ======================
-# DOWNLOAD PROGRESS
+# STREAM STATS (RCLONE STYLE)
 # ======================
-async def download_progress(msg, path, total):
+async def stream_stats(proc, msg, title, keyboard):
     last = 0
     while True:
-        if not os.path.exists(path):
-            return
-        done = os.path.getsize(path)
-        pct = (done / total * 100) if total else 0
-        bar = "█" * int(pct // 10) + "░" * (10 - int(pct // 10))
+        line = await proc.stdout.readline()
+        if not line:
+            break
 
-        if time.time() - last >= PROGRESS_INTERVAL:
-            last = time.time()
-            try:
-                await msg.edit_text(
-                    f"⬇️ Downloading...\n"
-                    f"[{bar}] {pct:.2f}%\n"
-                    f"{sizeof_fmt(done)} / {sizeof_fmt(total)}",
-                    reply_markup=msg.reply_markup
-                )
-            except:
-                pass
+        text = line.decode(errors="ignore").strip()
+        if "Transferred:" not in text:
+            continue
 
-        await asyncio.sleep(2)
+        if time.time() - last < PROGRESS_INTERVAL:
+            continue
+        last = time.time()
+
+        display = text[text.find("Transferred:"):]
+        try:
+            await msg.edit_text(
+                f"{title}\n\n<code>{display}</code>",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except:
+            pass
 
 # ======================
 # MIRROR COMMAND
 # ======================
 async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     if user_id in ACTIVE_TASKS:
         return await update.message.reply_text("⛔ Masih ada proses berjalan")
 
-    msg_src = update.message.reply_to_message
-    url, tg_file, filename, size = None, None, None, 0
+    src = update.message.reply_to_message
+    url = None
+    tg_file = None
 
-    # SOURCE DETECT
     if context.args:
         url = context.args[0]
         size = await get_remote_size(url)
@@ -232,13 +215,13 @@ async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await update.message.reply_text("❌ Gagal cek ukuran file")
         filename = url.split("/")[-1]
 
-    elif msg_src and msg_src.document:
-        tg_file = msg_src.document
+    elif src and src.document:
+        tg_file = src.document
         filename = tg_file.file_name
         size = tg_file.file_size
 
-    elif msg_src and msg_src.video:
-        tg_file = msg_src.video
+    elif src and src.video:
+        tg_file = src.video
         filename = f"video_{tg_file.file_unique_id}.mp4"
         size = tg_file.file_size
 
@@ -259,93 +242,92 @@ async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=mirror_keyboard()
     )
 
+    # ======================
     # DOWNLOAD
+    # ======================
     if tg_file:
         file = await context.bot.get_file(tg_file.file_id)
-        ACTIVE_TASKS[user_id] = {"msg": msg, "path": path}
+        ACTIVE_TASKS[user_id] = {"path": path}
         await file.download_to_drive(custom_path=path)
+
     else:
         aria = await run_cmd([
-    "aria2c",
-    "-x", "16",
-    "-s", "16",
-    "--summary-interval=10",
-    "--console-log-level=notice",
-    "-o", filename,
-    "-d", user_dir,
-    url
-])
+            "aria2c",
+            "-x", "16",
+            "-s", "16",
+            "--summary-interval=10",
+            "--console-log-level=notice",
+            "-o", filename,
+            "-d", user_dir,
+            url
+        ])
 
-ACTIVE_TASKS[user_id] = {
-    "proc": aria,
-    "msg": msg,
-    "path": filepath
-}
+        ACTIVE_TASKS[user_id] = {"proc": aria, "path": path}
 
-while True:
-    line = await aria.stdout.readline()
-    if not line:
-        break
+        while True:
+            line = await aria.stdout.readline()
+            if not line:
+                break
 
-    text = line.decode(errors="ignore").strip()
-    if "%" not in text:
-        continue
+            text = line.decode(errors="ignore").strip()
+            if "%" not in text:
+                continue
 
-    try:
-        await msg.edit_text(
-            "⬇️ Downloading...\n\n"
-            f"<code>{text[-300:]}</code>",
-            parse_mode="HTML",
-            reply_markup=mirror_keyboard()
-        )
-    except:
-        pass
+            try:
+                await msg.edit_text(
+                    "⬇️ Downloading...\n\n<code>" + text[-300:] + "</code>",
+                    parse_mode="HTML",
+                    reply_markup=mirror_keyboard()
+                )
+            except:
+                pass
 
-await aria.wait()
-        watcher.cancel()
+        await aria.wait()
 
     if user_id not in ACTIVE_TASKS:
         return
 
+    # ======================
     # UPLOAD TO GDRIVE
+    # ======================
     await msg.edit_text("☁️ Uploading to Google Drive...")
 
-proc = await run_cmd([
-    "rclone", "move",
-    filepath,
-    "gdrive:MirrorBot",
-    "--stats=10s",
-    "--stats-one-line",
-    "--progress"
-])
-
-ACTIVE_TASKS[user_id]["proc"] = proc
-
-await stream_stats(
-    proc,
-    msg,
-    "☁️ Uploading to Google Drive...",
-    mirror_keyboard()
-)
-
-await proc.wait()
-
-    # GET LINK
-    link_proc = await run_cmd([
-    "rclone", "link",
-    f"gdrive:MirrorBot/{filename}"
-])
-link = (await link_proc.stdout.read()).decode().strip()
-
-await msg.edit_text(
-    f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
-    parse_mode="HTML",
-    reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("☁️ Google Drive", url=link)]
+    proc = await run_cmd([
+        "rclone", "move",
+        path,
+        "gdrive:MirrorBot",
+        "--stats=10s",
+        "--stats-one-line",
+        "--progress"
     ])
-)
 
-ACTIVE_TASKS.pop(user_id, None)
+    ACTIVE_TASKS[user_id]["proc"] = proc
+
+    await stream_stats(
+        proc,
+        msg,
+        "☁️ Uploading to Google Drive...",
+        mirror_keyboard()
+    )
+
+    await proc.wait()
+
+    # ======================
+    # GET LINK
+    # ======================
+    link_proc = await run_cmd([
+        "rclone", "link",
+        f"gdrive:MirrorBot/{filename}"
+    ])
+    link = (await link_proc.stdout.read()).decode().strip()
+
+    await msg.edit_text(
+        f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
+        parse_mode="HTML",
+        reply_markup=mirror_keyboard(link, finished=True)
+    )
+
+    ACTIVE_TASKS.pop(user_id, None)
 
 # ======================
 # MIRROR CANCEL
@@ -353,6 +335,7 @@ ACTIVE_TASKS.pop(user_id, None)
 async def mirror_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
+
     task = ACTIVE_TASKS.pop(user_id, None)
     if not task:
         return await q.answer("❌ Tidak ada proses", show_alert=True)
@@ -363,8 +346,10 @@ async def mirror_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     if os.path.exists(task["path"]):
-        try: os.remove(task["path"])
-        except: pass
+        try:
+            os.remove(task["path"])
+        except:
+            pass
 
     await q.message.edit_text("⛔ Mirror dibatalkan")
     await q.answer("Cancelled")
@@ -374,6 +359,7 @@ async def mirror_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================
 async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     if user_id in ACTIVE_TASKS:
         return await update.message.reply_text("⛔ Masih ada proses berjalan")
 
@@ -398,41 +384,46 @@ async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     aria = await run_cmd([
-        "aria2c", "-x", "16", "-s", "16",
-        "-o", filename, "-d", user_dir, url
+        "aria2c",
+        "-x", "16",
+        "-s", "16",
+        "--summary-interval=10",
+        "--console-log-level=notice",
+        "-o", filename,
+        "-d", user_dir,
+        url
     ])
 
     ACTIVE_TASKS[user_id] = {"proc": aria, "path": path, "type": "leech"}
-    watcher = asyncio.create_task(download_progress(msg, path, size))
+
+    while True:
+        line = await aria.stdout.readline()
+        if not line:
+            break
+
+        text = line.decode(errors="ignore").strip()
+        if "%" not in text:
+            continue
+
+        try:
+            await msg.edit_text(
+                "⬇️ Downloading...\n\n<code>" + text[-300:] + "</code>",
+                parse_mode="HTML",
+                reply_markup=leech_keyboard()
+            )
+        except:
+            pass
+
     await aria.wait()
-    watcher.cancel()
 
     if user_id not in ACTIVE_TASKS:
         return
 
     await msg.edit_text("📤 Uploading to Telegram...")
 
-    last = 0
-    async def upload_progress(cur, total):
-        nonlocal last
-        if time.time() - last >= PROGRESS_INTERVAL:
-            last = time.time()
-            pct = cur * 100 / total
-            bar = "█" * int(pct // 10) + "░" * (10 - int(pct // 10))
-            try:
-                await msg.edit_text(
-                    f"📤 Uploading...\n"
-                    f"[{bar}] {pct:.2f}%\n"
-                    f"{sizeof_fmt(cur)} / {sizeof_fmt(total)}",
-                    reply_markup=leech_keyboard()
-                )
-            except:
-                pass
-
     await update.effective_chat.send_document(
         document=open(path, "rb"),
-        caption=filename,
-        progress=upload_progress
+        caption=filename
     )
 
     shutil.rmtree(user_dir, ignore_errors=True)
@@ -445,6 +436,7 @@ async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def leech_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
+
     task = ACTIVE_TASKS.pop(user_id, None)
     if not task or task.get("type") != "leech":
         return await q.answer("❌ Tidak ada leech aktif", show_alert=True)
@@ -455,8 +447,10 @@ async def leech_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     if os.path.exists(task["path"]):
-        try: os.remove(task["path"])
-        except: pass
+        try:
+            os.remove(task["path"])
+        except:
+            pass
 
     await q.message.edit_text("⛔ Leech dibatalkan")
     await q.answer("Cancelled")
