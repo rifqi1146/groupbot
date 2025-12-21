@@ -2665,26 +2665,34 @@ def main():
     # POST INIT (FINAL & AMAN)
     # ======================
     async def post_init(app):
-    # set bot commands
-    await app.bot.set_my_commands([
-        ("start", "Check bot status"),
-        ("help", "Show help menu"),
-        ("ping", "Check latency"),
-        ("dl", "Download video"),
-        ("stats", "System statistics"),
-        ("gsearch", "Google search"),
-        ("asupan", "Asupan 😋"),
-        ("tr", "Translate text"),
-        ("speedtest", "Run speed test"),
-        ("restart", "Restart bot"),
-    ])
+        try:
+            await app.bot.set_my_commands([
+                ("start", "Check bot status"),
+                ("help", "Show help menu"),
+                ("ping", "Check latency"),
+                ("dl", "Download video"),
+                ("stats", "System statistics"),
+                ("gsearch", "Google search"),
+                ("asupan", "Asupan 😋"),
+                ("tr", "Translate text"),
+                ("speedtest", "Run speed test"),
+                ("restart", "Restart bot"),
+            ])
+        except Exception:
+            pass
 
-    # warm cache ONCE, delayed
-    async def _warm():
-        await asyncio.sleep(4)
-        await send_asupan_once(app.bot)
+        # kirim asupan SEKALI pas bot nyala
+        await asyncio.sleep(5)
 
-    app.create_task(_warm())
+        if not ASUPAN_PREFETCH_CHAT_ID:
+            logger.warning("[ASUPAN STARTUP] Chat_id is empty")
+            return
+
+        try:
+            await send_asupan_once(app.bot)
+            logger.warning("[ASUPAN STARTUP] Asupan sent")
+        except Exception as e:
+            logger.warning(f"[ASUPAN STARTUP] Failed: {e}")
 
     app.post_init = post_init
 
