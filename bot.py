@@ -510,7 +510,18 @@ async def send_asupan_once(bot):
         )
     except Exception as e:
         log.warning(f"[ASUPAN STARTUP] {e}")
-                
+
+async def startup_tasks(app):
+    await asyncio.sleep(3)  # kasih waktu bot hidup
+    if not ASUPAN_PREFETCH_CHAT_ID:
+        log.warning("[ASUPAN STARTUP] Chat_id is empty")
+        return
+
+    try:
+        await send_asupan_once(app.bot)
+    except Exception as e:
+        log.warning(f"[ASUPAN STARTUP] {e}")
+                        
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
 # =====================
@@ -2623,6 +2634,7 @@ def main():
 
     # ==================================================
     # 💲 DOLLAR ROUTER
+    app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
     # ==================================================
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
@@ -2673,8 +2685,7 @@ def main():
 
         asyncio.create_task(_startup_asupan())
 
-    app.post_init = post_init
-
+    app.post_init = lambda app: app.create_task(startup_tasks(app))
     # ======================
     # RUN BOT
     # ======================
