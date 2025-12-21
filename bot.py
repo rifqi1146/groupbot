@@ -108,6 +108,143 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+import signal
+
+ACTIVE_TASKS = {}
+
+# ======================
+# INLINE KEYBOARD
+# ======================
+def mirror_keyboard(link=None):
+    buttons = []
+    if link:
+        buttons.append(
+            [InlineKeyboardButton("☁️ Google Drive", url=link)]
+        )
+    buttons.append(
+        [InlineKeyboardButton("⛔ Cancel", callback_data="mirror:cancel")]
+    )
+    return InlineKeyboardMarkup(buttons)
+
+# ======================
+# MIRROR COMMAND
+# ======================
+async def mirror_cmd(update, context):
+    user_id = update.effective_user.id
+
+    if user_id in ACTIVE_TASKS:
+        return await update.message.reply_text("⛔ Masih ada proses berjalan")
+
+    if not context.args:
+        return await update.message.reply_text("❌ /mirror <direct link>")
+
+    url = context.args[0]
+    size = await get_remote_size(url)
+
+    if size <= 0:
+        return await update.message.reply_text("❌ Gagal cek ukuran file")
+    if size > MIRROR_LIMIT:
+        return await update.message.reply_text("❌ File > 6GB")
+
+    user_dir = f"{DOWNLOAD_DIR}/mirror/{user_id}"
+    os.makedirs(user_dir, exist_ok=True)
+
+    filename = url.split("/")[-1]
+    filepath = f"{user_dir}/{filename}"
+
+    msg = await update.message.reply_text(
+        "🚀 Starting mirror...",
+        reply_markup=mirror_keyboard()
+    )
+
+    aria = await run_cmd([
+        "aria2c", "-x", "16", "-s", "16",
+        "-o", filename, "-d", user_dir, url
+    ])
+
+    ACTIVE_TASKS[user_id] = {
+        "proc": aria,
+        "msg": msg,
+        "path": filepath
+    }
+
+    watcher = asyncio.create_task(download_progress(msg, filepath, size))
+    await aria.wait()
+    watcher.cancel()
+
+    if user_id not in ACTIVE_TASKS:
+        return
+
+    await msg.edit_text("☁️ Uploading to Google Drive...")
+
+    proc = await run_cmd([
+        "rclone", "move", filepath,
+        "gdrive:MirrorBot",
+        "--progress"
+    ])
+
+    ACTIVE_TASKS[user_id]["proc"] = proc
+
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        try:
+            await msg.edit_text(
+                "☁️ Uploading to Google Drive...\n\n"
+                + line.decode()[-350:],
+                reply_markup=mirror_keyboard()
+            )
+        except:
+            pass
+
+    await proc.wait()
+
+    link_proc = await run_cmd([
+        "rclone", "link", f"gdrive:MirrorBot/{filename}"
+    ])
+    link = (await link_proc.stdout.read()).decode().strip()
+
+    await msg.edit_text(
+        f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
+        parse_mode="HTML",
+        reply_markup=mirror_keyboard(link)
+    )
+
+    ACTIVE_TASKS.pop(user_id, None)
+
+# ======================
+# CANCEL CALLBACK
+# ======================
+async def mirror_cancel_cb(update, context):
+    q = update.callback_query
+    user_id = q.from_user.id
+
+    task = ACTIVE_TASKS.get(user_id)
+    if not task:
+        return await q.answer("❌ Tidak ada proses", show_alert=True)
+
+    proc = task["proc"]
+    path = task.get("path")
+
+    try:
+        proc.send_signal(signal.SIGTERM)
+    except:
+        pass
+
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except:
+            pass
+
+    ACTIVE_TASKS.pop(user_id, None)
+
+    await q.message.edit_text("⛔ Proses dibatalkan")
+    await q.answer("Cancelled")
+    
+
 #restart
 import os, sys
 from telegram import Update
@@ -2530,6 +2667,8 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
+    app.add_handler(CommandHandler("mirror", mirror_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("leech", leech_cmd, block=False), group=-1)
 
     # UTIL / IO
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
