@@ -2571,6 +2571,9 @@ async def post_init(app):
 def main():
     logger.info("Initializing bot...")
 
+    # ======================
+    # BUILD APPLICATION
+    # ======================
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -2581,17 +2584,16 @@ def main():
         .build()
     )
 
-    # 🔥 DAFTARIN POST_INIT DI SINI
-    app.post_init = post_init
-
     # ==================================================
-    # COMMAND HANDLERS (JANGAN DIUBAH)
+    # 🔥 COMMAND HANDLERS (PRIORITY TERTINGGI)
     # ==================================================
+    # CORE
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
 
+    # UTIL / IO
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ip", ip_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False), group=-1)
@@ -2603,6 +2605,7 @@ def main():
     app.add_handler(CommandHandler("asupan", asupan_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("restart", restart_cmd, block=False), group=-1)
 
+    # AI
     app.add_handler(CommandHandler("ai", ai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False), group=-1)
@@ -2610,17 +2613,73 @@ def main():
     app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
 
+    # ==================================================
+    # INLINE CALLBACKS
+    # ==================================================
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
 
+    # ==================================================
+    # 💲 DOLLAR ROUTER
+    # ==================================================
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
     )
 
+    # ======================
+    # BANNER (JANGAN DIHAPUS)
+    # ======================
+    try:
+        banner = r"""
+  ____        _   _       ____        _
+ |  _ \ _   _| |_| |__   |  _ \  __ _| |_
+ | |_) | | | | __| '_ \  | | | |/ _` | __|
+ |  _ <| |_| | |_| |_) | | |_| | (_| | |_
+ |_| \_\\__,_|\__|_.__/  |____/ \__,_|\__|
+"""
+        print(banner)
+        logger.info("Bot starting...")
+    except Exception:
+        logger.exception("Banner failed")
+
+    # ======================
+    # POST INIT (AMAN & BENAR)
+    # ======================
+    async def post_init(app):
+        # set bot commands
+        try:
+            await app.bot.set_my_commands([
+                ("start", "Check bot status"),
+                ("help", "Show help menu"),
+                ("ping", "Check latency"),
+                ("dl", "Download video"),
+                ("stats", "System statistics"),
+                ("gsearch", "Google search"),
+                ("asupan", "Asupan 😋"),
+                ("tr", "Translate text"),
+                ("speedtest", "Run speed test"),
+                ("restart", "Restart bot"),
+            ])
+        except Exception:
+            pass
+
+        # kirim asupan SEKALI saat bot nyala
+        async def _startup_asupan():
+            await asyncio.sleep(2)  # tunggu bot siap beneran
+            await send_asupan_once(app.bot)
+
+        asyncio.create_task(_startup_asupan())
+
+    app.post_init = post_init
+
+    # ======================
+    # RUN BOT
+    # ======================
     logger.info("Launching polling loop...")
+    print("Launching... (listening for updates)")
     app.run_polling()
 
 
