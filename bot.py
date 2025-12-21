@@ -2680,12 +2680,13 @@ def main():
 
         # kirim asupan SEKALI saat bot nyala
         async def _startup_asupan():
-            await asyncio.sleep(2)  # tunggu bot siap beneran
+            await asyncio.sleep(5)  # tunggu bot siap beneran
             await send_asupan_once(app.bot)
 
         asyncio.create_task(_startup_asupan())
 
-    app.post_init = lambda app: app.create_task(startup_tasks(app))
+    app.post_init = post_init
+
     # ======================
     # RUN BOT
     # ======================
