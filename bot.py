@@ -282,11 +282,10 @@ from telegram.ext import ContextTypes
 log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
-ASUPAN_WARMED = False
-ASUPAN_PREFETCH_SIZE = 10
+ASUPAN_PREFETCH_SIZE = 20
 ASUPAN_FETCHING = False
 
-ASUPAN_PREFETCH_CHAT_IDS = set()
+ASUPAN_PREFETCH_CHAT_ID = None
 
 # cooldown user (user_id: last_time)
 ASUPAN_COOLDOWN = {}
@@ -376,10 +375,10 @@ async def fetch_asupan_tikwm():
 # ======================
 # PREFETCH FILE_ID (AMAN)
 # ======================
-async def warm_asupan_cache(bot, chat_id):
+async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
-    if ASUPAN_FETCHING:
+    if ASUPAN_FETCHING or not ASUPAN_PREFETCH_CHAT_ID:
         return
 
     ASUPAN_FETCHING = True
@@ -388,7 +387,7 @@ async def warm_asupan_cache(bot, chat_id):
             try:
                 url = await fetch_asupan_tikwm()
                 msg = await bot.send_video(
-                    chat_id=chat_id,
+                    chat_id=ASUPAN_PREFETCH_CHAT_ID,
                     video=url,
                     disable_notification=True
                 )
@@ -417,31 +416,28 @@ async def get_asupan_fast(bot):
     await msg.delete()
     return {"file_id": file_id}
 
-#cmd
+# ======================
+# /asupan COMMAND
+# ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
+    global ASUPAN_PREFETCH_CHAT_ID
+
+    if ASUPAN_PREFETCH_CHAT_ID is None:
+        ASUPAN_PREFETCH_CHAT_ID = update.effective_chat.id
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        # warm cache PER CHAT
-        if chat_id not in ASUPAN_PREFETCH_CHAT_IDS:
-            ASUPAN_PREFETCH_CHAT_IDS.add(chat_id)
-            await warm_asupan_cache(context.bot, chat_id)
-
         data = await get_asupan_fast(context.bot)
 
         await update.effective_chat.send_video(
-            video=data["file_id"],
-            reply_to_message_id=update.message.message_id,
-            reply_markup=asupan_keyboard(update.effective_user.id)
-        )
+    video=data["file_id"],
+    reply_to_message_id=update.message.message_id,
+    reply_markup=asupan_keyboard(update.effective_user.id)
+)
 
         await msg.delete()
-
-        context.application.create_task(
-            warm_asupan_cache(context.bot, chat_id)
-        )
+        context.application.create_task(warm_asupan_cache(context.bot))
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
@@ -492,7 +488,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         context.application.create_task(
-    warm_asupan_cache(context.bot, q.message.chat_id)
+            warm_asupan_cache(context.bot)
         )
 
     except Exception as e:
