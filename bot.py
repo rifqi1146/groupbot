@@ -83,7 +83,7 @@ if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 
 #tumbal
-ASUPAN_PREFETCH_CHAT_ID = int(os.getenv("ASUPAN_PREFETCH_CHAT_ID"))
+ASUPAN_STARTUP_CHAT_ID = int(os.getenv("ASUPAN_STARTUP_CHAT_ID", "0")) or None
 
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
@@ -288,7 +288,7 @@ ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 20
 ASUPAN_FETCHING = False
 
-ASUPAN_PREFETCH_CHAT_ID = None
+ASUPAN_PREFETCH_CHAtT_ID = None
 
 # cooldown user (user_id: last_time)
 ASUPAN_COOLDOWN = {}
@@ -498,18 +498,25 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
 
 async def send_asupan_once(bot):
-    if not ASUPAN_PREFETCH_CHAT_ID:
+    if not ASUPAN_STARTUP_CHAT_ID:
         log.warning("[ASUPAN STARTUP] Chat_id is empty")
         return
 
     try:
         data = await get_asupan_fast(bot)
-        await bot.send_video(
-            chat_id=ASUPAN_PREFETCH_CHAT_ID,
-            video=data["file_id"]
+
+        msg = await bot.send_video(
+            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            video=data["file_id"],
+            disable_notification=True
         )
+
+        await msg.delete()
+
+        log.info("[ASUPAN STARTUP] Warmup success")
+
     except Exception as e:
-        log.warning(f"[ASUPAN STARTUP] {e}")
+        log.warning(f"[ASUPAN STARTUP] Failed: {e}")
 
 async def startup_tasks(app):
     await asyncio.sleep(3)  # kasih waktu bot hidup
@@ -2658,34 +2665,26 @@ def main():
     # POST INIT (FINAL & AMAN)
     # ======================
     async def post_init(app):
-        try:
-            await app.bot.set_my_commands([
-                ("start", "Check bot status"),
-                ("help", "Show help menu"),
-                ("ping", "Check latency"),
-                ("dl", "Download video"),
-                ("stats", "System statistics"),
-                ("gsearch", "Google search"),
-                ("asupan", "Asupan 😋"),
-                ("tr", "Translate text"),
-                ("speedtest", "Run speed test"),
-                ("restart", "Restart bot"),
-            ])
-        except Exception:
-            pass
+    # set bot commands
+    await app.bot.set_my_commands([
+        ("start", "Check bot status"),
+        ("help", "Show help menu"),
+        ("ping", "Check latency"),
+        ("dl", "Download video"),
+        ("stats", "System statistics"),
+        ("gsearch", "Google search"),
+        ("asupan", "Asupan 😋"),
+        ("tr", "Translate text"),
+        ("speedtest", "Run speed test"),
+        ("restart", "Restart bot"),
+    ])
 
-        # kirim asupan SEKALI pas bot nyala
-        await asyncio.sleep(5)
+    # warm cache ONCE, delayed
+    async def _warm():
+        await asyncio.sleep(4)
+        await send_asupan_once(app.bot)
 
-        if not ASUPAN_PREFETCH_CHAT_ID:
-            logger.warning("[ASUPAN STARTUP] Chat_id is empty")
-            return
-
-        try:
-            await send_asupan_once(app.bot)
-            logger.warning("[ASUPAN STARTUP] Asupan sent")
-        except Exception as e:
-            logger.warning(f"[ASUPAN STARTUP] Failed: {e}")
+    app.create_task(_warm())
 
     app.post_init = post_init
 
