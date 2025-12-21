@@ -283,10 +283,10 @@ log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
 ASUPAN_WARMED = False
-ASUPAN_PREFETCH_SIZE = 20
+ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-ASUPAN_PREFETCH_CHAT_ID = None
+ASUPAN_PREFETCH_CHAT_IDS = set()
 
 # cooldown user (user_id: last_time)
 ASUPAN_COOLDOWN = {}
@@ -376,10 +376,10 @@ async def fetch_asupan_tikwm():
 # ======================
 # PREFETCH FILE_ID (AMAN)
 # ======================
-async def warm_asupan_cache(bot):
+async def warm_asupan_cache(bot, chat_id):
     global ASUPAN_FETCHING
 
-    if ASUPAN_FETCHING or not ASUPAN_PREFETCH_CHAT_ID:
+    if ASUPAN_FETCHING:
         return
 
     ASUPAN_FETCHING = True
@@ -388,7 +388,7 @@ async def warm_asupan_cache(bot):
             try:
                 url = await fetch_asupan_tikwm()
                 msg = await bot.send_video(
-                    chat_id=ASUPAN_PREFETCH_CHAT_ID,
+                    chat_id=chat_id,
                     video=url,
                     disable_notification=True
                 )
@@ -419,20 +419,15 @@ async def get_asupan_fast(bot):
 
 #cmd
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global ASUPAN_PREFETCH_CHAT_ID, ASUPAN_WARMED
-
-    if ASUPAN_PREFETCH_CHAT_ID is None:
-        ASUPAN_PREFETCH_CHAT_ID = update.effective_chat.id
+    chat_id = update.effective_chat.id
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        # ======================
-        # WARM CACHE FIRST TIME
-        # ======================
-        if not ASUPAN_WARMED:
-            ASUPAN_WARMED = True
-            await warm_asupan_cache(context.bot)
+        # warm cache PER CHAT
+        if chat_id not in ASUPAN_PREFETCH_CHAT_IDS:
+            ASUPAN_PREFETCH_CHAT_IDS.add(chat_id)
+            await warm_asupan_cache(context.bot, chat_id)
 
         data = await get_asupan_fast(context.bot)
 
@@ -444,9 +439,8 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.delete()
 
-        # keep cache warm in background
         context.application.create_task(
-            warm_asupan_cache(context.bot)
+            warm_asupan_cache(context.bot, chat_id)
         )
 
     except Exception as e:
@@ -498,7 +492,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         context.application.create_task(
-            warm_asupan_cache(context.bot)
+    warm_asupan_cache(context.bot, q.message.chat_id)
         )
 
     except Exception as e:
