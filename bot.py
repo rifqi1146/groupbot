@@ -1308,7 +1308,7 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<b>🔤 Translator</b>\n\n"
                 "Contoh:\n"
                 "<code>/tr en hello bro</code>\n"
-                "<code>/tr id this is a test</code>\n"
+                "<code>/tr id good morning</code>\n"
                 "<code>/tr apa kabar bro?</code>\n\n"
                 "Atau reply pesan:\n"
                 "<code>/tr en</code>",
