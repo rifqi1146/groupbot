@@ -2635,7 +2635,7 @@ def main():
     app.post_init = _set_commands
     
     async def _prefetch(_):
-    await warm_asupan_cache(application.bot)
+    await warm_asupan_cache(app.bot)
 
     app.post_init = _prefetch
 
