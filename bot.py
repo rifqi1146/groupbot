@@ -82,6 +82,14 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 
+#tumbal
+ASUPAN_PREFETCH_CHAT_ID = int(
+    os.getenv("ASUPAN_PREFETCH_CHAT_ID", "0")
+)
+
+if ASUPAN_PREFETCH_CHAT_ID == 0:
+    raise RuntimeError("ASUPAN_PREFETCH_CHAT_ID belum diset")
+    
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
@@ -2625,6 +2633,11 @@ def main():
             logger.exception("set_my_commands failed")
 
     app.post_init = _set_commands
+    
+    async def _prefetch(_):
+    await warm_asupan_cache(application.bot)
+
+    app.post_init = _prefetch
 
     # ======================
     # RUN BOT
