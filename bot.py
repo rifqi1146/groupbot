@@ -285,7 +285,7 @@ from telegram.ext import ContextTypes
 log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
-ASUPAN_PREFETCH_SIZE = 20
+ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
 # cooldown user (user_id: last_time)
