@@ -2593,25 +2593,32 @@ def main():
     # POST INIT (INI KUNCI)
     # ======================
     async def post_init(app):
-        # set bot commands
-        try:
-            await app.bot.set_my_commands([
-                ("start", "Check bot status"),
-                ("help", "Show help menu"),
-                ("ping", "Check latency"),
-                ("dl", "Download video"),
-                ("stats", "System statistics"),
-                ("gsearch", "Google search"),
-                ("asupan", "Asupan 😋"),
-                ("tr", "Translate text"),
-                ("speedtest", "Run speed test"),
-                ("restart", "Restart bot"),
-            ])
-        except Exception:
-            pass
+    # ======================
+    # SET BOT COMMANDS
+    # ======================
+    try:
+        await app.bot.set_my_commands([
+            ("start", "Check bot status"),
+            ("help", "Show help menu"),
+            ("ping", "Check latency"),
+            ("dl", "Download video"),
+            ("stats", "System statistics"),
+            ("gsearch", "Google search"),
+            ("asupan", "Asupan 😋"),
+            ("tr", "Translate text"),
+            ("speedtest", "Run speed test"),
+            ("restart", "Restart bot"),
+        ])
+    except Exception:
+        pass
 
-        # 🔥 KIRIM ASUPAN SEKALI (SETELAH BOT READY)
-        app.create_task(send_asupan_once(app.bot))
+    # ======================
+    # 🔥 KIRIM ASUPAN SEKALI (SETELAH BOT RUNNING)
+    # ======================
+    app.job_queue.run_once(
+        lambda ctx: send_asupan_once(ctx.bot),
+        when=2  # delay 2 detik biar bot 100% ready
+    )
 
     app.post_init = post_init
 
