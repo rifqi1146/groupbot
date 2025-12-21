@@ -150,7 +150,27 @@ async def run_cmd(cmd):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
+async def stream_stats(proc, msg, title, keyboard):
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
 
+        text = line.decode(errors="ignore").strip()
+        if "Transferred:" not in text:
+            continue
+
+        display = text[text.find("Transferred:"):]
+
+        try:
+            await msg.edit_text(
+                f"{title}\n\n<code>{display}</code>",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except:
+            pass
+            
 # ======================
 # KEYBOARDS
 # ======================
@@ -246,12 +266,42 @@ async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive(custom_path=path)
     else:
         aria = await run_cmd([
-            "aria2c", "-x", "16", "-s", "16",
-            "-o", filename, "-d", user_dir, url
-        ])
-        ACTIVE_TASKS[user_id] = {"proc": aria, "msg": msg, "path": path}
-        watcher = asyncio.create_task(download_progress(msg, path, size))
-        await aria.wait()
+    "aria2c",
+    "-x", "16",
+    "-s", "16",
+    "--summary-interval=10",
+    "--console-log-level=notice",
+    "-o", filename,
+    "-d", user_dir,
+    url
+])
+
+ACTIVE_TASKS[user_id] = {
+    "proc": aria,
+    "msg": msg,
+    "path": filepath
+}
+
+while True:
+    line = await aria.stdout.readline()
+    if not line:
+        break
+
+    text = line.decode(errors="ignore").strip()
+    if "%" not in text:
+        continue
+
+    try:
+        await msg.edit_text(
+            "⬇️ Downloading...\n\n"
+            f"<code>{text[-300:]}</code>",
+            parse_mode="HTML",
+            reply_markup=mirror_keyboard()
+        )
+    except:
+        pass
+
+await aria.wait()
         watcher.cancel()
 
     if user_id not in ACTIVE_TASKS:
@@ -259,20 +309,43 @@ async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # UPLOAD TO GDRIVE
     await msg.edit_text("☁️ Uploading to Google Drive...")
-    proc = await run_cmd(["rclone", "move", path, "gdrive:MirrorBot"])
-    await proc.wait()
+
+proc = await run_cmd([
+    "rclone", "move",
+    filepath,
+    "gdrive:MirrorBot",
+    "--stats=10s",
+    "--stats-one-line",
+    "--progress"
+])
+
+ACTIVE_TASKS[user_id]["proc"] = proc
+
+await stream_stats(
+    proc,
+    msg,
+    "☁️ Uploading to Google Drive...",
+    mirror_keyboard()
+)
+
+await proc.wait()
 
     # GET LINK
-    link_proc = await run_cmd(["rclone", "link", f"gdrive:MirrorBot/{filename}"])
-    link = (await link_proc.stdout.read()).decode().strip()
+    link_proc = await run_cmd([
+    "rclone", "link",
+    f"gdrive:MirrorBot/{filename}"
+])
+link = (await link_proc.stdout.read()).decode().strip()
 
-    await msg.edit_text(
-        f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
-        parse_mode="HTML",
-        reply_markup=mirror_keyboard(link, finished=True)
-    )
+await msg.edit_text(
+    f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
+    parse_mode="HTML",
+    reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("☁️ Google Drive", url=link)]
+    ])
+)
 
-    ACTIVE_TASKS.pop(user_id, None)
+ACTIVE_TASKS.pop(user_id, None)
 
 # ======================
 # MIRROR CANCEL
