@@ -2538,9 +2538,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
-    app.add_handler(CommandHandler("mirror", mirror_cmd, block=False), group=-1)
-    app.add_handler(CommandHandler("leech", leech_cmd, block=False), group=-1)
-
+   
     # UTIL / IO
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ip", ip_cmd, block=False), group=-1)
