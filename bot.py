@@ -2593,80 +2593,7 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# =====================================
-# 🔥 COMMAND ROUTER (ALL COMMANDS)
-# =====================================
-async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-
-    text = update.message.text.strip()
-    raw_cmd = text.split()[0].lower()
-    cmd = raw_cmd.split("@")[0]   # 🔥 FIX PENTING
-
-    # ========= CORE =========
-    if cmd == "/start":
-        return await start_cmd(update, context)
-
-    if cmd in ("/help", "/menu"):
-        return await help_cmd(update, context)
-
-    if cmd == "/ping":
-        return await ping_cmd(update, context)
-
-    # ========= UTIL =========
-    if cmd == "/speedtest":
-        return await speedtest_cmd(update, context)
-
-    if cmd == "/ip":
-        return await ip_cmd(update, context)
-
-    if cmd == "/whoisdomain":
-        return await whoisdomain_cmd(update, context)
-
-    if cmd == "/domain":
-        return await domain_cmd(update, context)
-
-    if cmd == "/dl":
-        return await dl_cmd(update, context)
-
-    if cmd == "/stats":
-        return await stats_cmd(update, context)
-
-    if cmd == "/tr":
-        return await tr_cmd(update, context)
-
-    if cmd == "/gsearch":
-        return await gsearch_cmd(update, context)
-
-    if cmd == "/asupan":
-        return await asupan_cmd(update, context)
-
-    if cmd == "/restart":
-        return await restart_cmd(update, context)
-
-    # ========= AI =========
-    if cmd == "/ai":
-        return await ai_cmd(update, context)
-
-    if cmd == "/setmodeai":
-        return await setmodeai_cmd(update, context)
-
-    if cmd == "/openai":
-        return await ai_openai_cmd(update, context)
-
-    if cmd == "/groq":
-        return await groq_query(update, context)
-
-    if cmd == "/deepseek":
-        return await ai_deepseek_cmd(update, context)
-
-    if cmd == "/nsfw":
-        return await pollinations_generate_nsfw(update, context)
-        
-# ======================
-# MAIN ENTRY
-# ======================
+#main
 def main():
     logger.info("Initializing bot...")
 
@@ -2683,21 +2610,46 @@ def main():
         .build()
     )
 
-    app.add_handler(
-        MessageHandler(
-            filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE,
-            command_router
-        ),
-        group=-1
-    )
+    # ==================================================
+    # 🔥 COMMAND HANDLERS (PRIORITY TERTINGGI)
+    # ==================================================
+    # CORE
+    app.add_handler(CommandHandler("start", start_cmd), group=-1)
+    app.add_handler(CommandHandler("help", help_cmd), group=-1)
+    app.add_handler(CommandHandler("menu", help_cmd), group=-1)
+    app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
 
-    #callback inline
+    # UTIL / IO
+    app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("ip", ip_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("domain", domain_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("dl", dl_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("stats", stats_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("tr", tr_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("asupan", asupan_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("restart", restart_cmd, block=False), group=-1)
+
+    # AI
+    app.add_handler(CommandHandler("ai", ai_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
+    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
+
+    # ==================================================
+    # INLINE CALLBACKS
+    # ==================================================
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
 
-    #dolar router
+    # ==================================================
+    # 💲 DOLLAR ROUTER (PRIORITY SETELAH COMMAND)
+    # ==================================================
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
