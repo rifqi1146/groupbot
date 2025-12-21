@@ -1257,7 +1257,7 @@ async def groq_query(update, context):
         return
 
 # ======================
-# 🔤 SIMPLE TRANSLATOR (/tr)
+# 🔤 SIMPLE TRANSLATOR (/tr) — FIXED
 # ======================
 from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
 from telegram import Update
@@ -1266,22 +1266,36 @@ import html
 
 DEFAULT_LANG = "en"
 
+# daftar kode bahasa umum (biar aman & cepat)
+VALID_LANGS = {
+    "en","id","ja","ko","zh","fr","de","es","it","ru","ar","hi","pt","tr",
+    "vi","th","ms","nl","pl","uk","sv","fi"
+}
+
 async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     target_lang = DEFAULT_LANG
     text = ""
 
     # ======================
-    # PARSE ARGUMENT
+    # PARSE ARGUMENT (FIXED)
     # ======================
     if args:
-        # /tr en hello world
-        if len(args) >= 2:
-            target_lang = args[0].lower()
+        first = args[0].lower()
+
+        # /tr en hello bro
+        if first in VALID_LANGS and len(args) >= 2:
+            target_lang = first
             text = " ".join(args[1:])
+
         # /tr en (reply)
-        elif len(args) == 1:
-            target_lang = args[0].lower()
+        elif first in VALID_LANGS and len(args) == 1:
+            target_lang = first
+
+        # /tr apa kabar bro?
+        else:
+            target_lang = DEFAULT_LANG
+            text = " ".join(args)
 
     # ======================
     # AMBIL TEXT
@@ -1294,7 +1308,8 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<b>🔤 Translator</b>\n\n"
                 "Contoh:\n"
                 "<code>/tr en hello bro</code>\n"
-                "<code>/tr id this is a test</code>\n\n"
+                "<code>/tr id this is a test</code>\n"
+                "<code>/tr apa kabar bro?</code>\n\n"
                 "Atau reply pesan:\n"
                 "<code>/tr en</code>",
                 parse_mode="HTML"
