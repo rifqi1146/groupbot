@@ -1519,14 +1519,18 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query:
         return
 
-    await query.answer()
     data = query.data or ""
+
+    try:
+        await query.answer()
+    except:
+        pass
 
     # ❌ CLOSE
     if data == "help:close":
         try:
             await query.message.delete()
-        except Exception:
+        except:
             pass
         return
 
@@ -1541,16 +1545,13 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ✨ FEATURES
     if data == "help:features":
-        text = (
+        await query.edit_message_text(
             "✨ <b>Features</b>\n\n"
             "• 🏓 /ping — Cek latency bot\n"
             "• ⬇️ /dl — Download video (TT / IG / YT)\n"
             "• 😋 /asupan — Asupan TikTok\n"
             "• 🔍 /gsearch — Cari di Google\n"
-            "• 🌐 /tr — Translate teks\n"
-        )
-        await query.edit_message_text(
-            text,
+            "• 🌐 /tr — Translate teks\n",
             reply_markup=help_back_keyboard(),
             parse_mode="HTML"
         )
@@ -1558,17 +1559,14 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 🤖 AI
     if data == "help:ai":
-        text = (
+        await query.edit_message_text(
             "🤖 <b>AI Commands</b>\n\n"
             "• /ai — Tanya AI (default)\n"
             "• /ai flash|pro|lite — Pilih model\n"
             "• /setmodeai — Set default AI\n"
             "• /openai — OpenAI via HF\n"
             "• /groq — Groq AI\n"
-            "• /deepseek — DeepSeek AI"
-        )
-        await query.edit_message_text(
-            text,
+            "• /deepseek — DeepSeek AI",
             reply_markup=help_back_keyboard(),
             parse_mode="HTML"
         )
@@ -1576,17 +1574,14 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 🧠 UTILITIES
     if data == "help:utils":
-        text = (
+        await query.edit_message_text(
             "🧠 <b>Utilities</b>\n\n"
             "• /stats — Info sistem\n"
             "• /ip — Info IP\n"
             "• /domain — Info domain\n"
             "• /whoisdomain — WHOIS domain detail\n"
             "• ⚡ /speedtest — Running speed test\n"
-            "• ♻️ /restart — Restart bot\n\n"
-        )
-        await query.edit_message_text(
-            text,
+            "• ♻️ /restart — Restart bot\n",
             reply_markup=help_back_keyboard(),
             parse_mode="HTML"
         )
