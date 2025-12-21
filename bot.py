@@ -107,319 +107,6 @@ def load_ai_mode():
 def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
-
-# ======================
-# MIRROR / LEECH UTILS
-# ======================
-import os, asyncio, time, signal, aiohttp
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-DOWNLOAD_DIR = "/root/groupbot/downloads"
-MIRROR_LIMIT = 6 * 1024**3
-LEECH_LIMIT  = 2 * 1024**3
-PROGRESS_INTERVAL = 10
-
-ACTIVE_TASKS = {}
-
-# ======================
-# HELPERS
-# ======================
-def sizeof_fmt(num):
-    for unit in ["B","KB","MB","GB","TB"]:
-        if num < 1024:
-            return f"{num:.2f}{unit}"
-        num /= 1024
-    return "?"
-
-async def get_remote_size(url):
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.head(url, allow_redirects=True, timeout=20) as r:
-                return int(r.headers.get("Content-Length", 0))
-    except:
-        return -1
-
-async def run_cmd(cmd):
-    return await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-# ======================
-# KEYBOARDS
-# ======================
-def mirror_keyboard(link=None, finished=False):
-    rows = []
-    if link:
-        rows.append([InlineKeyboardButton("☁️ Google Drive", url=link)])
-    if not finished:
-        rows.append([InlineKeyboardButton("⛔ Cancel", callback_data="mirror:cancel")])
-    return InlineKeyboardMarkup(rows)
-
-# ======================
-# STREAM RCLONE STATS
-# ======================
-async def stream_rclone(proc, msg, title):
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-
-        text = line.decode(errors="ignore").strip()
-        if "Transferred:" not in text:
-            continue
-
-        try:
-            await msg.edit_text(
-                f"{title}\n\n<code>{text}</code>",
-                parse_mode="HTML",
-                reply_markup=msg.reply_markup
-            )
-        except:
-            pass
-
-# ======================
-# MIRROR COMMAND (FINAL)
-# ======================
-async def mirror_cmd(update, context):
-    user_id = update.effective_user.id
-    if user_id in ACTIVE_TASKS:
-        return await update.message.reply_text("⛔ Masih ada proses berjalan")
-
-    src = update.message.reply_to_message
-    url = None
-    tg_file = None
-
-    # ---------- SOURCE ----------
-    if context.args:
-        url = context.args[0]
-        size = await get_remote_size(url)
-        if size <= 0:
-            return await update.message.reply_text("❌ Gagal cek ukuran file")
-        filename = url.split("/")[-1]
-
-    elif src and src.document:
-        tg_file = src.document
-        size = tg_file.file_size
-        filename = tg_file.file_name
-
-    elif src and src.video:
-        tg_file = src.video
-        size = tg_file.file_size
-        filename = f"video_{tg_file.file_unique_id}.mp4"
-
-    else:
-        return await update.message.reply_text(
-            "❌ /mirror <direct link>\natau reply ke file Telegram"
-        )
-
-    if size > MIRROR_LIMIT:
-        return await update.message.reply_text("❌ File > 6GB")
-
-    # ---------- PREPARE ----------
-    user_dir = f"{DOWNLOAD_DIR}/mirror/{user_id}"
-    os.makedirs(user_dir, exist_ok=True)
-    path = f"{user_dir}/{filename}"
-
-    msg = await update.message.reply_text(
-        "🚀 Starting mirror...",
-        reply_markup=mirror_keyboard()
-    )
-
-    ACTIVE_TASKS[user_id] = {"msg": msg, "path": path}
-
-    # ---------- DOWNLOAD ----------
-    if tg_file:
-        await msg.edit_text("⬇️ Downloading from Telegram...")
-        file = await context.bot.get_file(tg_file.file_id)
-        await file.download_to_drive(custom_path=path)
-    else:
-        aria = await run_cmd([
-            "aria2c",
-            "-x", "16", "-s", "16",
-            "--summary-interval=10",
-            "--console-log-level=notice",
-            "-o", filename,
-            "-d", user_dir,
-            url
-        ])
-        ACTIVE_TASKS[user_id]["proc"] = aria
-
-        while True:
-            line = await aria.stdout.readline()
-            if not line:
-                break
-            text = line.decode(errors="ignore").strip()
-            if "%" in text:
-                try:
-                    await msg.edit_text(
-                        "⬇️ Downloading...\n\n<code>" + text[-300:] + "</code>",
-                        parse_mode="HTML",
-                        reply_markup=mirror_keyboard()
-                    )
-                except:
-                    pass
-
-        await aria.wait()
-
-    if user_id not in ACTIVE_TASKS:
-        return
-
-    # ---------- UPLOAD ----------
-    await msg.edit_text("☁️ Uploading to Google Drive...")
-
-    proc = await run_cmd([
-        "rclone", "move",
-        path,
-        "gdrive:MirrorBot",
-        "--stats=10s",
-        "--stats-one-line",
-        "--progress"
-    ])
-    ACTIVE_TASKS[user_id]["proc"] = proc
-
-    await stream_rclone(proc, msg, "☁️ Uploading to Google Drive...")
-    await proc.wait()
-
-    # ---------- LINK ----------
-    link_proc = await run_cmd([
-        "rclone", "link",
-        f"gdrive:MirrorBot/{filename}"
-    ])
-    link = (await link_proc.stdout.read()).decode().strip()
-
-    await msg.edit_text(
-        f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
-        parse_mode="HTML",
-        reply_markup=mirror_keyboard(link, finished=True)
-    )
-
-    ACTIVE_TASKS.pop(user_id, None)
-
-# ======================
-# MIRROR CANCEL
-# ======================
-async def mirror_cancel_cb(update, context):
-    q = update.callback_query
-    user_id = q.from_user.id
-
-    task = ACTIVE_TASKS.pop(user_id, None)
-    if not task:
-        return await q.answer("❌ Tidak ada proses", show_alert=True)
-
-    try:
-        task["proc"].send_signal(signal.SIGTERM)
-    except:
-        pass
-
-    if os.path.exists(task["path"]):
-        try: os.remove(task["path"])
-        except: pass
-
-    await q.message.edit_text("⛔ Mirror dibatalkan")
-    await q.answer("Cancelled")
-
-# ======================
-# LEECH COMMAND
-# ======================
-async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if user_id in ACTIVE_TASKS:
-        return await update.message.reply_text("⛔ Masih ada proses berjalan")
-
-    if not context.args:
-        return await update.message.reply_text("❌ /leech <direct link>")
-
-    url = context.args[0]
-    size = await get_remote_size(url)
-    if size <= 0:
-        return await update.message.reply_text("❌ Gagal cek ukuran file")
-    if size > LEECH_LIMIT:
-        return await update.message.reply_text("❌ File > 2GB")
-
-    user_dir = f"{DOWNLOAD_DIR}/leech/{user_id}"
-    os.makedirs(user_dir, exist_ok=True)
-    filename = url.split("/")[-1]
-    path = f"{user_dir}/{filename}"
-
-    msg = await update.message.reply_text(
-        "⬇️ Downloading...",
-        reply_markup=leech_keyboard()
-    )
-
-    aria = await run_cmd([
-        "aria2c",
-        "-x", "16",
-        "-s", "16",
-        "--summary-interval=10",
-        "--console-log-level=notice",
-        "-o", filename,
-        "-d", user_dir,
-        url
-    ])
-
-    ACTIVE_TASKS[user_id] = {"proc": aria, "path": path, "type": "leech"}
-
-    while True:
-        line = await aria.stdout.readline()
-        if not line:
-            break
-
-        text = line.decode(errors="ignore").strip()
-        if "%" not in text:
-            continue
-
-        try:
-            await msg.edit_text(
-                "⬇️ Downloading...\n\n<code>" + text[-300:] + "</code>",
-                parse_mode="HTML",
-                reply_markup=leech_keyboard()
-            )
-        except:
-            pass
-
-    await aria.wait()
-
-    if user_id not in ACTIVE_TASKS:
-        return
-
-    await msg.edit_text("📤 Uploading to Telegram...")
-
-    await update.effective_chat.send_document(
-        document=open(path, "rb"),
-        caption=filename
-    )
-
-    shutil.rmtree(user_dir, ignore_errors=True)
-    ACTIVE_TASKS.pop(user_id, None)
-    await msg.delete()
-
-# ======================
-# LEECH CANCEL
-# ======================
-async def leech_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    user_id = q.from_user.id
-
-    task = ACTIVE_TASKS.pop(user_id, None)
-    if not task or task.get("type") != "leech":
-        return await q.answer("❌ Tidak ada leech aktif", show_alert=True)
-
-    try:
-        task["proc"].send_signal(signal.SIGTERM)
-    except:
-        pass
-
-    if os.path.exists(task["path"]):
-        try:
-            os.remove(task["path"])
-        except:
-            pass
-
-    await q.message.edit_text("⛔ Leech dibatalkan")
-    await q.answer("Cancelled")
     
 #restart
 import os, sys
@@ -595,7 +282,7 @@ from telegram.ext import ContextTypes
 log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
-ASUPAN_PREFETCH_SIZE = 10
+ASUPAN_PREFETCH_SIZE = 20
 ASUPAN_FETCHING = False
 
 ASUPAN_PREFETCH_CHAT_ID = None
@@ -618,6 +305,13 @@ def asupan_keyboard():
 async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
+        "krisna",
+        "trend susu beracun",
+        "pragostrend",
+        "krisna minta susu",
+        "trendsusuberacun",
+        "ah atas bawah cantik",
+        "atas bawah cantik",
         "eunicetjoaa",
         "cewek viral",
         "nasikfc",
@@ -2782,6 +2476,7 @@ _DOLLAR_CMD_MAP = {
     "openai": ai_openai_cmd,
     "start": start_cmd,
     "help": help_cmd,
+    "menu": help_cmd,
     "nsfw": pollinations_generate_nsfw,
     "groq": groq_query,
     "menu": help_cmd,
@@ -2873,9 +2568,7 @@ def main():
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
-    app.add_handler(CallbackQueryHandler(mirror_cancel_cb, pattern=r"^mirror:cancel"))
-    app.add_handler(CallbackQueryHandler(leech_cancel_cb, pattern=r"^leech:cancel"))
-
+   
     # ==================================================
     # 💲 DOLLAR ROUTER (PRIORITY SETELAH COMMAND)
     # ==================================================
