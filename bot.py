@@ -520,7 +520,7 @@ async def send_asupan_once(bot):
 
 async def startup_tasks(app):
     await asyncio.sleep(3)  # kasih waktu bot hidup
-    if not ASUPAN_PREFETCH_CHAT_ID:
+    if not ASUPAN_STARTUP_CHAT_ID:
         log.warning("[ASUPAN STARTUP] Chat_id is empty")
         return
 
