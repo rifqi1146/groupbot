@@ -1498,36 +1498,36 @@ def help_back_keyboard():
 HELP_TEXT = {
     "help:menu": (
         "📋 <b>Help Menu</b>\n"
-        "Pilih kategori di bawah ya ✨"
+        "Choose a category below ✨"
     ),
 
     "help:features": (
         "✨ <b>Features</b>\n\n"
-        "• 🏓 /ping — Cek latency\n"
-        "• ⬇️ /dl — Download video\n"
-        "• 😋 /asupan — Asupan TikTok\n"
-        "• 🔍 /gsearch — Google search\n"
-        "• 🌐 /tr — Translate\n"
+        "• 🏓 /ping — Check bot latency\n"
+        "• ⬇️ /dl — Download videos (TikTok / Instagram)\n"
+        "• 😋 /asupan — Random TikTok content\n"
+        "• 🔍 /gsearch — Search something on Google\n"
+        "• 🌐 /tr — Translate text to another language\n"
     ),
 
     "help:ai": (
-        "🤖 <b>AI</b>\n\n"
-        "• /ai — Chat AI\n"
-        "• /ai flash|pro|lite\n"
-        "• /setmodeai\n"
-        "• /openai\n"
-        "• /groq\n"
-        "• /deepseek\n"
+        "🤖 <b>AI Commands</b>\n\n"
+        "• /ai — Ask AI (default mode)\n"
+        "• /ai flash|pro|lite — Select AI model\n"
+        "• /setmodeai — Set default AI model\n"
+        "• /openai — OpenAI\n"
+        "• /groq — GroqAI\n"
+        "• /deepseek — DeepSeekAI\n"
     ),
 
     "help:utils": (
         "🧠 <b>Utilities</b>\n\n"
-        "• /stats — Info sistem\n"
-        "• /ip — Info IP\n"
-        "• /domain — Info domain\n"
-        "• /whoisdomain\n"
-        "• ⚡ /speedtest\n"
-        "• ♻️ /restart\n"
+        "• /stats — Bot system information\n"
+        "• /ip — IP address information\n"
+        "• /domain — Domain information\n"
+        "• /whoisdomain — Detailed domain\n"
+        "• ⚡ /speedtest — Run speed test\n"
+        "• ♻️ /restart — Restart bot\n"
     ),
 }
 
