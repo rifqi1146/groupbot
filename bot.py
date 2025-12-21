@@ -2539,6 +2539,34 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+async def post_init(app):
+    # ======================
+    # SET BOT COMMANDS
+    # ======================
+    try:
+        await app.bot.set_my_commands([
+            ("start", "Check bot status"),
+            ("help", "Show help menu"),
+            ("ping", "Check latency"),
+            ("dl", "Download video"),
+            ("stats", "System statistics"),
+            ("gsearch", "Google search"),
+            ("asupan", "Asupan 😋"),
+            ("tr", "Translate text"),
+            ("speedtest", "Run speed test"),
+            ("restart", "Restart bot"),
+        ])
+    except Exception:
+        pass
+
+    # ======================
+    # 🔥 KIRIM ASUPAN SEKALI SAAT BOT NYALA
+    # ======================
+    app.job_queue.run_once(
+        lambda ctx: send_asupan_once(ctx.bot),
+        when=2
+    )
+    
 #main
 def main():
     logger.info("Initializing bot...")
@@ -2553,9 +2581,12 @@ def main():
         .build()
     )
 
-    # ======================
-    # COMMAND HANDLERS
-    # ======================
+    # 🔥 DAFTARIN POST_INIT DI SINI
+    app.post_init = post_init
+
+    # ==================================================
+    # COMMAND HANDLERS (JANGAN DIUBAH)
+    # ==================================================
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
@@ -2588,39 +2619,6 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
     )
-
-    # ======================
-    # POST INIT (INI KUNCI)
-    # ======================
-    async def post_init(app):
-    # ======================
-    # SET BOT COMMANDS
-    # ======================
-    try:
-        await app.bot.set_my_commands([
-            ("start", "Check bot status"),
-            ("help", "Show help menu"),
-            ("ping", "Check latency"),
-            ("dl", "Download video"),
-            ("stats", "System statistics"),
-            ("gsearch", "Google search"),
-            ("asupan", "Asupan 😋"),
-            ("tr", "Translate text"),
-            ("speedtest", "Run speed test"),
-            ("restart", "Restart bot"),
-        ])
-    except Exception:
-        pass
-
-    # ======================
-    # 🔥 KIRIM ASUPAN SEKALI (SETELAH BOT RUNNING)
-    # ======================
-    app.job_queue.run_once(
-        lambda ctx: send_asupan_once(ctx.bot),
-        when=2  # delay 2 detik biar bot 100% ready
-    )
-
-    app.post_init = post_init
 
     logger.info("Launching polling loop...")
     app.run_polling()
