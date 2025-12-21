@@ -191,81 +191,119 @@ async def download_progress(msg, path, total):
 # ======================
 # MIRROR COMMAND
 # ======================
-async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mirror_cmd(update, context):
     user_id = update.effective_user.id
 
     if user_id in ACTIVE_TASKS:
         return await update.message.reply_text("⛔ Masih ada proses berjalan")
 
-    if not context.args:
-        return await update.message.reply_text("❌ /mirror <direct link>")
+    msg_src = update.message.reply_to_message
+    url = None
+    tg_file = None
+    filename = None
+    size = 0
 
-    url = context.args[0]
-    size = await get_remote_size(url)
+    # ======================
+    # SOURCE DETECTION
+    # ======================
+    if context.args:
+        # direct link
+        url = context.args[0]
+        size = await get_remote_size(url)
+        if size <= 0:
+            return await update.message.reply_text("❌ Gagal cek ukuran file")
 
-    if size <= 0:
-        return await update.message.reply_text("❌ Gagal cek ukuran file")
+        filename = url.split("/")[-1]
+
+    elif msg_src and msg_src.document:
+        # telegram document
+        tg_file = msg_src.document
+        filename = tg_file.file_name
+        size = tg_file.file_size
+
+    elif msg_src and msg_src.video:
+        tg_file = msg_src.video
+        filename = f"video_{tg_file.file_unique_id}.mp4"
+        size = tg_file.file_size
+
+    else:
+        return await update.message.reply_text(
+            "❌ /mirror <direct link>\n"
+            "atau reply ke file Telegram"
+        )
+
     if size > MIRROR_LIMIT:
         return await update.message.reply_text("❌ File > 6GB")
 
+    # ======================
+    # PREPARE DIR
+    # ======================
     user_dir = f"{DOWNLOAD_DIR}/mirror/{user_id}"
     os.makedirs(user_dir, exist_ok=True)
-
-    filename = url.split("/")[-1]
-    path = f"{user_dir}/{filename}"
+    filepath = f"{user_dir}/{filename}"
 
     msg = await update.message.reply_text(
         "🚀 Starting mirror...",
         reply_markup=mirror_keyboard()
     )
 
-    aria = await run_cmd([
-        "aria2c", "-x", "16", "-s", "16",
-        "-o", filename, "-d", user_dir, url
-    ])
+    # ======================
+    # DOWNLOAD PHASE
+    # ======================
+    if tg_file:
+        file = await context.bot.get_file(tg_file.file_id)
 
-    ACTIVE_TASKS[user_id] = {"proc": aria, "path": path}
+        ACTIVE_TASKS[user_id] = {"msg": msg, "path": filepath}
 
-    watcher = asyncio.create_task(download_progress(msg, path, size))
-    await aria.wait()
-    watcher.cancel()
+        await file.download_to_drive(
+            custom_path=filepath
+        )
+
+    else:
+        aria = await run_cmd([
+            "aria2c", "-x", "16", "-s", "16",
+            "-o", filename, "-d", user_dir, url
+        ])
+
+        ACTIVE_TASKS[user_id] = {
+            "proc": aria,
+            "msg": msg,
+            "path": filepath
+        }
+
+        watcher = asyncio.create_task(
+            progress_watcher(msg, filepath, size)
+        )
+        await aria.wait()
+        watcher.cancel()
 
     if user_id not in ACTIVE_TASKS:
         return
 
+    # ======================
+    # UPLOAD TO GDRIVE
+    # ======================
     await msg.edit_text("☁️ Uploading to Google Drive...")
 
-    upload = await run_cmd([
-        "rclone", "move", path,
-        "gdrive:MirrorBot",
-        "--progress"
+    proc = await run_cmd([
+        "rclone", "move",
+        filepath,
+        "gdrive:MirrorBot"
     ])
+    await proc.wait()
 
-    ACTIVE_TASKS[user_id]["proc"] = upload
-
-    last = 0
-    while True:
-        line = await upload.stdout.readline()
-        if not line:
-            break
-        if time.time() - last >= PROGRESS_INTERVAL:
-            last = time.time()
-            try:
-                await msg.edit_text(
-                    "☁️ Uploading to Google Drive...\n\n" +
-                    line.decode()[-350:],
-                    reply_markup=mirror_keyboard()
-                )
-            except:
-                pass
-
-    await upload.wait()
-
-    link_proc = await run_cmd(["rclone", "link", f"gdrive:MirrorBot/{filename}"])
+    # ======================
+    # GET LINK
+    # ======================
+    link_proc = await run_cmd([
+        "rclone", "link",
+        f"gdrive:MirrorBot/{filename}"
+    ])
     link = (await link_proc.stdout.read()).decode().strip()
 
     await msg.edit_text(
-        f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
+        f"✅ Mirror selesai\n\n"
+        f"📁 <b>{filename}</b>",
         parse_mode="HTML",
         reply_markup=mirror_keyboard(link)
     )
