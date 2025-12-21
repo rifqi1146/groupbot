@@ -2684,7 +2684,7 @@ def main():
         # kirim asupan SEKALI pas bot nyala
         await asyncio.sleep(5)
 
-        if not ASUPAN_PREFETCH_CHAT_ID:
+        if not ASUPAN_STARTUP_CHAT_ID:
             logger.warning("[ASUPAN STARTUP] Chat_id is empty")
             return
 
