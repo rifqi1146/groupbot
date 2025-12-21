@@ -1256,83 +1256,55 @@ async def groq_query(update, context):
         logger.exception("groq_query failed")
         return
 
-#tr
+# ======================
+# 🔤 SIMPLE TRANSLATOR (/tr)
+# ======================
 from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
 from telegram import Update
 from telegram.ext import ContextTypes
 import html
 
-# ---------- MAIN CMD ----------
+DEFAULT_LANG = "en"
+
 async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
-    target_lang = "en"
-    mode = "single"
-    batch_count = 3
-    auto_detect = False
-    custom_text = ""
-
-    # ---- parse args ----
-    if not args:
-        mode = "single"
-    elif len(args) == 1:
-        a = args[0].lower()
-        if a in ("batch", "b"):
-            mode = "batch"
-        elif a in ("quick", "q"):
-            mode = "quick"
-        elif a == "auto":
-            auto_detect = True
-        else:
-            target_lang = a
-    else:
-        a = args[0].lower()
-        if a in ("batch", "b"):
-            mode = "batch"
-            target_lang = args[1]
-            if len(args) >= 3:
-                try:
-                    batch_count = min(int(args[2]), 10)
-                except:
-                    batch_count = 3
-        elif a in ("quick", "q"):
-            mode = "quick"
-            target_lang = args[1]
-        elif a == "auto":
-            auto_detect = True
-            target_lang = args[1]
-        else:
-            target_lang = args[0]
-            custom_text = " ".join(args[1:])
-
-    # ---- get text ----
+    target_lang = DEFAULT_LANG
     text = ""
-    if custom_text:
-        text = custom_text
-    elif update.message.reply_to_message and update.message.reply_to_message.text:
-        text = update.message.reply_to_message.text
-    elif mode == "single":
-        return await update.message.reply_text(
-            "<b>🔤 Universal Translator</b>\n\n"
-            "<b>Single:</b>\n"
-            "/tr → reply msg → EN\n"
-            "/tr es → reply msg\n"
-            "/tr fr Hello\n\n"
-            "<b>Batch:</b>\n"
-            "/tr batch\n"
-            "/tr batch es 5\n\n"
-            "<b>Quick:</b>\n"
-            "/tr quick\n"
-            "/tr quick id\n\n"
-            "<b>Auto:</b>\n"
-            "/tr auto\n"
-            "/tr auto ja",
-            parse_mode="HTML"
-        )
 
-    # ⬇️ SATU MESSAGE SAJA
+    # ======================
+    # PARSE ARGUMENT
+    # ======================
+    if args:
+        # /tr en hello world
+        if len(args) >= 2:
+            target_lang = args[0].lower()
+            text = " ".join(args[1:])
+        # /tr en (reply)
+        elif len(args) == 1:
+            target_lang = args[0].lower()
+
+    # ======================
+    # AMBIL TEXT
+    # ======================
+    if not text:
+        if update.message.reply_to_message and update.message.reply_to_message.text:
+            text = update.message.reply_to_message.text
+        else:
+            return await update.message.reply_text(
+                "<b>🔤 Translator</b>\n\n"
+                "Contoh:\n"
+                "<code>/tr en hello bro</code>\n"
+                "<code>/tr id this is a test</code>\n\n"
+                "Atau reply pesan:\n"
+                "<code>/tr en</code>",
+                parse_mode="HTML"
+            )
+
     msg = await update.message.reply_text("🔤 Translating...")
 
-    # ---- translator pool ----
+    # ======================
+    # TRANSLATOR POOL
+    # ======================
     translators = []
     try: translators.append(("Google", GoogleTranslator))
     except: pass
@@ -1342,21 +1314,14 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: pass
 
     if not translators:
-        return await msg.edit_text("❌ Translator not available")
+        return await msg.edit_text("❌ Translator tidak tersedia")
 
-    if mode == "single":
-        await tr_single(msg, text, target_lang, auto_detect, translators)
-    elif mode == "batch":
-        await tr_batch(msg, context, target_lang, batch_count, translators)
-    elif mode == "quick":
-        await tr_quick(msg, context, target_lang, translators)
-
-
-# ---------- SINGLE ----------
-async def tr_single(msg, text, target, auto, services):
-    for name, T in services:
+    # ======================
+    # TRANSLATE
+    # ======================
+    for name, T in translators:
         try:
-            tr = T(source="auto", target=target)
+            tr = T(source="auto", target=target_lang)
             translated = tr.translate(text)
 
             try:
@@ -1365,86 +1330,18 @@ async def tr_single(msg, text, target, auto, services):
                 detected = "auto"
 
             out = (
-                f"✅ <b>Translated → {target.upper()}</b>\n\n"
+                f"✅ <b>Translated → {target_lang.upper()}</b>\n\n"
                 f"{html.escape(translated)}\n\n"
-                f"🔍 Lang: <code>{detected}</code>\n"
+                f"🔍 Source: <code>{detected}</code>\n"
                 f"🔧 Engine: <code>{name}</code>"
             )
 
-            if len(text) > 120:
-                out += f"\n\n📝 <b>Original:</b>\n{html.escape(text[:200])}..."
-
             return await msg.edit_text(out, parse_mode="HTML")
 
-        except:
+        except Exception:
             continue
 
-    await msg.edit_text("❌ All translators failed")
-
-
-# ---------- BATCH ----------
-async def tr_batch(msg, context, target, count, services):
-    name, T = services[0]
-    tr = T(source="auto", target=target)
-
-    replied = msg.reply_to_message
-    if not replied or not replied.text:
-        return await msg.edit_text(
-            "❌ <b>Batch mode butuh reply ke message</b>\n\n"
-            "Contoh:\n"
-            "/tr batch\n"
-            "(reply ke message)",
-            parse_mode="HTML"
-        )
-
-    texts = [replied.text]
-    res = []
-
-    for i, text in enumerate(texts[:count], 1):
-        try:
-            translated = tr.translate(text)
-            res.append(
-                f"<b>{i}.</b>\n"
-                f"🔄 {html.escape(translated)}\n"
-            )
-        except:
-            res.append(f"<b>{i}.</b> ❌ Failed\n")
-
-    out = (
-        f"📚 <b>Batch Translation → {target.upper()}</b>\n\n"
-        + "\n".join(res)
-        + f"\n🔧 Engine: <code>{name}</code>"
-    )
-
-    await msg.edit_text(out[:4096], parse_mode="HTML")
-
-
-# ---------- QUICK ----------
-async def tr_quick(update, context, target, services):
-    name, T = services[0]
-    tr = T(source="auto", target=target)
-
-    msgs = []
-    async for m in context.bot.get_chat_history(update.effective_chat.id, limit=10):
-        if m.text and m.message_id != update.message.message_id:
-            msgs.append(m.text)
-        if len(msgs) >= 3:
-            break
-
-    if not msgs:
-        return await update.message.edit_text("❌ No recent messages")
-
-    msgs.reverse()
-    out = [f"🚀 <b>Quick Translate → {target.upper()}</b>\n"]
-
-    for i, t in enumerate(msgs, 1):
-        try:
-            out.append(f"<b>{i}.</b> {html.escape(tr.translate(t))}")
-        except:
-            out.append(f"<b>{i}.</b> ❌ Failed")
-
-    out.append(f"\n🔧 Engine: <code>{name}</code>")
-    await update.message.edit_text("\n\n".join(out), parse_mode="HTML")
+    await msg.edit_text("❌ Semua translator gagal")
     
 # ---- Pollinations NSFW
 async def pollinations_generate_nsfw(update, context):
