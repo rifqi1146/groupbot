@@ -83,13 +83,8 @@ if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 
 #tumbal
-ASUPAN_PREFETCH_CHAT_ID = int(
-    os.getenv("ASUPAN_PREFETCH_CHAT_ID", "0")
-)
+ASUPAN_PREFETCH_CHAT_ID = int(os.getenv("ASUPAN_PREFETCH_CHAT_ID"))
 
-if ASUPAN_PREFETCH_CHAT_ID == 0:
-    raise RuntimeError("ASUPAN_PREFETCH_CHAT_ID belum diset")
-    
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
@@ -501,7 +496,23 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
-        
+
+async def send_asupan_once(bot):
+    try:
+        data = await get_asupan_fast(bot)
+
+        await bot.send_video(
+            chat_id=ASUPAN_PREFETCH_CHAT_ID,
+            video=data["file_id"],
+            disable_notification=True
+        )
+
+        # habis kirim → langsung isi cache
+        await warm_asupan_cache(bot)
+
+    except Exception as e:
+        log.warning(f"[ASUPAN STARTUP] {e}")
+                
 # =====================
 # DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
 # =====================
@@ -2555,7 +2566,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
-   
+
     # UTIL / IO
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ip", ip_cmd, block=False), group=-1)
@@ -2583,15 +2594,12 @@ def main():
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
-   
+
     # ==================================================
-    # 💲 DOLLAR ROUTER (PRIORITY SETELAH COMMAND)
+    # 💲 DOLLAR ROUTER
     # ==================================================
     app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            dollar_router
-        ),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
     )
 
@@ -2612,10 +2620,9 @@ def main():
         logger.exception("Banner failed")
 
     # ======================
-    # POST INIT (SET COMMANDS + PREFETCH ASUPAN)
+    # POST INIT (SET COMMANDS + ASUPAN ONCE)
     # ======================
     async def post_init(app):
-        # set bot commands
         cmds = [
             ("start", "Check bot status"),
             ("help", "Show help menu"),
@@ -2633,9 +2640,13 @@ def main():
         except Exception:
             pass
 
-        # 🔥 PREFETCH ASUPAN (ANTI FLICKER GLOBAL)
-        await warm_asupan_cache(app.bot)
+        # 🔥 kirim asupan SEKALI pas bot nyala
+        try:
+            await send_asupan_once(app.bot)
+        except Exception as e:
+            logger.warning(f"send_asupan_once failed: {e}")
 
+    # PASANG POST INIT
     app.post_init = post_init
 
     # ======================
