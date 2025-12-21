@@ -282,6 +282,7 @@ from telegram.ext import ContextTypes
 log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
+ASUPAN_WARMED = False
 ASUPAN_PREFETCH_SIZE = 20
 ASUPAN_FETCHING = False
 
@@ -416,11 +417,9 @@ async def get_asupan_fast(bot):
     await msg.delete()
     return {"file_id": file_id}
 
-# ======================
-# /asupan COMMAND
-# ======================
+#cmd
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global ASUPAN_PREFETCH_CHAT_ID
+    global ASUPAN_PREFETCH_CHAT_ID, ASUPAN_WARMED
 
     if ASUPAN_PREFETCH_CHAT_ID is None:
         ASUPAN_PREFETCH_CHAT_ID = update.effective_chat.id
@@ -428,16 +427,27 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
+        # ======================
+        # WARM CACHE FIRST TIME
+        # ======================
+        if not ASUPAN_WARMED:
+            ASUPAN_WARMED = True
+            await warm_asupan_cache(context.bot)
+
         data = await get_asupan_fast(context.bot)
 
         await update.effective_chat.send_video(
-    video=data["file_id"],
-    reply_to_message_id=update.message.message_id,
-    reply_markup=asupan_keyboard(update.effective_user.id)
-)
+            video=data["file_id"],
+            reply_to_message_id=update.message.message_id,
+            reply_markup=asupan_keyboard(update.effective_user.id)
+        )
 
         await msg.delete()
-        context.application.create_task(warm_asupan_cache(context.bot))
+
+        # keep cache warm in background
+        context.application.create_task(
+            warm_asupan_cache(context.bot)
+        )
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
