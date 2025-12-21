@@ -2596,15 +2596,13 @@ def main():
     )
 
     # ==================================================
-    # 🔥 COMMAND HANDLERS (PRIORITY TERTINGGI)
+    # 🔥 COMMAND HANDLERS
     # ==================================================
-    # CORE
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
 
-    # UTIL / IO
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ip", ip_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False), group=-1)
@@ -2634,7 +2632,6 @@ def main():
 
     # ==================================================
     # 💲 DOLLAR ROUTER
-    app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
     # ==================================================
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
@@ -2642,7 +2639,7 @@ def main():
     )
 
     # ======================
-    # BANNER (JANGAN DIHAPUS)
+    # BANNER (AMAN)
     # ======================
     try:
         banner = r"""
@@ -2658,10 +2655,9 @@ def main():
         logger.exception("Banner failed")
 
     # ======================
-    # POST INIT (AMAN & BENAR)
+    # POST INIT (FINAL & AMAN)
     # ======================
     async def post_init(app):
-        # set bot commands
         try:
             await app.bot.set_my_commands([
                 ("start", "Check bot status"),
@@ -2678,21 +2674,27 @@ def main():
         except Exception:
             pass
 
-        # kirim asupan SEKALI saat bot nyala
-        async def _startup_asupan():
-            await asyncio.sleep(5)  # tunggu bot siap beneran
-            await send_asupan_once(app.bot)
+        # kirim asupan SEKALI pas bot nyala
+        await asyncio.sleep(5)
 
-        asyncio.create_task(_startup_asupan())
+        if not ASUPAN_PREFETCH_CHAT_ID:
+            logger.warning("[ASUPAN STARTUP] Chat_id is empty")
+            return
+
+        try:
+            await send_asupan_once(app.bot)
+            logger.warning("[ASUPAN STARTUP] Asupan sent")
+        except Exception as e:
+            logger.warning(f"[ASUPAN STARTUP] Failed: {e}")
 
     app.post_init = post_init
 
     # ======================
-    # RUN BOT
+    # RUN BOT (HARUS PALING AKHIR)
     # ======================
     logger.info("Launching polling loop...")
     print("Launching... (listening for updates)")
-    app.run_polling()
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
