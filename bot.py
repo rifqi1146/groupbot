@@ -2612,14 +2612,10 @@ def main():
         logger.exception("Banner failed")
 
     # ======================
-    # SET BOT COMMANDS
+    # POST INIT (SET COMMANDS + PREFETCH ASUPAN)
     # ======================
-    async def _prefetch(_):
-    await warm_asupan_cache(application.bot)
-
-    app.post_init = _prefetch
-    
-    async def _set_commands(app):
+    async def post_init(app):
+        # set bot commands
         cmds = [
             ("start", "Check bot status"),
             ("help", "Show help menu"),
@@ -2635,9 +2631,12 @@ def main():
         try:
             await app.bot.set_my_commands(cmds)
         except Exception:
-            logger.exception("set_my_commands failed")
+            pass
 
-    app.post_init = _set_commands
+        # 🔥 PREFETCH ASUPAN (ANTI FLICKER GLOBAL)
+        await warm_asupan_cache(app.bot)
+
+    app.post_init = post_init
 
     # ======================
     # RUN BOT
