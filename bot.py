@@ -1383,40 +1383,40 @@ async def tr_single(msg, text, target, auto, services):
 
 
 # ---------- BATCH ----------
-async def tr_batch(update, context, target, count, services):
+async def tr_batch(msg, context, target, count, services):
     name, T = services[0]
     tr = T(source="auto", target=target)
 
-    msgs = []
-    async for m in context.bot.get_chat_history(update.effective_chat.id, limit=50):
-        if m.text and m.message_id != update.message.message_id:
-            msgs.append(m)
-        if len(msgs) >= count:
-            break
+    replied = msg.reply_to_message
+    if not replied or not replied.text:
+        return await msg.edit_text(
+            "❌ <b>Batch mode butuh reply ke message</b>\n\n"
+            "Contoh:\n"
+            "/tr batch\n"
+            "(reply ke message)",
+            parse_mode="HTML"
+        )
 
-    if not msgs:
-        return await update.message.edir_text("❌ No messages")
-
-    msgs.reverse()
+    texts = [replied.text]
     res = []
 
-    for i, m in enumerate(msgs, 1):
+    for i, text in enumerate(texts[:count], 1):
         try:
-            translated = tr.translate(m.text)
+            translated = tr.translate(text)
             res.append(
-                f"<b>{i}.</b> {html.escape(m.from_user.first_name if m.from_user else 'User')}\n"
+                f"<b>{i}.</b>\n"
                 f"🔄 {html.escape(translated)}\n"
             )
         except:
             res.append(f"<b>{i}.</b> ❌ Failed\n")
 
     out = (
-        f"📚 <b>Batch Translation → {target.upper()}</b>\n\n" +
-        "\n".join(res) +
-        f"\n🔧 Engine: <code>{name}</code>"
+        f"📚 <b>Batch Translation → {target.upper()}</b>\n\n"
+        + "\n".join(res)
+        + f"\n🔧 Engine: <code>{name}</code>"
     )
 
-    await update.message.edit_text(out[:4096], parse_mode="HTML")
+    await msg.edit_text(out[:4096], parse_mode="HTML")
 
 
 # ---------- QUICK ----------
