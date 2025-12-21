@@ -112,6 +112,10 @@ import os, asyncio, time, signal, shutil, aiohttp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+import os, time, asyncio, aiohttp, shutil, signal
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
 # ======================
 # CONFIG
 # ======================
@@ -150,11 +154,12 @@ async def run_cmd(cmd):
 # ======================
 # KEYBOARDS
 # ======================
-def mirror_keyboard(link=None):
+def mirror_keyboard(link=None, finished=False):
     rows = []
     if link:
         rows.append([InlineKeyboardButton("☁️ Google Drive", url=link)])
-    rows.append([InlineKeyboardButton("⛔ Cancel", callback_data="mirror:cancel")])
+    if not finished:
+        rows.append([InlineKeyboardButton("⛔ Cancel", callback_data="mirror:cancel")])
     return InlineKeyboardMarkup(rows)
 
 def leech_keyboard():
@@ -163,7 +168,7 @@ def leech_keyboard():
     ])
 
 # ======================
-# PROGRESS WATCHER (DOWNLOAD)
+# DOWNLOAD PROGRESS
 # ======================
 async def download_progress(msg, path, total):
     last = 0
@@ -191,32 +196,23 @@ async def download_progress(msg, path, total):
 # ======================
 # MIRROR COMMAND
 # ======================
-async def mirror_cmd(update, context):
+async def mirror_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
     if user_id in ACTIVE_TASKS:
         return await update.message.reply_text("⛔ Masih ada proses berjalan")
 
     msg_src = update.message.reply_to_message
-    url = None
-    tg_file = None
-    filename = None
-    size = 0
+    url, tg_file, filename, size = None, None, None, 0
 
-    # ======================
-    # SOURCE DETECTION
-    # ======================
+    # SOURCE DETECT
     if context.args:
-        # direct link
         url = context.args[0]
         size = await get_remote_size(url)
         if size <= 0:
             return await update.message.reply_text("❌ Gagal cek ukuran file")
-
         filename = url.split("/")[-1]
 
     elif msg_src and msg_src.document:
-        # telegram document
         tg_file = msg_src.document
         filename = tg_file.file_name
         size = tg_file.file_size
@@ -228,84 +224,52 @@ async def mirror_cmd(update, context):
 
     else:
         return await update.message.reply_text(
-            "❌ /mirror <direct link>\n"
-            "atau reply ke file Telegram"
+            "❌ /mirror <direct link>\natau reply ke file Telegram"
         )
 
     if size > MIRROR_LIMIT:
         return await update.message.reply_text("❌ File > 6GB")
 
-    # ======================
-    # PREPARE DIR
-    # ======================
     user_dir = f"{DOWNLOAD_DIR}/mirror/{user_id}"
     os.makedirs(user_dir, exist_ok=True)
-    filepath = f"{user_dir}/{filename}"
+    path = f"{user_dir}/{filename}"
 
     msg = await update.message.reply_text(
         "🚀 Starting mirror...",
         reply_markup=mirror_keyboard()
     )
 
-    # ======================
-    # DOWNLOAD PHASE
-    # ======================
+    # DOWNLOAD
     if tg_file:
         file = await context.bot.get_file(tg_file.file_id)
-
-        ACTIVE_TASKS[user_id] = {"msg": msg, "path": filepath}
-
-        await file.download_to_drive(
-            custom_path=filepath
-        )
-
+        ACTIVE_TASKS[user_id] = {"msg": msg, "path": path}
+        await file.download_to_drive(custom_path=path)
     else:
         aria = await run_cmd([
             "aria2c", "-x", "16", "-s", "16",
             "-o", filename, "-d", user_dir, url
         ])
-
-        ACTIVE_TASKS[user_id] = {
-            "proc": aria,
-            "msg": msg,
-            "path": filepath
-        }
-
-        watcher = asyncio.create_task(
-            progress_watcher(msg, filepath, size)
-        )
+        ACTIVE_TASKS[user_id] = {"proc": aria, "msg": msg, "path": path}
+        watcher = asyncio.create_task(download_progress(msg, path, size))
         await aria.wait()
         watcher.cancel()
 
     if user_id not in ACTIVE_TASKS:
         return
 
-    # ======================
     # UPLOAD TO GDRIVE
-    # ======================
     await msg.edit_text("☁️ Uploading to Google Drive...")
-
-    proc = await run_cmd([
-        "rclone", "move",
-        filepath,
-        "gdrive:MirrorBot"
-    ])
+    proc = await run_cmd(["rclone", "move", path, "gdrive:MirrorBot"])
     await proc.wait()
 
-    # ======================
     # GET LINK
-    # ======================
-    link_proc = await run_cmd([
-        "rclone", "link",
-        f"gdrive:MirrorBot/{filename}"
-    ])
+    link_proc = await run_cmd(["rclone", "link", f"gdrive:MirrorBot/{filename}"])
     link = (await link_proc.stdout.read()).decode().strip()
 
     await msg.edit_text(
-        f"✅ Mirror selesai\n\n"
-        f"📁 <b>{filename}</b>",
+        f"✅ Mirror selesai\n\n📁 <b>{filename}</b>",
         parse_mode="HTML",
-        reply_markup=mirror_keyboard(link)
+        reply_markup=mirror_keyboard(link, finished=True)
     )
 
     ACTIVE_TASKS.pop(user_id, None)
@@ -316,7 +280,6 @@ async def mirror_cmd(update, context):
 async def mirror_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
-
     task = ACTIVE_TASKS.pop(user_id, None)
     if not task:
         return await q.answer("❌ Tidak ada proses", show_alert=True)
@@ -338,7 +301,6 @@ async def mirror_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================
 async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
     if user_id in ACTIVE_TASKS:
         return await update.message.reply_text("⛔ Masih ada proses berjalan")
 
@@ -347,7 +309,6 @@ async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = context.args[0]
     size = await get_remote_size(url)
-
     if size <= 0:
         return await update.message.reply_text("❌ Gagal cek ukuran file")
     if size > LEECH_LIMIT:
@@ -355,7 +316,6 @@ async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_dir = f"{DOWNLOAD_DIR}/leech/{user_id}"
     os.makedirs(user_dir, exist_ok=True)
-
     filename = url.split("/")[-1]
     path = f"{user_dir}/{filename}"
 
@@ -370,7 +330,6 @@ async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     ACTIVE_TASKS[user_id] = {"proc": aria, "path": path, "type": "leech"}
-
     watcher = asyncio.create_task(download_progress(msg, path, size))
     await aria.wait()
     watcher.cancel()
@@ -413,7 +372,6 @@ async def leech_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def leech_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
-
     task = ACTIVE_TASKS.pop(user_id, None)
     if not task or task.get("type") != "leech":
         return await q.answer("❌ Tidak ada leech aktif", show_alert=True)
