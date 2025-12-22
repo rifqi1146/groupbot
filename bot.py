@@ -2111,9 +2111,15 @@ MAX_GSEARCH_CACHE = 50          # hard limit cache
 GSEARCH_CACHE_TTL = 300         # 5 menit
 
 # ======================
-# SHARED HTTP SESSION (BIAR CEPET)
+# SHARED HTTP SESSION (LAZY)
 # ======================
-GSEARCH_HTTP_SESSION = aiohttp.ClientSession()
+_GSEARCH_SESSION = None
+
+async def get_gsearch_session():
+    global _GSEARCH_SESSION
+    if _GSEARCH_SESSION is None or _GSEARCH_SESSION.closed:
+        _GSEARCH_SESSION = aiohttp.ClientSession()
+    return _GSEARCH_SESSION
 
 
 # ======================
@@ -2131,7 +2137,8 @@ async def google_search(query: str, page: int = 0, limit: int = 5):
             "start": start,
         }
 
-        async with GSEARCH_HTTP_SESSION.get(url, params=params, timeout=20) as resp:
+        session = await get_gsearch_session()
+        async with session.get(url, params=params, timeout=20) as resp:
             if resp.status != 200:
                 return False, await resp.text()
             data = await resp.json()
