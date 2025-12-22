@@ -889,44 +889,61 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-#openrouter
-import aiohttp
+# ======================
+# OPENROUTER ASK (THINK) — HTML OUTPUT
+# ======================
 import os
+import aiohttp
+import asyncio
+import html
+from telegram import Update
+from telegram.ext import ContextTypes
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_THINK = "openai/gpt-oss-120b:free"
 
+if not OPENROUTER_API_KEY:
+    raise RuntimeError("OPENROUTER_API_KEY not set")
+
+
+# ======================
+# CORE AI FUNCTION
+# ======================
 async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://kiyoshi.id",
-        "X-Title": "KiyoshiBot"
+        "X-Title": "KiyoshiBot",
     }
 
     payload = {
-    "model": "openai/gpt-oss-120b:free",
-    "messages": [
-        {
-            "role": "system",
-            "content": "Jawab SELALU menggunakan Bahasa Indonesia yang santai, jelas, dan mudah dipahami. Jangan gunakan Bahasa Inggris kecuali diminta."
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
-}
+        "model": MODEL_THINK,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                    "jelas, dan mudah dipahami. "
+                    "Gunakan format rapi dengan paragraf dan poin bila perlu. "
+                    "Jangan gunakan Bahasa Inggris kecuali diminta."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+    }
 
     timeout = aiohttp.ClientTimeout(total=60)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            OPENROUTER_URL,
             headers=headers,
-            json=payload
+            json=payload,
         ) as resp:
             if resp.status != 200:
                 text = await resp.text()
@@ -935,37 +952,49 @@ async def openrouter_ask_think(prompt: str) -> str:
             data = await resp.json()
 
     return data["choices"][0]["message"]["content"].strip()
-    
-from telegram import Update
-from telegram.ext import ContextTypes
-import asyncio
 
+
+# ======================
+# /ask COMMAND (HTML)
+# ======================
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
-            "❓ **Ask AI**\n\n"
-            "Contoh:\n"
-            "`/ask jelaskan apa itu relativitas`",
-            parse_mode="Markdown"
+            "<b>❓ Ask AI</b><br><br>"
+            "<b>Contoh:</b><br>"
+            "<code>/ask jelaskan apa itu relativitas</code>",
+            parse_mode="HTML"
         )
 
     prompt = " ".join(context.args)
 
-    status = await update.message.reply_text("🧠 Memproses...")
+    # UX cepat
+    status_msg = await update.message.reply_text("🧠 <i>Memproses...</i>", parse_mode="HTML")
 
     try:
         result = await openrouter_ask_think(prompt)
 
-        chunks = split_message(result)
+        # 🔒 HTML SAFE (hindari error tag Telegram)
+        result = html.escape(result)
 
-        await status.edit_text(chunks[0])
+        # optional: formatting ringan biar cakep
+        result = result.replace("\n\n", "<br><br>").replace("\n", "<br>")
 
+        chunks = split_message(result, max_length=3800)
+
+        # edit pesan pertama
+        await status_msg.edit_text(chunks[0], parse_mode="HTML")
+
+        # sisanya dikirim terpisah
         for part in chunks[1:]:
             await asyncio.sleep(0.25)
-            await update.message.reply_text(part)
+            await update.message.reply_text(part, parse_mode="HTML")
 
     except Exception as e:
-        await status.edit_text(f"❌ Gagal\n`{e}`", parse_mode="Markdown")
+        await status_msg.edit_text(
+            f"<b>❌ Gagal</b><br><code>{html.escape(str(e))}</code>",
+            parse_mode="HTML"
+        )
         
         
 #ping
