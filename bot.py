@@ -2582,14 +2582,13 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
     "ip": ip_cmd,
+    "ask": ask_cmd,
     "speedtest": speedtest_cmd,
     "whoisdomain": whoisdomain_cmd,
     "domain": domain_cmd,
     "tr": tr_cmd,
     "gsearch": gsearch_cmd,
     "ping": ping_cmd,
-    "deepseek": ai_deepseek_cmd,
-    "openai": ai_openai_cmd,
     "start": start_cmd,
     "help": help_cmd,
     "menu": help_cmd,
@@ -2694,9 +2693,7 @@ def main():
     # AI
     app.add_handler(CommandHandler("ai", ai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
-    app.add_handler(CommandHandler("openai", ai_openai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
-    app.add_handler(CommandHandler("deepseek", ai_deepseek_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
 
     # ==================================================
