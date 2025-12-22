@@ -903,7 +903,7 @@ async def openrouter_ask(prompt: str) -> str:
     }
 
     payload = {
-        "model": "allenai/olmo-3.1-32b-think:free",
+        "model": "openai/gpt-oss-120b:free",
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -928,9 +928,9 @@ import asyncio
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
-            "❓ **Ask AI (Think Mode)**\n\n"
+            "❓ **Ask AI**\n\n"
             "Contoh:\n"
-            "`/ask jelasin async python dengan simpel`",
+            "`/ask jelaskan apa itu relativitas`",
             parse_mode="Markdown"
         )
 
