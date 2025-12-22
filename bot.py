@@ -1796,7 +1796,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ---------- CPU INFO ----------
     try:
-        cpu_load = psutil.cpu_percent(interval=1)
+        cpu_load = psutil.cpu_percent(interval=None)
     except Exception:
         cpu_load = 0.0
 
