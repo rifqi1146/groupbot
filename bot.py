@@ -898,13 +898,6 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_THINK = "openai/gpt-oss-120b:free"
 
-headers = {
-    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-    "Content-Type": "application/json",
-    "HTTP-Referer": "https://kiyoshi.id",   # bebas, asal valid
-    "X-Title": "KiyoshiBot"
-}
-
 async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -913,57 +906,35 @@ async def openrouter_ask_think(prompt: str) -> str:
         "X-Title": "KiyoshiBot"
     }
 
+    payload = {
+    "model": "openai/gpt-oss-120b:free",
+    "messages": [
+        {
+            "role": "system",
+            "content": "Jawab SELALU menggunakan Bahasa Indonesia yang santai, jelas, dan mudah dipahami. Jangan gunakan Bahasa Inggris kecuali diminta."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
+}
+
     timeout = aiohttp.ClientTimeout(total=60)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-
-        payload_1 = {
-            "model": "openai/gpt-oss-120b:free",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "reasoning": {"enabled": True}
-        }
-
         async with session.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
-            json=payload_1
-        ) as r1:
-            if r1.status != 200:
-                text = await r1.text()
-                raise RuntimeError(f"Step1 HTTP {r1.status}: {text}")
+            json=payload
+        ) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"HTTP {resp.status}: {text}")
 
-            data1 = await r1.json()
+            data = await resp.json()
 
-        msg1 = data1["choices"][0]["message"]
-
-        payload_2 = {
-            "model": "openai/gpt-oss-120b:free",
-            "messages": [
-                {"role": "user", "content": prompt},
-                {
-                    "role": "assistant",
-                    "content": msg1.get("content"),
-                    "reasoning_details": msg1.get("reasoning_details")
-                },
-                {"role": "user", "content": "Are you sure? Think carefully."}
-            ],
-            "reasoning": {"enabled": True}
-        }
-
-        async with session.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload_2
-        ) as r2:
-            if r2.status != 200:
-                text = await r2.text()
-                raise RuntimeError(f"Step2 HTTP {r2.status}: {text}")
-
-            data2 = await r2.json()
-
-        return data2["choices"][0]["message"]["content"].strip()
+    return data["choices"][0]["message"]["content"].strip()
     
 from telegram import Update
 from telegram.ext import ContextTypes
