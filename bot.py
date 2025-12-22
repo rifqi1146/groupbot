@@ -894,10 +894,10 @@ import html
 
 def sanitize_ai_output(text: str) -> str:
     """
-    Sanitasi output AI:
-    - Aman untuk Telegram HTML
+    Sanitizer FINAL:
+    - Membunuh SEMUA Markdown
+    - Output pure Telegram HTML
     - Auto bullet
-    - Anti markdown / tabel / noise
     """
 
     if not text:
@@ -906,50 +906,52 @@ def sanitize_ai_output(text: str) -> str:
     # Normalize newline
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Escape SEMUA dulu (ini kunci)
+    # Escape dulu SEMUA
     text = html.escape(text)
 
-    # Hapus horizontal rule
-    text = re.sub(r"\n-{3,}\n", "\n\n", text)
+    # === KILL MARKDOWN TOTAL ===
 
-    # Heading markdown (##, ###) -> <b>
+    # **bold**
+    text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)
+
+    # *italic*
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+
+    # __underline__
+    text = re.sub(r"__(.+?)__", r"\1", text)
+
+    # ~~strikethrough~~
+    text = re.sub(r"~~(.+?)~~", r"\1", text)
+
+    # > blockquote
+    text = re.sub(r"(?m)^&gt;\s*", "", text)
+
+    # ### Heading → <b>
     text = re.sub(
         r"(?m)^#{1,6}\s*(.+)$",
         r"\n<b>\1</b>",
         text
     )
 
-    # **bold** (yang sudah di-escape jadi &#42;&#42;)
-    text = re.sub(
-        r"&#42;&#42;(.*?)&#42;&#42;",
-        r"<b>\1</b>",
-        text
-    )
+    # === AUTO FORMAT ===
 
-    # Inline code `
-    text = re.sub(r"&#96;(.*?)&#96;", r"<code>\1</code>", text)
-
-    # Block code ```
-    text = re.sub(r"&#96;&#96;&#96;[\s\S]*?&#96;&#96;&#96;", "", text)
-
-    # Auto bullet:
-    # - Item -> • Item
-    text = re.sub(
-        r"(?m)^\s*-\s+",
-        "• ",
-        text
-    )
-
-    # Numbered list (1. 2. dst) -> •
+    # Numbered list → bullet
     text = re.sub(
         r"(?m)^\s*\d+\.\s+",
         "• ",
         text
     )
 
+    # Dash list → bullet
+    text = re.sub(
+        r"(?m)^\s*-\s+",
+        "• ",
+        text
+    )
+
     # Hancurin tabel markdown
     text = re.sub(r"\|", " ", text)
-    text = re.sub(r"\n\s*[-:]{2,}\s*\n", "\n", text)
+    text = re.sub(r"(?m)^[-:\s]{3,}$", "", text)
 
     # Rapihin newline
     text = re.sub(r"\n{3,}", "\n\n", text)
