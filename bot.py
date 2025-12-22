@@ -889,6 +889,74 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
+#openrouter
+import aiohttp
+import os
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+async def openrouter_ask(prompt: str) -> str:
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": "allenai/olmo-3.1-32b-think:free",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "reasoning": {"enabled": True}
+    }
+
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=60)
+    ) as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"HTTP {resp.status}")
+            data = await resp.json()
+
+    # ❗ cuma ambil CONTENT (reasoning dibuang)
+    return data["choices"][0]["message"]["content"]
+    
+from telegram import Update
+from telegram.ext import ContextTypes
+import asyncio
+
+async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text(
+            "❓ **Ask AI (Think Mode)**\n\n"
+            "Contoh:\n"
+            "`/ask jelasin async python dengan simpel`",
+            parse_mode="Markdown"
+        )
+
+    prompt = " ".join(context.args)
+
+    # UX cepet
+    status_msg = await update.message.reply_text("🧠 Memproses...")
+
+    try:
+        result = await openrouter_ask(prompt)
+
+        # ⬇️ PAKAI DEF LU
+        chunks = split_message(result)
+
+        # edit pesan pertama
+        await status_msg.edit_text(chunks[0])
+
+        # sisanya dikirim terpisah (smooth)
+        for part in chunks[1:]:
+            await asyncio.sleep(0.25)
+            await update.message.reply_text(part)
+
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Gagal\n`{e}`", parse_mode="Markdown")
+        
+        
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.perf_counter()
@@ -2475,7 +2543,7 @@ def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
         return False, f"Gagal memanggil Gemini: {e}"
 
 
-# ⚠️ NAMA FUNGSI TETEP SAMA
+#model
 async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
@@ -2485,7 +2553,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
         model
     )
 
-# ---- set default model per chat ----
+#default ai
 async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
@@ -2499,7 +2567,7 @@ async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_ai_mode(_ai_mode)
     await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
 
-# ---- AI command ----
+#cmd
 async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     model_key = _ai_mode.get(chat_id, "flash")
@@ -2526,7 +2594,6 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     model_name = GEMINI_MODELS.get(model_key, GEMINI_MODELS["flash"])
     loading = await update.message.reply_text("⏳ Memproses...")
 
-    # 🔥 FIX UTAMA ADA DI SINI
     ok, answer = await ask_ai_gemini(prompt, model=model_name)
 
     if not ok:
@@ -2644,6 +2711,7 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
+    app.add_handler(CommandHandler("ask", ask_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
 
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
