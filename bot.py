@@ -895,31 +895,70 @@ import os
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-async def openrouter_ask(prompt: str) -> str:
-    url = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL_THINK = "openai/gpt-oss-120b:free"
+
+
+async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
 
-    payload = {
-        "model": "openai/gpt-oss-120b:free",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "reasoning": {"enabled": True}
-    }
+    timeout = aiohttp.ClientTimeout(total=60)
 
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=60)
-    ) as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                raise RuntimeError(f"HTTP {resp.status}")
-            data = await resp.json()
+    async with aiohttp.ClientSession(timeout=timeout) as session:
 
-    # ❗ cuma ambil CONTENT (reasoning dibuang)
-    return data["choices"][0]["message"]["content"]
+        # ======================
+        # STEP 1 — initial reasoning
+        # ======================
+        payload_1 = {
+            "model": MODEL_THINK,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "reasoning": {"enabled": True}
+        }
+
+        async with session.post(OPENROUTER_URL, headers=headers, json=payload_1) as r1:
+            if r1.status != 200:
+                raise RuntimeError(f"Step1 HTTP {r1.status}")
+            data1 = await r1.json()
+
+        msg1 = data1["choices"][0]["message"]
+
+        assistant_content = msg1.get("content", "")
+        reasoning_details = msg1.get("reasoning_details")
+
+        # ======================
+        # STEP 2 — refine answer
+        # ======================
+        messages = [
+            {"role": "user", "content": prompt},
+            {
+                "role": "assistant",
+                "content": assistant_content,
+                # ⬇️ reasoning dipass balik tapi TIDAK ditampilin ke user
+                "reasoning_details": reasoning_details
+            },
+            {"role": "user", "content": "Are you sure? Think carefully."}
+        ]
+
+        payload_2 = {
+            "model": MODEL_THINK,
+            "messages": messages,
+            "reasoning": {"enabled": True}
+        }
+
+        async with session.post(OPENROUTER_URL, headers=headers, json=payload_2) as r2:
+            if r2.status != 200:
+                raise RuntimeError(f"Step2 HTTP {r2.status}")
+            data2 = await r2.json()
+
+        final_msg = data2["choices"][0]["message"]
+
+        # ❗ RETURN CONTENT ONLY (reasoning dibuang)
+        return final_msg.get("content", "").strip()
     
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -936,25 +975,21 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prompt = " ".join(context.args)
 
-    # UX cepet
-    status_msg = await update.message.reply_text("🧠 Memproses...")
+    status = await update.message.reply_text("🧠 Memproses...")
 
     try:
-        result = await openrouter_ask(prompt)
+        result = await openrouter_ask_think(prompt)
 
-        # ⬇️ PAKAI DEF LU
         chunks = split_message(result)
 
-        # edit pesan pertama
-        await status_msg.edit_text(chunks[0])
+        await status.edit_text(chunks[0])
 
-        # sisanya dikirim terpisah (smooth)
         for part in chunks[1:]:
             await asyncio.sleep(0.25)
             await update.message.reply_text(part)
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ Gagal\n`{e}`", parse_mode="Markdown")
+        await status.edit_text(f"❌ Gagal\n`{e}`", parse_mode="Markdown")
         
         
 #ping
