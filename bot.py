@@ -892,6 +892,47 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 # ======================
 # OPENROUTER ASK (THINK) — HTML OUTPUT
 # ======================
+import re
+import html
+
+def sanitize_ai_output(text: str) -> str:
+    """
+    Bersihin output AI dari Markdown / noise
+    biar aman buat Telegram HTML
+    """
+
+    # Normalize newline
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # HAPUS horizontal rule
+    text = re.sub(r"\n-{3,}\n", "\n\n", text)
+
+    # Heading Markdown -> bold
+    text = re.sub(r"^#{1,6}\s*(.+)$", r"\n<b>\1</b>", text, flags=re.MULTILINE)
+
+    # **bold** -> bold text biasa
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+
+    # *italic* / _italic_
+    text = re.sub(r"(\*|_)(.*?)\1", r"\2", text)
+
+    # Inline code `
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+
+    # Block code ```
+    text = re.sub(r"```[\s\S]*?```", "", text)
+
+    # Table pipes -> plain
+    text = re.sub(r"\|", " ", text)
+
+    # Escape HTML (PALING PENTING)
+    text = html.escape(text)
+
+    # Rapihin spasi
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+    
 import os
 import aiohttp
 import asyncio
@@ -924,10 +965,10 @@ async def openrouter_ask_think(prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                    "jelas, dan mudah dipahami. "
-                    "Gunakan format rapi dengan paragraf dan poin bila perlu. "
-                    "Jangan gunakan Bahasa Inggris kecuali diminta."
+                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "                   
+                    "jelas, ala ala gen z lah, tapi tetap mudah dipahami. "
+                    "Jangan gunakan Bahasa Inggris kecuali diminta atau user tanya dengan bahasa inggrisbaru lu jawab pake inggris juga."
+                    "jawab dengan cepat."
                 ),
             },
             {
@@ -974,12 +1015,12 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        result = await openrouter_ask_think(prompt)
+        raw_result = await openrouter_ask_think(prompt)
 
-        # 🔒 AMAN untuk Telegram HTML
-        result = html.escape(result)
+        # 🔥 SANITIZE DI SINI
+        clean_result = sanitize_ai_output(raw_result)
 
-        chunks = split_message(result, max_length=3800)
+        chunks = split_message(clean_result, max_length=3800)
 
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
 
