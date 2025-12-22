@@ -1716,11 +1716,10 @@ HELP_TEXT = {
     "help:ai": (
         "🤖 <b>AI Commands</b>\n\n"
         "• /ai — Ask AI (default mode)\n"
-        "• /ai flash|pro|lite — Select AI model\n"
-        "• /setmodeai — Set default AI model\n"
-        "• /openai — OpenAI\n"
+        "• /ask — ChatGpt \n"
         "• /groq — GroqAI\n"
-        "• /deepseek — DeepSeekAI\n"
+        "• /ai flash|pro|lite — Select AI model\n"
+        "• /setmodeai — Set default AI model\n\n"
     ),
 
     "help:utils": (
@@ -2453,142 +2452,6 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
                
-# --- Konfigurasi API Hugging Face ---
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-HF_MODEL_DEFAULT = os.getenv("HF_MODEL_DEFAULT", "openai/gpt-oss-120b:fastest")
-HF_MODEL_DEEPSEEK = os.getenv("HF_MODEL_DEEPSEEK", "deepseek-ai/DeepSeek-R1:fastest")
-
-if not HF_API_TOKEN:
-    raise ValueError("HF_API_TOKEN environment variable is missing!")
-
-# --- Fungsi Request ke Hugging Face Router (v1/chat/completions) ---
-async def ask_ai_hf(prompt: str, model_name: str) -> (bool, str):
-    if not HF_API_TOKEN:
-        return False, "HF_API_TOKEN environment variable is missing!"
-
-    if not prompt:
-        return False, "Tidak ada prompt."
-
-    url = "https://router.huggingface.co/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {HF_API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }
-
-    timeout = aiohttp.ClientTimeout(total=30)
-
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    return False, f"HF API error {resp.status}: {await resp.text()}"
-
-                result = await resp.json()
-
-        if result.get("choices"):
-            content = result["choices"][0]["message"].get("content", "")
-            return True, content.strip() or "AI tidak mengembalikan teks."
-
-        return False, f"Format response tidak valid: {result}"
-
-    except asyncio.TimeoutError:
-        return False, "Timeout ke Hugging Face"
-    except Exception as e:
-        return False, f"Error: {e}"
-
-# --- Handler Command OpenAI (via HF Router) ---
-async def ai_openai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handles the '/openai' command to query a default Hugging Face model (e.g., OSS).
-    Splits response if it's too long.
-    For a regular bot (python-telegram-bot).
-    """
-    chat_id = str(update.effective_chat.id)
-    prompt = ""
-
-    if context.args:
-        prompt = " ".join(context.args)
-    elif update.message.reply_to_message:
-        prompt = update.message.reply_to_message.text or ""
-
-    if not prompt:
-        return await update.message.reply_text(
-            f"Model default chat: {HF_MODEL_DEFAULT}\n"
-            "Contoh:\n"
-            "/openai apa itu machine learning?\n"
-            "/openai jelaskan konsep AI"
-        )
-
-    loading = await update.message.reply_text("⏳ Memproses permintaan ke OpenAI...")
-
-    ok, answer = await ask_ai_hf(prompt, HF_MODEL_DEFAULT)
-
-    if not ok:
-        try:
-            await loading.edit_text(f"❗ Error: {answer}")
-        except Exception:
-            await update.message.reply_text(f"❗ Error: {answer}")
-        return
-
-    message_parts = split_message(answer)
-
-    for i, part in enumerate(message_parts):
-        if i == 0:
-            header = f"💡 Jawaban (OpenAI)"
-            final = f"{header}\n\n{part}"
-            try:
-                await loading.edit_text(final[:4000])
-            except Exception:
-                await update.message.reply_text(final[:4000])
-        else:
-            await update.message.reply_text(part[:4000])
-
-# --- Handler Command DeepSeek (via HF Router) ---
-async def ai_deepseek_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    prompt = ""
-
-    if context.args:
-        prompt = " ".join(context.args)
-    elif update.message.reply_to_message:
-        prompt = update.message.reply_to_message.text or ""
-
-    if not prompt:
-        return await update.message.reply_text(
-            f"Model default chat: {HF_MODEL_DEEPSEEK}\n"
-            "Contoh:\n"
-            "/deepseek apa itu machine learning?\n"
-            "/deepseek jelaskan konsep AI"
-        )
-
-    loading = await update.message.reply_text("⏳ Memproses permintaan ke DeepSeek...")
-
-    ok, answer = await ask_ai_hf(prompt, HF_MODEL_DEEPSEEK)
-
-    if not ok:
-        try:
-            await loading.edit_text(f"❗ Error: {answer}")
-        except Exception:
-            await update.message.reply_text(f"❗ Error: {answer}")
-        return
-
-    message_parts = split_message(answer)
-
-    for i, part in enumerate(message_parts):
-        if i == 0:
-            header = f"💡 Jawaban (DeepSeek)"
-            final = f"{header}\n\n{part}"
-            try:
-                await loading.edit_text(final[:4000])
-            except Exception:
-                await update.message.reply_text(final[:4000])
-        else:
-            await update.message.reply_text(part[:4000])
 
 # ---- GEMINI ONLY (multi-model) ----
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -2874,11 +2737,14 @@ def main():
     async def post_init(app):
         try:
             await app.bot.set_my_commands([
-                ("start", "Check bot status"),
+                ("start", "Check bot status"),                
                 ("help", "Show help menu"),
                 ("ping", "Check latency"),
-                ("dl", "Download video"),
                 ("stats", "System statistics"),
+                ("dl", "Download video"),
+                ("ai", "Ask Gemini"),
+                ("ask", "Ask ChatGpt"),
+                ("groq", "Ask GroqAi"),
                 ("gsearch", "Google search"),
                 ("asupan", "Asupan 😋"),
                 ("tr", "Translate text"),
