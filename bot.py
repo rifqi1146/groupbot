@@ -889,46 +889,69 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-# ======================
-# OPENROUTER ASK (THINK) — HTML OUTPUT
-# ======================
 import re
 import html
 
 def sanitize_ai_output(text: str) -> str:
     """
-    Bersihin output AI dari Markdown / noise
-    biar aman buat Telegram HTML
+    Sanitasi output AI:
+    - Aman untuk Telegram HTML
+    - Auto bullet
+    - Anti markdown / tabel / noise
     """
+
+    if not text:
+        return ""
 
     # Normalize newline
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # HAPUS horizontal rule
-    text = re.sub(r"\n-{3,}\n", "\n\n", text)
-
-    # Heading Markdown -> bold
-    text = re.sub(r"^#{1,6}\s*(.+)$", r"\n<b>\1</b>", text, flags=re.MULTILINE)
-
-    # **bold** -> bold text biasa
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
-
-    # *italic* / _italic_
-    text = re.sub(r"(\*|_)(.*?)\1", r"\2", text)
-
-    # Inline code `
-    text = re.sub(r"`([^`]*)`", r"\1", text)
-
-    # Block code ```
-    text = re.sub(r"```[\s\S]*?```", "", text)
-
-    # Table pipes -> plain
-    text = re.sub(r"\|", " ", text)
-
-    # Escape HTML (PALING PENTING)
+    # Escape SEMUA dulu (ini kunci)
     text = html.escape(text)
 
-    # Rapihin spasi
+    # Hapus horizontal rule
+    text = re.sub(r"\n-{3,}\n", "\n\n", text)
+
+    # Heading markdown (##, ###) -> <b>
+    text = re.sub(
+        r"(?m)^#{1,6}\s*(.+)$",
+        r"\n<b>\1</b>",
+        text
+    )
+
+    # **bold** (yang sudah di-escape jadi &#42;&#42;)
+    text = re.sub(
+        r"&#42;&#42;(.*?)&#42;&#42;",
+        r"<b>\1</b>",
+        text
+    )
+
+    # Inline code `
+    text = re.sub(r"&#96;(.*?)&#96;", r"<code>\1</code>", text)
+
+    # Block code ```
+    text = re.sub(r"&#96;&#96;&#96;[\s\S]*?&#96;&#96;&#96;", "", text)
+
+    # Auto bullet:
+    # - Item -> • Item
+    text = re.sub(
+        r"(?m)^\s*-\s+",
+        "• ",
+        text
+    )
+
+    # Numbered list (1. 2. dst) -> •
+    text = re.sub(
+        r"(?m)^\s*\d+\.\s+",
+        "• ",
+        text
+    )
+
+    # Hancurin tabel markdown
+    text = re.sub(r"\|", " ", text)
+    text = re.sub(r"\n\s*[-:]{2,}\s*\n", "\n", text)
+
+    # Rapihin newline
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
