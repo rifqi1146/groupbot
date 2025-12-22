@@ -2595,35 +2595,19 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Gagal menjalankan perintah.")
         except Exception:
             pass
+            
+import atexit
+import asyncio
 
-async def post_init(app):
-    # ======================
-    # SET BOT COMMANDS
-    # ======================
+@atexit.register
+def _close_sessions():
     try:
-        await app.bot.set_my_commands([
-            ("start", "Check bot status"),
-            ("help", "Show help menu"),
-            ("ping", "Check latency"),
-            ("dl", "Download video"),
-            ("stats", "System statistics"),
-            ("gsearch", "Google search"),
-            ("asupan", "Asupan 😋"),
-            ("tr", "Translate text"),
-            ("speedtest", "Run speed test"),
-            ("restart", "Restart bot"),
-        ])
+        loop = asyncio.get_event_loop()
+        if HTTP_SESSION and not HTTP_SESSION.closed:
+            loop.run_until_complete(HTTP_SESSION.close())
     except Exception:
         pass
-
-    # ======================
-    # 🔥 KIRIM ASUPAN SEKALI SAAT BOT NYALA
-    # ======================
-    app.job_queue.run_once(
-        lambda ctx: send_asupan_once(ctx.bot),
-        when=2
-    )
-    
+       
 #main
 def main():
     logger.info("Initializing bot...")
