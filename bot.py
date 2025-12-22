@@ -2596,18 +2596,29 @@ async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
             
-import atexit
-import asyncio
-
-@atexit.register
-def _close_sessions():
-    try:
-        loop = asyncio.get_event_loop()
-        if HTTP_SESSION and not HTTP_SESSION.closed:
-            loop.run_until_complete(HTTP_SESSION.close())
-    except Exception:
-        pass
+#shutdown
+HTTP_SESSION: aiohttp.ClientSession | None = None
        
+async def get_http_session():
+    global HTTP_SESSION
+    if HTTP_SESSION is None or HTTP_SESSION.closed:
+        HTTP_SESSION = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=20)
+        )
+    return HTTP_SESSION
+  
+async def post_shutdown(app):
+    global HTTP_SESSION
+
+    # close aiohttp session
+    if HTTP_SESSION and not HTTP_SESSION.closed:
+        try:
+            await HTTP_SESSION.close()
+            logger.info("HTTP session closed cleanly")
+        except Exception as e:
+            logger.warning(f"Failed closing HTTP session: {e}")
+            
+
 #main
 def main():
     logger.info("Initializing bot...")
@@ -2624,6 +2635,8 @@ def main():
         .pool_timeout(20)
         .build()
     )
+    
+    app.post_shutdown = post_shutdown
 
     # ==================================================
     # 🔥 COMMAND HANDLERS
