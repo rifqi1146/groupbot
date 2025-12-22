@@ -960,39 +960,36 @@ async def openrouter_ask_think(prompt: str) -> str:
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
-            "<b>❓ Ask AI</b><br><br>"
-            "<b>Contoh:</b><br>"
+            "<b>❓ Ask AI</b>\n\n"
+            "<b>Contoh:</b>\n"
             "<code>/ask jelaskan apa itu relativitas</code>",
             parse_mode="HTML"
         )
 
     prompt = " ".join(context.args)
 
-    # UX cepat
-    status_msg = await update.message.reply_text("🧠 <i>Memproses...</i>", parse_mode="HTML")
+    status_msg = await update.message.reply_text(
+        "🧠 <i>Memproses...</i>",
+        parse_mode="HTML"
+    )
 
     try:
         result = await openrouter_ask_think(prompt)
 
-        # 🔒 HTML SAFE (hindari error tag Telegram)
+        # 🔒 AMAN untuk Telegram HTML
         result = html.escape(result)
-
-        # optional: formatting ringan biar cakep
-        result = result.replace("\n\n", "<br><br>").replace("\n", "<br>")
 
         chunks = split_message(result, max_length=3800)
 
-        # edit pesan pertama
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
 
-        # sisanya dikirim terpisah
         for part in chunks[1:]:
             await asyncio.sleep(0.25)
             await update.message.reply_text(part, parse_mode="HTML")
 
     except Exception as e:
         await status_msg.edit_text(
-            f"<b>❌ Gagal</b><br><code>{html.escape(str(e))}</code>",
+            f"<b>❌ Gagal</b>\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
         )
         
