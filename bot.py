@@ -2100,13 +2100,25 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await loading.edit_text(text, parse_mode="HTML")
     
 #google search 
-import aiohttp
-import urllib.parse
-
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
-GSEARCH_CACHE = { }
 
+# ======================
+# CACHE CONFIG
+# ======================
+GSEARCH_CACHE = {}
+MAX_GSEARCH_CACHE = 50          # hard limit cache
+GSEARCH_CACHE_TTL = 300         # 5 menit
+
+# ======================
+# SHARED HTTP SESSION (BIAR CEPET)
+# ======================
+GSEARCH_HTTP_SESSION = aiohttp.ClientSession()
+
+
+# ======================
+# GOOGLE SEARCH REQUEST
+# ======================
 async def google_search(query: str, page: int = 0, limit: int = 5):
     try:
         start = page * limit + 1
@@ -2119,11 +2131,10 @@ async def google_search(query: str, page: int = 0, limit: int = 5):
             "start": start,
         }
 
-        async with aiohttp.ClientSession() as sess:
-            async with sess.get(url, params=params, timeout=20) as resp:
-                if resp.status != 200:
-                    return False, await resp.text()
-                data = await resp.json()
+        async with GSEARCH_HTTP_SESSION.get(url, params=params, timeout=20) as resp:
+            if resp.status != 200:
+                return False, await resp.text()
+            data = await resp.json()
 
         results = []
         for it in data.get("items", []):
@@ -2137,7 +2148,11 @@ async def google_search(query: str, page: int = 0, limit: int = 5):
 
     except Exception as e:
         return False, str(e)
-        
+
+
+# ======================
+# INLINE KEYBOARD
+# ======================
 def gsearch_keyboard(search_id: str, page: int):
     return InlineKeyboardMarkup([
         [
@@ -2149,7 +2164,11 @@ def gsearch_keyboard(search_id: str, page: int):
             InlineKeyboardButton("❌ Close", callback_data=f"gsearch:close:{search_id}")
         ]
     ])
-    
+
+
+# ======================
+# /gsearch COMMAND
+# ======================
 async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
@@ -2161,10 +2180,15 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     search_id = uuid.uuid4().hex[:8]
 
+    # 🧹 HARD LIMIT CACHE
+    if len(GSEARCH_CACHE) >= MAX_GSEARCH_CACHE:
+        GSEARCH_CACHE.pop(next(iter(GSEARCH_CACHE)))
+
     GSEARCH_CACHE[search_id] = {
         "query": query,
         "page": 0,
         "user": update.effective_user.id,
+        "ts": time.time(),   # ⏱️ timestamp
     }
 
     msg = await update.message.reply_text("🔍 Lagi nyari di Google...")
@@ -2191,6 +2215,10 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
 
+
+# ======================
+# CALLBACK QUERY
+# ======================
 async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -2200,6 +2228,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _, a, b = q.data.split(":", 2)
 
+    # ❌ CLOSE
     if a == "close":
         GSEARCH_CACHE.pop(b, None)
         return await q.message.delete()
@@ -2211,7 +2240,12 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data:
         return await q.message.edit_text("❌ Data search expired.")
 
-    # lock ke user pemanggil
+    # ⏱️ TTL CHECK (ANTI RAM BOCOR)
+    if time.time() - data["ts"] > GSEARCH_CACHE_TTL:
+        GSEARCH_CACHE.pop(search_id, None)
+        return await q.message.edit_text("❌ Search expired.")
+
+    # 🔒 LOCK KE USER
     if q.from_user.id != data["user"]:
         return await q.answer("Ini bukan search lu dongo", show_alert=True)
 
@@ -2224,6 +2258,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.message.edit_text("❌ Gada hasil lagi.")
 
     data["page"] = page
+    data["ts"] = time.time()  # refresh TTL
 
     text = f"🔍 <b>Google Search:</b> <i>{html.escape(query)}</i>\n\n"
     for i, r in enumerate(res, start=1 + page * 5):
