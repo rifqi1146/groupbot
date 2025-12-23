@@ -2324,7 +2324,10 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     domain = context.args[0]
     domain = domain.replace("http://", "").replace("https://", "").split("/")[0]
 
-    loading = await msg.reply_text(f"🔄 <b>Analyzing domain:</b> <code>{html.escape(domain)}</code>", parse_mode="HTML")
+    loading = await msg.reply_text(
+        f"🔄 <b>Analyzing domain:</b> <code>{html.escape(domain)}</code>",
+        parse_mode="HTML"
+    )
 
     info = {}
 
@@ -2340,7 +2343,7 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info["registrar"] = w.registrar or "Not available"
         info["created"] = str(w.creation_date) if w.creation_date else "Not available"
         info["expires"] = str(w.expiration_date) if w.expiration_date else "Not available"
-        info["nameservers"] = w.name_servers if w.name_servers else []
+        info["nameservers"] = w.name_servers or []
     except Exception:
         info["registrar"] = "Not available"
         info["created"] = "Not available"
@@ -2348,18 +2351,24 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info["nameservers"] = []
 
     # ---------------- HTTP CHECK ----------------
-try:
-    session = await get_http_session()
-    async with session.get(f"http://{domain}", timeout=10) as r:
-        info["http_status"] = r.status
-        info["server"] = r.headers.get("server", "Not available")
-except Exception:
-    info["http_status"] = "Not available"
-    info["server"] = "Not available"
+    try:
+        session = await get_http_session()
+        async with session.get(
+            f"http://{domain}",
+            timeout=aiohttp.ClientTimeout(total=10),
+            allow_redirects=True
+        ) as r:
+            info["http_status"] = r.status
+            info["server"] = r.headers.get("server", "Not available")
+    except Exception:
+        info["http_status"] = "Not available"
+        info["server"] = "Not available"
 
     # ---------------- FORMAT NS ----------------
     if info["nameservers"]:
-        ns_text = "\n".join(f"• {html.escape(ns)}" for ns in info["nameservers"][:5])
+        ns_text = "\n".join(
+            f"• {html.escape(ns)}" for ns in info["nameservers"][:5]
+        )
     else:
         ns_text = "Not available"
 
