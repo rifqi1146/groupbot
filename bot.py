@@ -1044,7 +1044,7 @@ async def extract_text_from_photo(bot, file_id: str) -> str:
 
 
 # ======================
-# /ask COMMAND
+# /ask COMMAND (FIXED)
 # ======================
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -1054,9 +1054,16 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_prompt = " ".join(context.args) if context.args else ""
     ocr_text = ""
 
+    # SATU status message dari awal
+    status_msg = await msg.reply_text(
+        "🧠 <i>Memproses...</i>",
+        parse_mode="HTML"
+    )
+
     # 📸 reply ke foto → OCR
     if msg.reply_to_message and msg.reply_to_message.photo:
-        status = await msg.reply_text("👁️ Lagi baca gambar...")
+        await status_msg.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
+
         photo = msg.reply_to_message.photo[-1]
         ocr_text = await extract_text_from_photo(
             context.bot,
@@ -1064,13 +1071,16 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if not ocr_text:
-            return await status.edit_text("❌ Teks di gambar tidak terbaca.")
+            return await status_msg.edit_text(
+                "❌ <b>Teks di gambar tidak terbaca.</b>",
+                parse_mode="HTML"
+            )
 
-        await status.edit_text("🧠 Lagi mikir jawabannya...")
+        await status_msg.edit_text("🧠 <i>Lagi mikir jawabannya...</i>", parse_mode="HTML")
 
     # ❌ kosong semua
     if not user_prompt and not ocr_text:
-        return await msg.reply_text(
+        return await status_msg.edit_text(
             "<b>❓ Ask AI</b>\n\n"
             "<b>Contoh:</b>\n"
             "<code>/ask jelaskan relativitas</code>\n"
@@ -1094,14 +1104,14 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         final_prompt = user_prompt
 
-    status_msg = await msg.reply_text("🧠 <i>Memproses...</i>", parse_mode="HTML")
-
     try:
         raw = await openrouter_ask_think(final_prompt)
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, max_length=3800)
 
+        # edit message yang sama
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
+
         for ch in chunks[1:]:
             await asyncio.sleep(0.25)
             await msg.reply_text(ch, parse_mode="HTML")
