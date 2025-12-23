@@ -1395,7 +1395,9 @@ async def groq_query(update, context):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
 
-    thinking = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban…", quote=True)
+    thinking = await msg.reply_text(
+    f"{em} ✨ Lagi mikir jawaban…"
+)
 
     prompt = str(prompt).strip()
     if not prompt:
