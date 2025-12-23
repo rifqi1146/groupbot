@@ -576,38 +576,35 @@ def is_tiktok(url: str) -> bool:
 def is_instagram(url: str) -> bool:
     return "instagram.com" in url or "instagr.am" in url
 
-# =====================
-# RESOLVE TIKTOK SHORT URL
-# =====================
+#resolve tt
 async def resolve_tiktok_url(url: str) -> str:
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=15),
-        headers={"User-Agent": "Mozilla/5.0"}
-    ) as s:
-        async with s.get(url, allow_redirects=True) as r:
-            final = str(r.url)
+    session = await get_http_session()
+    async with session.get(
+        url,
+        allow_redirects=True,
+        timeout=aiohttp.ClientTimeout(total=15)
+    ) as r:
+        final = str(r.url)
 
     final = final.split("?")[0]
     if "/video/" not in final:
         raise RuntimeError("Invalid TikTok URL")
     return final
 
-# =====================
-# DOUYIN API DOWNLOAD (TIKTOK ONLY)
-# =====================
+#douyin api
 async def douyin_download(url, bot, chat_id, status_msg_id):
     uid = uuid.uuid4().hex
     out_path = f"{TMP_DIR}/{uid}.mp4"
 
-    async with aiohttp.ClientSession(
-        headers={"User-Agent": "Mozilla/5.0"}
-    ) as s:
-        async with s.post(
-            "https://www.tikwm.com/api/",
-            data={"url": url},
-            timeout=aiohttp.ClientTimeout(total=20)
-        ) as r:
-            data = await r.json()
+    session = await get_http_session()
+
+    # ---- REQUEST DOUYIN API ----
+    async with session.post(
+        "https://www.tikwm.com/api/",
+        data={"url": url},
+        timeout=aiohttp.ClientTimeout(total=20)
+    ) as r:
+        data = await r.json()
 
     if data.get("code") != 0:
         raise RuntimeError("Douyin API error")
@@ -616,29 +613,29 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     if not video_url:
         raise RuntimeError("Video URL kosong")
 
-    async with aiohttp.ClientSession() as s:
-        async with s.get(video_url) as r:
-            total = int(r.headers.get("Content-Length", 0))
-            downloaded = 0
-            last = 0
+    # ---- DOWNLOAD VIDEO ----
+    async with session.get(video_url) as r:
+        total = int(r.headers.get("Content-Length", 0))
+        downloaded = 0
+        last = 0
 
-            with open(out_path, "wb") as f:
-                async for chunk in r.content.iter_chunked(64 * 1024):
-                    f.write(chunk)
-                    downloaded += len(chunk)
+        with open(out_path, "wb") as f:
+            async for chunk in r.content.iter_chunked(64 * 1024):
+                f.write(chunk)
+                downloaded += len(chunk)
 
-                    if total and time.time() - last >= 1.2:
-                        pct = downloaded / total * 100
-                        await bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=status_msg_id,
-                            text=(
-                                "⬇️ <b>Douyin download...</b>\n\n"
-                                f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
-                            ),
-                            parse_mode="HTML"
-                        )
-                        last = time.time()
+                if total and time.time() - last >= 1.2:
+                    pct = downloaded / total * 100
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text=(
+                            "⬇️ <b>Douyin download...</b>\n\n"
+                            f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    last = time.time()
 
     return out_path
 
