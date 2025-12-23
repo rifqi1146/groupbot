@@ -1393,10 +1393,10 @@ async def groq_query(update, context):
                 prompt = (
                     "Berikut adalah teks hasil dari sebuah gambar:\n\n"
                     f"{ocr_text}\n\n"
-                    "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas.."
+                    "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
                 )
             else:
-                await msg.reply_text(f"{em} ❌ gagal membaca teks dari gambar.")
+                await msg.reply_text(f"{em} ❌ Gagal membaca teks dari gambar.")
                 return
     except Exception:
         logger.exception("OCR failed")
@@ -1411,7 +1411,7 @@ async def groq_query(update, context):
             "Reply gambar lalu ketik: $groq"
         )
         try:
-            await msg.reply_text(help_txt, quote=True, parse_mode="HTML")
+            await msg.reply_text(help_txt, parse_mode="HTML")
         except:
             await msg.reply_text("Usage: $groq <prompt> atau reply gambar")
         return
@@ -1421,9 +1421,7 @@ async def groq_query(update, context):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
 
-    thinking = await msg.reply_text(
-    f"{em} ✨ Lagi mikir jawaban…"
-)
+    thinking = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban…")
 
     prompt = str(prompt).strip()
     if not prompt:
@@ -1469,25 +1467,22 @@ async def groq_query(update, context):
     # =========================
     # GROQ REQUEST
     # =========================
-    url = f"{GROQ_BASE}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {"role": "user", "content": send_prompt}
-        ],
-        "temperature": 0.85,
-        "top_p": 0.95,
-        "max_tokens": 2048,
-    }
-
     try:
         async with aiohttp.ClientSession() as sess:
             async with sess.post(
-                url, json=payload, headers=headers, timeout=GROQ_TIMEOUT
+                f"{GROQ_BASE}/chat/completions",
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": send_prompt}],
+                    "temperature": 0.85,
+                    "top_p": 0.95,
+                    "max_tokens": 2048,
+                },
+                headers={
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=GROQ_TIMEOUT,
             ) as resp:
                 text = await resp.text()
                 if resp.status not in (200, 201):
@@ -1499,9 +1494,9 @@ async def groq_query(update, context):
                 clean_reply = sanitize_ai_output(raw_reply)
                 chunks = split_message(clean_reply, 4000)
 
-await thinking.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
-for ch in chunks[1:]:
-    await msg.reply_text(ch, parse_mode="HTML")
+                await thinking.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
+                for ch in chunks[1:]:
+                    await msg.reply_text(ch, parse_mode="HTML")
 
     except asyncio.TimeoutError:
         await thinking.edit_text(f"{em} ❌ Timeout nyambung Groq.")
