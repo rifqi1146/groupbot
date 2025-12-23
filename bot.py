@@ -706,7 +706,6 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         (
             "👀 <b>Ketemu link video</b>\n\n"
             "Mau aku downloadin?\n"
-            "Tenang, ga auto kok 😄"
         ),
         reply_markup=keyboard,
         parse_mode="HTML"
