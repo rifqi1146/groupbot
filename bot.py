@@ -2348,14 +2348,14 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info["nameservers"] = []
 
     # ---------------- HTTP CHECK ----------------
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"http://{domain}", timeout=10) as r:
-                info["http_status"] = r.status
-                info["server"] = r.headers.get("server", "Not available")
-    except Exception:
-        info["http_status"] = "Not available"
-        info["server"] = "Not available"
+try:
+    session = await get_http_session()
+    async with session.get(f"http://{domain}", timeout=10) as r:
+        info["http_status"] = r.status
+        info["server"] = r.headers.get("server", "Not available")
+except Exception:
+    info["http_status"] = "Not available"
+    info["server"] = "Not available"
 
     # ---------------- FORMAT NS ----------------
     if info["nameservers"]:
