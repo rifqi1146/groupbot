@@ -834,7 +834,29 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
-# utils_groq_poll18.py
+
+# ======================
+# ASK + IMAGE (OCR MODE)
+# ======================
+import os
+import aiohttp
+import asyncio
+import html
+from io import BytesIO
+from PIL import Image
+import pytesseract
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL_THINK = "openai/gpt-oss-120b:free"
+
+if not OPENROUTER_API_KEY:
+    raise RuntimeError("OPENROUTER_API_KEY not set")
+
+#split
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
     Splits a long text into chunks not exceeding max_length.
@@ -888,9 +910,6 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
             final_chunks.append(chunk)
 
     return final_chunks
-
-import re
-import html
 
 def sanitize_ai_output(text: str) -> str:
     """
@@ -958,28 +977,6 @@ def sanitize_ai_output(text: str) -> str:
 
     return text.strip()
     
-# ======================
-# ASK + IMAGE (OCR MODE)
-# ======================
-import os
-import aiohttp
-import asyncio
-import html
-from io import BytesIO
-from PIL import Image
-import pytesseract
-
-from telegram import Update
-from telegram.ext import ContextTypes
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_THINK = "openai/gpt-oss-120b:free"
-
-if not OPENROUTER_API_KEY:
-    raise RuntimeError("OPENROUTER_API_KEY not set")
-
-
 # ======================
 # CORE AI FUNCTION (TEXT ONLY)
 # ======================
@@ -1059,7 +1056,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 📸 reply ke foto → OCR
     if msg.reply_to_message and msg.reply_to_message.photo:
-        status = await msg.reply_text("👁️ Lagi baca gambar (OCR)...")
+        status = await msg.reply_text("👁️ Lagi baca gambar...")
         photo = msg.reply_to_message.photo[-1]
         ocr_text = await extract_text_from_photo(
             context.bot,
@@ -1084,13 +1081,13 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 🧠 final prompt
     if ocr_text and user_prompt:
         final_prompt = (
-            "Berikut teks hasil OCR dari sebuah gambar:\n\n"
+            "Berikut teks hasil dari sebuah gambar:\n\n"
             f"{ocr_text}\n\n"
             f"Pertanyaan user:\n{user_prompt}"
         )
     elif ocr_text:
         final_prompt = (
-            "Berikut teks hasil OCR dari sebuah gambar. "
+            "Berikut teks hasil dari sebuah gambar. "
             "Tolong jelaskan atau ringkas isinya:\n\n"
             f"{ocr_text}"
         )
