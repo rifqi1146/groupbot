@@ -958,11 +958,16 @@ def sanitize_ai_output(text: str) -> str:
 
     return text.strip()
     
-#ask
+# ======================
+# ASK + IMAGE SUPPORT
+# ======================
 import os
 import aiohttp
 import asyncio
 import html
+import base64
+from io import BytesIO
+from PIL import Image
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -977,7 +982,7 @@ if not OPENROUTER_API_KEY:
 # ======================
 # CORE AI FUNCTION
 # ======================
-async def openrouter_ask_think(prompt: str) -> str:
+async def openrouter_ask_think(prompt: str, image_b64: str | None = None) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -985,23 +990,41 @@ async def openrouter_ask_think(prompt: str) -> str:
         "X-Title": "KiyoshiBot",
     }
 
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                "jelas, ala gen z tapi tetap mudah dipahami. "
+                "Jangan gunakan Bahasa Inggris kecuali diminta. "
+                "Jawab langsung ke intinya."
+            ),
+        }
+    ]
+
+    # 🖼️ image + text
+    if image_b64:
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt or "Jelaskan isi gambar ini"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_b64}"
+                    }
+                }
+            ]
+        })
+    else:
+        messages.append({
+            "role": "user",
+            "content": prompt
+        })
+
     payload = {
         "model": MODEL_THINK,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "                   
-                    "jelas, ala ala gen z lah, tapi tetap mudah dipahami. "
-                    "Jangan gunakan Bahasa Inggris kecuali diminta atau user tanya dengan bahasa inggrisbaru lu jawab pake inggris juga."
-                    "jawab dengan cepat."
-                ),
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
+        "messages": messages,
     }
 
     timeout = aiohttp.ClientTimeout(total=60)
@@ -1022,37 +1045,67 @@ async def openrouter_ask_think(prompt: str) -> str:
 
 
 # ======================
+# IMAGE HELPERS
+# ======================
+async def _download_photo_as_base64(bot, file_id: str) -> str:
+    file = await bot.get_file(file_id)
+    bio = BytesIO()
+    await file.download_to_memory(out=bio)
+
+    bio.seek(0)
+    img = Image.open(bio).convert("RGB")
+
+    out = BytesIO()
+    img.save(out, format="JPEG", quality=85)
+    out.seek(0)
+
+    return base64.b64encode(out.read()).decode()
+
+
+# ======================
 # /ask COMMAND (HTML)
 # ======================
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text(
+    msg = update.message
+    if not msg:
+        return
+
+    prompt = " ".join(context.args) if context.args else ""
+
+    # cek reply ke foto
+    image_b64 = None
+    if msg.reply_to_message and msg.reply_to_message.photo:
+        photo = msg.reply_to_message.photo[-1]
+        image_b64 = await _download_photo_as_base64(
+            context.bot,
+            photo.file_id
+        )
+
+    if not prompt and not image_b64:
+        return await msg.reply_text(
             "<b>❓ Ask AI</b>\n\n"
             "<b>Contoh:</b>\n"
-            "<code>/ask jelaskan apa itu relativitas</code>",
+            "<code>/ask jelaskan apa itu relativitas</code>\n"
+            "<i>atau reply foto lalu ketik /ask</i>",
             parse_mode="HTML"
         )
 
-    prompt = " ".join(context.args)
-
-    status_msg = await update.message.reply_text(
+    status_msg = await msg.reply_text(
         "🧠 <i>Memproses...</i>",
         parse_mode="HTML"
     )
 
     try:
-        raw_result = await openrouter_ask_think(prompt)
+        raw_result = await openrouter_ask_think(prompt, image_b64)
 
-        # 🔥 SANITIZE DI SINI
         clean_result = sanitize_ai_output(raw_result)
-
         chunks = split_message(clean_result, max_length=3800)
 
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
 
         for part in chunks[1:]:
             await asyncio.sleep(0.25)
-            await update.message.reply_text(part, parse_mode="HTML")
+            await msg.reply_text(part, parse_mode="HTML")
 
     except Exception as e:
         await status_msg.edit_text(
@@ -1367,7 +1420,7 @@ async def groq_query(update, context):
                 prompt = (
                     "Berikut adalah teks hasil OCR dari sebuah gambar:\n\n"
                     f"{ocr_text}\n\n"
-                    "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas dan santai."
+                    "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas.."
                 )
             else:
                 await msg.reply_text(f"{em} ❌ OCR gagal membaca teks dari gambar.")
@@ -1387,7 +1440,7 @@ async def groq_query(update, context):
         try:
             await msg.reply_text(help_txt, quote=True, parse_mode="HTML")
         except:
-            await msg.reply_text("Usage: $groq <prompt> atau reply gambar + $groq")
+            await msg.reply_text("Usage: $groq <prompt> atau reply gambar")
         return
 
     uid = msg.from_user.id if msg.from_user else 0
