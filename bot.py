@@ -669,7 +669,9 @@ async def resolve_tiktok_url(url: str) -> str:
         raise RuntimeError("Invalid TikTok URL")
     return final
 
-#autodl
+# =====================
+# AUTO DL DETECT (FIXED)
+# =====================
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
@@ -685,38 +687,45 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (is_tiktok(text) or is_instagram(text)):
         return
 
-    # generate dl_id
-    dl_id = uuid.uuid4().hex[:8]
-    DL_CACHE[update.message.message_id] = {
-    "url": url,
-    "user": update.effective_user.id,
-    "reply_to": update.message.message_id,
-    "ts": time.time()
-}
+    # simpan cache pakai MESSAGE_ID (INI KUNCI)
+    DL_CACHE[msg.message_id] = {
+        "url": text,
+        "user": update.effective_user.id,
+        "reply_to": msg.message_id,
+        "ts": time.time()
+    }
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⬇️ Download", callback_data=f"dlask:{dl_id}:go"),
-            InlineKeyboardButton("❌ Close", callback_data=f"dlask:{dl_id}:close"),
+            InlineKeyboardButton("⬇️ Download", callback_data="dlask:go"),
+            InlineKeyboardButton("❌ Close", callback_data="dlask:close"),
         ]
     ])
 
     await msg.reply_text(
-    (
-        "👀 <b>Ketemu link video</b>\n\n"
-        "Mau aku downloadin?\n"
-        "Tenang, ga auto kok 😄"
-    ),
-    reply_markup=keyboard,
-    parse_mode="HTML"
-)
-    
+        (
+            "👀 <b>Ketemu link video</b>\n\n"
+            "Mau aku downloadin?\n"
+            "Tenang, ga auto kok 😄"
+        ),
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+
+# =====================
+# DL ASK CALLBACK (FIXED)
+# =====================
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    _, dl_id, action = q.data.split(":", 2)
-    data = DL_CACHE.get(dl_id)
+    # pesan link asli = reply_to_message
+    if not q.message.reply_to_message:
+        return await q.edit_message_text("❌ Request expired")
+
+    src_msg_id = q.message.reply_to_message.message_id
+    data = DL_CACHE.get(src_msg_id)
 
     if not data:
         return await q.edit_message_text("❌ Request expired")
@@ -724,19 +733,17 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.from_user.id != data["user"]:
         return await q.answer("Bukan request lu", show_alert=True)
 
-    if action == "close":
-        DL_CACHE.pop(dl_id, None)
+    if q.data == "dlask:close":
+        DL_CACHE.pop(src_msg_id, None)
         return await q.message.delete()
 
-    # action == go → lanjut ke flow lama
-    DL_CACHE.pop(dl_id, None)
-
+    # lanjut ke pilihan format
     await q.edit_message_text(
         "📥 <b>Pilih format</b>",
-        reply_markup=dl_keyboard(dl_id),
+        reply_markup=dl_keyboard(str(src_msg_id)),
         parse_mode="HTML"
     )
-    
+
 #douyin api
 async def douyin_download(url, bot, chat_id, status_msg_id):
     uid = uuid.uuid4().hex
@@ -955,15 +962,16 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =====================
-# CALLBACK
+# DL CALLBACK (FORMAT PICK)
 # =====================
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    _, dl_id, choice = q.data.split(":", 2)
-    data = DL_CACHE.get(q.message.message_id)
+    _, src_msg_id, choice = q.data.split(":", 2)
+    src_msg_id = int(src_msg_id)
 
+    data = DL_CACHE.get(src_msg_id)
     if not data:
         return await q.edit_message_text("❌ Data expired")
 
@@ -971,10 +979,11 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.answer("Bukan request lu", show_alert=True)
 
     if choice == "cancel":
-        DL_CACHE.pop(q.message.message_id, None)
+        DL_CACHE.pop(src_msg_id, None)
         return await q.edit_message_text("❌ Dibatalkan")
 
-    DL_CACHE.pop(q.message.message_id, None)
+    # hapus cache sebelum download (ANTI DOUBLE CLICK)
+    DL_CACHE.pop(src_msg_id, None)
 
     await q.edit_message_text(
         f"⏳ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
