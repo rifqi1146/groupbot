@@ -736,7 +736,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         else:
             raise RuntimeError("Platform tidak didukung")
 
-        if not path:
+        if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
 
         await bot.edit_message_text(
@@ -746,24 +746,43 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             parse_mode="HTML"
         )
 
-        with open(path, "rb") as f:
-            if fmt_key == "mp3":
-                await bot.send_audio(chat_id, f, reply_to_message_id=reply_to)
-            else:
-                await bot.send_video(chat_id, f, reply_to_message_id=reply_to)
+        # =========================
+        # FAST UPLOAD PATCH
+        # =========================
+        if fmt_key == "mp3":
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=path,
+                reply_to_message_id=reply_to,
+                disable_notification=True
+            )
+        else:
+            await bot.send_video(
+                chat_id=chat_id,
+                video=path,                     # ⬅️ PATH LANGSUNG
+                supports_streaming=True,        # ⬅️ WAJIB
+                reply_to_message_id=reply_to,
+                disable_notification=True
+            )
 
         await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text=f"❌ Gagal: {e}"
-        )
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"❌ Gagal: {e}"
+            )
+        except Exception:
+            pass
 
     finally:
         if path and os.path.exists(path):
-            os.remove(path)
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
 # =====================
 # /dl COMMAND
@@ -2634,7 +2653,7 @@ async def get_http_session():
     global HTTP_SESSION
     if HTTP_SESSION is None or HTTP_SESSION.closed:
         HTTP_SESSION = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=20)
+            timeout=aiohttp.ClientTimeout(total=60)
         )
     return HTTP_SESSION
   
