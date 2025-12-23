@@ -1090,21 +1090,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         
-        
-#ping
-async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    start = time.perf_counter()
-
-    msg = await update.message.reply_text("🏓 Pong...")
-
-    end = time.perf_counter()
-    latency = int((end - start) * 1000)
-
-    await msg.edit_text(
-        f"⚡ <b>Pong!</b>\n⏱️ Latency: <code>{latency} ms</code>",
-        parse_mode="HTML"
-    )
-
 # ---- GROQ + Pollinations
 logger = logging.getLogger(__name__)
 
@@ -1363,25 +1348,24 @@ async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optio
 
 # ---- GROQ handler
 async def groq_query(update, context):
-    """
-    $groq <prompt>  OR  reply to message with $groq
-    Support:
-    - URL article → extract → summarize
-    - Reply IMAGE → OCR → forward to GROQ
-    """
     em = _emo()
     msg = update.message
     if not msg:
         return
 
-    # =========================
-    # EXTRACT PROMPT / OCR
-    # =========================
     prompt = _extract_prompt_from_update(update, context)
+
+    # =========================
+    # STATUS MESSAGE (EARLY)
+    # =========================
+    status_msg = None
 
     # ---- OCR SUPPORT ----
     try:
         if msg.reply_to_message and msg.reply_to_message.photo:
+            # 👀 langsung kasih feedback
+            status_msg = await msg.reply_text(f"{em} 👀 Lagi lihat gambar...")
+
             photo = msg.reply_to_message.photo[-1]
             file = await photo.get_file()
             img_path = await file.download_to_drive()
@@ -1393,31 +1377,31 @@ async def groq_query(update, context):
             except:
                 pass
 
-            if ocr_text:
-                prompt = (
-                    "Berikut adalah teks hasil dari sebuah gambar:\n\n"
-                    f"{ocr_text}\n\n"
-                    "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
-                )
-            else:
-                await msg.reply_text(f"{em} ❌ Gagal membaca teks dari gambar.")
+            if not ocr_text:
+                await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
                 return
+
+            prompt = (
+                "Berikut adalah teks hasil dari sebuah gambar:\n\n"
+                f"{ocr_text}\n\n"
+                "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
+            )
+
+            # ✨ ganti status → mikir
+            await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
+
     except Exception:
         logger.exception("OCR failed")
+        if status_msg:
+            await status_msg.edit_text(f"{em} ❌ OCR error.")
+        return
 
     if not prompt:
-        help_txt = (
-            f"{em} {bold('Usage:')}\n"
-            f"{code('$groq <pertanyaan / perintah>')}\n\n"
-            "Contoh:\n"
-            "$groq jelaskan teori relativitas\n"
-            "$groq ringkaskan isi dari https://example.com/news\n"
-            "Reply gambar lalu ketik: $groq"
+        await msg.reply_text(
+            f"{em} Gunakan:\n"
+            "$groq <pertanyaan>\n"
+            "atau reply gambar lalu ketik $groq"
         )
-        try:
-            await msg.reply_text(help_txt, parse_mode="HTML")
-        except:
-            await msg.reply_text("Usage: $groq <prompt> atau reply gambar")
         return
 
     uid = msg.from_user.id if msg.from_user else 0
@@ -1425,48 +1409,30 @@ async def groq_query(update, context):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
 
-    thinking = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban…")
+    # kalau bukan image case
+    if not status_msg:
+        status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
 
-    prompt = str(prompt).strip()
+    prompt = prompt.strip()
     if not prompt:
-        await thinking.edit_text(f"{em} ❌ Prompt kosong.")
+        await status_msg.edit_text(f"{em} ❌ Prompt kosong.")
         return
 
     # =========================
     # URL ARTICLE HANDLING
     # =========================
     urls = _find_urls(prompt)
-    used_article = False
-    article_title = None
-    article_text = None
-
     if urls:
         first_url = urls[0]
-        if first_url.lower().startswith("http"):
-            await thinking.edit_text(f"{em} 🔎 Sedang ambil & bersihin artikel…")
+        if first_url.startswith("http"):
+            await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
             title, text = await _fetch_and_extract_article(first_url)
             if text:
-                used_article = True
-                article_title = title
-                article_text = text
-
-    if used_article and article_text:
-        hdr = f"Artikel sumber: {first_url}"
-        if article_title:
-            hdr += f"\nJudul: {article_title}"
-
-        send_prompt = (
-            f"{hdr}\n\n"
-            "--- BEGIN ARTICLE ---\n"
-            f"{article_text}\n"
-            "--- END ARTICLE ---\n\n"
-            "Buat ringkasan yang jelas dan mudah dipahami:\n"
-            "- Bullet point poin penting\n"
-            "- Tambahkan 1 kalimat kesimpulan\n"
-            "- Jangan sertakan iklan / metadata"
-        )
-    else:
-        send_prompt = prompt
+                prompt = (
+                    f"Artikel sumber: {first_url}\n\n"
+                    f"{text}\n\n"
+                    "Ringkas dengan bullet point + kesimpulan singkat."
+                )
 
     # =========================
     # GROQ REQUEST
@@ -1477,7 +1443,7 @@ async def groq_query(update, context):
                 f"{GROQ_BASE}/chat/completions",
                 json={
                     "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": send_prompt}],
+                    "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.85,
                     "top_p": 0.95,
                     "max_tokens": 2048,
@@ -1488,25 +1454,34 @@ async def groq_query(update, context):
                 },
                 timeout=GROQ_TIMEOUT,
             ) as resp:
-                text = await resp.text()
-                if resp.status not in (200, 201):
-                    await thinking.edit_text(f"{em} ❌ Groq error {resp.status}")
-                    return
+                data = json.loads(await resp.text())
+                raw = data["choices"][0]["message"]["content"]
+                clean = sanitize_ai_output(raw)
+                chunks = split_message(clean, 4000)
 
-                data = json.loads(text)
-                raw_reply = data["choices"][0]["message"]["content"].strip()
-                clean_reply = sanitize_ai_output(raw_reply)
-                chunks = split_message(clean_reply, 4000)
-
-                await thinking.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
+                await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
                 for ch in chunks[1:]:
                     await msg.reply_text(ch, parse_mode="HTML")
 
     except asyncio.TimeoutError:
-        await thinking.edit_text(f"{em} ❌ Timeout nyambung Groq.")
+        await status_msg.edit_text(f"{em} ❌ Timeout nyambung Groq.")
     except Exception as e:
         logger.exception("groq_query failed")
-        await thinking.edit_text(f"{em} ❌ Error: {e}")
+        await status_msg.edit_text(f"{em} ❌ Error: {e}")
+
+#ping
+async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start = time.perf_counter()
+
+    msg = await update.message.reply_text("🏓 Pong...")
+
+    end = time.perf_counter()
+    latency = int((end - start) * 1000)
+
+    await msg.edit_text(
+        f"⚡ <b>Pong!</b>\n⏱️ Latency: <code>{latency} ms</code>",
+        parse_mode="HTML"
+    )
 
 # ======================
 # 🔤 SIMPLE TRANSLATOR (/tr) — FIXED
