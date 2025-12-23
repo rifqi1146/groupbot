@@ -905,15 +905,18 @@ def sanitize_ai_output(text: str) -> str:
     # normalize newline
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # escape html first
+    # kill HTML line breaks early
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+
+    # escape html
     text = html.escape(text)
 
     # kill markdown
-    text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)   # **bold**
-    text = re.sub(r"\*(.+?)\*", r"\1", text)        # *italic*
-    text = re.sub(r"__(.+?)__", r"\1", text)        # __underline__
-    text = re.sub(r"~~(.+?)~~", r"\1", text)        # ~~strike~~
-    text = re.sub(r"(?m)^&gt;\s*", "", text)        # blockquote
+    text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"~~(.+?)~~", r"\1", text)
+    text = re.sub(r"(?m)^&gt;\s*", "", text)
 
     # headings
     text = re.sub(
@@ -932,17 +935,17 @@ def sanitize_ai_output(text: str) -> str:
     text = re.sub(r"\|", " ", text)
     text = re.sub(r"(?m)^[-:\s]{3,}$", "", text)
 
-    # table-like row → bullet + indent
+    # table-like rows → bullet
     text = re.sub(
         r"(?m)^\s*([A-Za-z0-9 _/().-]{2,})\s{2,}(.+)$",
         r"• <b>\1</b>\n  \2",
         text
     )
 
-    # inline bullet normalization
+    # normalize bullets everywhere
     text = re.sub(r"\s*•\s*", "\n• ", text)
 
-    # cleanup spacing
+    # spacing cleanup
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
