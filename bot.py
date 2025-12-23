@@ -835,20 +835,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ======================
-# ASK + IMAGE (OCR MODE)
-# ======================
-import os
-import aiohttp
-import asyncio
-import html
-from io import BytesIO
-from PIL import Image
-import pytesseract
-
-from telegram import Update
-from telegram.ext import ContextTypes
-
+#ask+ocr
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_THINK = "openai/gpt-oss-120b:free"
@@ -913,73 +900,54 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
 def sanitize_ai_output(text: str) -> str:
     """
-    Sanitizer FINAL:
-    - Membunuh SEMUA Markdown
-    - Output pure Telegram HTML
-    - Auto bullet
+    Sanitizer 
+    
     """
 
     if not text:
         return ""
 
-    # Normalize newline
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Escape dulu SEMUA
     text = html.escape(text)
 
-    # === KILL MARKDOWN TOTAL ===
-
-    # **bold**
     text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)
 
-    # *italic*
     text = re.sub(r"\*(.+?)\*", r"\1", text)
 
-    # __underline__
     text = re.sub(r"__(.+?)__", r"\1", text)
 
-    # ~~strikethrough~~
     text = re.sub(r"~~(.+?)~~", r"\1", text)
 
-    # > blockquote
     text = re.sub(r"(?m)^&gt;\s*", "", text)
 
-    # ### Heading → <b>
     text = re.sub(
         r"(?m)^#{1,6}\s*(.+)$",
         r"\n<b>\1</b>",
         text
     )
 
-    # === AUTO FORMAT ===
 
-    # Numbered list → bullet
     text = re.sub(
         r"(?m)^\s*\d+\.\s+",
         "• ",
         text
     )
 
-    # Dash list → bullet
     text = re.sub(
         r"(?m)^\s*-\s+",
         "• ",
         text
     )
 
-    # Hancurin tabel markdown
     text = re.sub(r"\|", " ", text)
     text = re.sub(r"(?m)^[-:\s]{3,}$", "", text)
 
-    # Rapihin newline
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
     
-# ======================
-# CORE AI FUNCTION (TEXT ONLY)
-# ======================
+#core function
 async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -1023,9 +991,7 @@ async def openrouter_ask_think(prompt: str) -> str:
     return data["choices"][0]["message"]["content"].strip()
 
 
-# ======================
-# OCR HELPER
-# ======================
+#helperocr
 async def extract_text_from_photo(bot, file_id: str) -> str:
     file = await bot.get_file(file_id)
     bio = BytesIO()
@@ -1043,9 +1009,7 @@ async def extract_text_from_photo(bot, file_id: str) -> str:
     return text.strip()
 
 
-# ======================
-# /ask COMMAND (FIXED)
-# ======================
+#askcmd
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
@@ -1427,12 +1391,12 @@ async def groq_query(update, context):
 
             if ocr_text:
                 prompt = (
-                    "Berikut adalah teks hasil OCR dari sebuah gambar:\n\n"
+                    "Berikut adalah teks hasil dari sebuah gambar:\n\n"
                     f"{ocr_text}\n\n"
                     "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas.."
                 )
             else:
-                await msg.reply_text(f"{em} ❌ OCR gagal membaca teks dari gambar.")
+                await msg.reply_text(f"{em} ❌ gagal membaca teks dari gambar.")
                 return
     except Exception:
         logger.exception("OCR failed")
@@ -1531,12 +1495,13 @@ async def groq_query(update, context):
                     return
 
                 data = json.loads(text)
-                reply = data["choices"][0]["message"]["content"].strip()
+                raw_reply = data["choices"][0]["message"]["content"].strip()
+                clean_reply = sanitize_ai_output(raw_reply)
+                chunks = split_message(clean_reply, 4000)
 
-                chunks = split_message(reply, 4000)
-                await thinking.edit_text(f"{em} {chunks[0]}")
-                for ch in chunks[1:]:
-                    await msg.reply_text(ch)
+await thinking.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
+for ch in chunks[1:]:
+    await msg.reply_text(ch, parse_mode="HTML")
 
     except asyncio.TimeoutError:
         await thinking.edit_text(f"{em} ❌ Timeout nyambung Groq.")
