@@ -1486,7 +1486,7 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 GEMINI_MODELS = {
-    "flash": "gemini-3-flash",
+    "flash": "gemini-2.5-flash",
     "pro": "gemini-2.5-pro",
     "lite": "gemini-2.0-flash-lite-001",
 }
