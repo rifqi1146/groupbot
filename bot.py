@@ -1492,7 +1492,7 @@ GEMINI_MODELS = {
 
 async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
     if not GEMINI_API_KEY:
-        return False, "API key Gemini belum diset. Set GEMINI_API_KEY di .env"
+        return False, "API key Gemini belum diset."
 
     if not prompt:
         return False, "Tidak ada prompt."
@@ -1539,31 +1539,6 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
     except Exception as e:
         return False, f"Gagal memanggil Gemini: {e}"
 
-
-#model
-async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None,
-        _ask_ai_gemini_sync,
-        prompt,
-        model
-    )
-
-#default ai
-async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text(
-            "Pilih mode AI:\n/setmodeai flash\n/setmodeai pro\n/setmodeai lite"
-        )
-    mode = context.args[0].lower()
-    if mode not in GEMINI_MODELS:
-        return await update.message.reply_text("Pilihan hanya: flash / pro / lite")
-    chat_id = str(update.effective_chat.id)
-    _ai_mode[chat_id] = mode
-    save_ai_mode(_ai_mode)
-    await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
-
 #cmd
 async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
@@ -1609,6 +1584,21 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(final[:4000])
         
+#default ai
+async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text(
+            "Pilih mode AI:\n/setmodeai flash\n/setmodeai pro\n/setmodeai lite"
+        )
+    mode = context.args[0].lower()
+    if mode not in GEMINI_MODELS:
+        return await update.message.reply_text("Pilihan hanya: flash / pro / lite")
+    chat_id = str(update.effective_chat.id)
+    _ai_mode[chat_id] = mode
+    save_ai_mode(_ai_mode)
+    await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
+
+
 # ======================
 # 🔤 SIMPLE TRANSLATOR (/tr) — FIXED
 # ======================
