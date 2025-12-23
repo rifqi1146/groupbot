@@ -1513,7 +1513,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
     }
 
     try:
-        session = await get_session()
+        session = await get_http_session()
         async with session.post(
             url,
             headers={"Content-Type": "application/json"},
