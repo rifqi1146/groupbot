@@ -17,8 +17,10 @@ import random
 import urllib.parse
 import html
 import dns.resolver
+import pytesseract
 import uuid
 
+from PIL import Image
 from bs4 import BeautifulSoup
 from typing import List, Tuple, Optional, Tuple
 from datetime import datetime, timedelta
@@ -956,6 +958,7 @@ def sanitize_ai_output(text: str) -> str:
 
     return text.strip()
     
+#ask
 import os
 import aiohttp
 import asyncio
@@ -1092,6 +1095,16 @@ def _can(uid: int) -> bool:
     _last_req[uid] = now
     return True
 
+def ocr_image(path: str) -> str:
+    try:
+        text = pytesseract.image_to_string(
+            Image.open(path),
+            lang="ind+eng"
+        )
+        return text.strip()
+    except Exception:
+        return ""
+        
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
     Splits a long text into chunks not exceeding max_length.
@@ -1322,95 +1335,112 @@ async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optio
 async def groq_query(update, context):
     """
     $groq <prompt>  OR  reply to message with $groq
-    If prompt contains a URL, this handler will try to fetch and extract the article,
-    auto-clean common ad elements, then ask GROQ to summarize the extracted article.
-    If fetch/extract fails, falls back to sending the original prompt to GROQ.
+    Support:
+    - URL article → extract → summarize
+    - Reply IMAGE → OCR → forward to GROQ
     """
     em = _emo()
     msg = update.message
     if not msg:
         return
+
+    # =========================
+    # EXTRACT PROMPT / OCR
+    # =========================
     prompt = _extract_prompt_from_update(update, context)
+
+    # ---- OCR SUPPORT ----
+    try:
+        if msg.reply_to_message and msg.reply_to_message.photo:
+            photo = msg.reply_to_message.photo[-1]
+            file = await photo.get_file()
+            img_path = await file.download_to_drive()
+
+            ocr_text = ocr_image(img_path)
+
+            try:
+                os.remove(img_path)
+            except:
+                pass
+
+            if ocr_text:
+                prompt = (
+                    "Berikut adalah teks hasil OCR dari sebuah gambar:\n\n"
+                    f"{ocr_text}\n\n"
+                    "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas dan santai."
+                )
+            else:
+                await msg.reply_text(f"{em} ❌ OCR gagal membaca teks dari gambar.")
+                return
+    except Exception:
+        logger.exception("OCR failed")
+
     if not prompt:
         help_txt = (
             f"{em} {bold('Usage:')}\n"
-            f"{code('$groq <pertanyaan atau perintah>')}\n\n"
+            f"{code('$groq <pertanyaan / perintah>')}\n\n"
             "Contoh:\n"
-            "$groq ringkaskan isi dari https://example.com/news/12345\n"
-            "atau reply ke pesan artikel lalu ketik: $groq\n"
+            "$groq jelaskan teori relativitas\n"
+            "$groq ringkaskan isi dari https://example.com/news\n"
+            "Reply gambar lalu ketik: $groq"
         )
         try:
-            await msg.reply_text(help_txt, quote=True, parse_mode='HTML')
-        except Exception:
-            try:
-                await msg.reply_text("Usage: $groq <prompt> or reply to a message with $groq")
-            except:
-                pass
+            await msg.reply_text(help_txt, quote=True, parse_mode="HTML")
+        except:
+            await msg.reply_text("Usage: $groq <prompt> atau reply gambar + $groq")
         return
+
     uid = msg.from_user.id if msg.from_user else 0
     if uid and not _can(uid):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
-    thinking = None
-    try:
-        thinking = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban…", quote=True)
-    except Exception:
-        thinking = None
-    if not isinstance(prompt, str):
-        prompt = str(prompt)
-    prompt = prompt.strip()
+
+    thinking = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban…", quote=True)
+
+    prompt = str(prompt).strip()
     if not prompt:
-        if thinking:
-            await thinking.edit_text(f"{em} ❌ Prompt kosong.")
-        else:
-            await msg.reply_text(f"{em} ❌ Prompt kosong.")
+        await thinking.edit_text(f"{em} ❌ Prompt kosong.")
         return
+
+    # =========================
+    # URL ARTICLE HANDLING
+    # =========================
     urls = _find_urls(prompt)
     used_article = False
     article_title = None
     article_text = None
+
     if urls:
         first_url = urls[0]
-        # quick guard: don't follow non-http(s)
         if first_url.lower().startswith("http"):
-            if thinking:
-                await thinking.edit_text(f"{em} 🔎 Sedang ambil dan bersihin isi halaman: {first_url}")
-            # attempt fetch + extract (with timeout)
+            await thinking.edit_text(f"{em} 🔎 Sedang ambil & bersihin artikel…")
             title, text = await _fetch_and_extract_article(first_url)
             if text:
                 used_article = True
                 article_title = title
                 article_text = text
-            else:
-                # failed to extract — keep going but inform user
-                if thinking:
-                    await thinking.edit_text(f"{em} ⚠️ Gagal ekstrak artikel dari URL. Mengirim prompt asli ke GROQ.")
-                else:
-                    await msg.reply_text(f"{em} ⚠️ Gagal ekstrak artikel dari URL. Mengirim prompt asli ke GROQ.")
 
-    # build final prompt
     if used_article and article_text:
-        # prepare clean prompt (no style instructions)
-        article_source = first_url
-        hdr = f"Artikel sumber: {article_source}"
+        hdr = f"Artikel sumber: {first_url}"
         if article_title:
-            hdr = f"{hdr}\nJudul: {article_title}"
-        final_user = (
-            f"{hdr}\n\n"
-            f"--- BEGIN ARTICLE ---\n"
-            f"{article_text}\n"
-            f"--- END ARTICLE ---\n\n"
-            "Tolong buat ringkasan yang rapi dan mudah dipahami dalam bahasa Indonesia:\n"
-            "- Sorot poin-poin utama (what, when, where, who, how, numbers jika ada).\n"
-            "- Sertakan satu kalimat kesimpulan singkat.\n"
-            "- Jangan sertakan HTML, metadata, atau teks iklan.\n"
-            "- Output: bullet points lalu satu baris kesimpulan."
-        )
-        send_prompt = final_user
-    else:
-        send_prompt = prompt  # no URL or failed extraction — send raw prompt
+            hdr += f"\nJudul: {article_title}"
 
-    # build payload (leave basic settings unchanged)
+        send_prompt = (
+            f"{hdr}\n\n"
+            "--- BEGIN ARTICLE ---\n"
+            f"{article_text}\n"
+            "--- END ARTICLE ---\n\n"
+            "Buat ringkasan yang jelas dan mudah dipahami:\n"
+            "- Bullet point poin penting\n"
+            "- Tambahkan 1 kalimat kesimpulan\n"
+            "- Jangan sertakan iklan / metadata"
+        )
+    else:
+        send_prompt = prompt
+
+    # =========================
+    # GROQ REQUEST
+    # =========================
     url = f"{GROQ_BASE}/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_KEY}",
@@ -1426,65 +1456,29 @@ async def groq_query(update, context):
         "max_tokens": 2048,
     }
 
-    # call GROQ
     try:
         async with aiohttp.ClientSession() as sess:
-            async with sess.post(url, json=payload, headers=headers, timeout=GROQ_TIMEOUT) as resp:
+            async with sess.post(
+                url, json=payload, headers=headers, timeout=GROQ_TIMEOUT
+            ) as resp:
                 text = await resp.text()
                 if resp.status not in (200, 201):
-                    short = text[:800]
-                    if thinking:
-                        await thinking.edit_text(f"{em} ❌ Groq error ({resp.status}):\n`{short}`")
-                    else:
-                        await msg.reply_text(f"{em} ❌ Groq error ({resp.status}):\n`{short}`")
+                    await thinking.edit_text(f"{em} ❌ Groq error {resp.status}")
                     return
 
-                try:
-                    data = json.loads(text)
-                except Exception:
-                    data = None
+                data = json.loads(text)
+                reply = data["choices"][0]["message"]["content"].strip()
 
-                # extract reply safely
-                reply = None
-                try:
-                    if data and "choices" in data:
-                        reply = data["choices"][0]["message"]["content"]
-                except Exception:
-                    reply = None
-
-                if not reply:
-                    reply = (data.get("output_text") if data and isinstance(data, dict) else None) or text or "Ga ada output dari Groq."
-
-                reply = str(reply).strip()
-                chunks = split_message(reply, max_length=4000)
-
-                # edit first msg (thinking) or reply with first chunk
-                if thinking:
-                    await thinking.edit_text(f"{em} {chunks[0]}")
-                else:
-                    await msg.reply_text(f"{em} {chunks[0]}")
-
-                # send rest as new messages
+                chunks = split_message(reply, 4000)
+                await thinking.edit_text(f"{em} {chunks[0]}")
                 for ch in chunks[1:]:
                     await msg.reply_text(ch)
-                return
 
     except asyncio.TimeoutError:
-        if thinking:
-            await thinking.edit_text(f"{em} ❌ Timeout nyambung Groq.")
-        else:
-            await msg.reply_text(f"{em} ❌ Timeout nyambung Groq.")
-        return
+        await thinking.edit_text(f"{em} ❌ Timeout nyambung Groq.")
     except Exception as e:
-        short = str(e)
-        if len(short) > 800:
-            short = short[:800] + "..."
-        if thinking:
-            await thinking.edit_text(f"{em} ❌ Error: {short}")
-        else:
-            await msg.reply_text(f"{em} ❌ Error: {short}")
         logger.exception("groq_query failed")
-        return
+        await thinking.edit_text(f"{em} ❌ Error: {e}")
 
 # ======================
 # 🔤 SIMPLE TRANSLATOR (/tr) — FIXED
