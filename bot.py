@@ -308,11 +308,10 @@ async def fetch_asupan_tikwm():
     keywords = [
         "asupan indo",
         "krisna",
+        "tante holic",
         "trend susu beracun",
-        "pragostrend",
         "krisna minta susu",
         "trendsusuberacun",
-        "arghh atas bawah cantik",
         "eunicetjoaa",
         "cewek viral",
         "nasikfc",
