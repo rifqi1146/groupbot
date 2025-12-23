@@ -687,11 +687,12 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # generate dl_id
     dl_id = uuid.uuid4().hex[:8]
-    DL_CACHE[dl_id] = {
-        "url": text,
-        "user": msg.from_user.id,
-        "reply_to": msg.message_id
-    }
+    DL_CACHE[update.message.message_id] = {
+    "url": url,
+    "user": update.effective_user.id,
+    "reply_to": update.message.message_id,
+    "ts": time.time()
+}
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -961,7 +962,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     _, dl_id, choice = q.data.split(":", 2)
-    data = DL_CACHE.get(dl_id)
+    data = DL_CACHE.get(q.message.message_id)
 
     if not data:
         return await q.edit_message_text("❌ Data expired")
@@ -970,10 +971,10 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.answer("Bukan request lu", show_alert=True)
 
     if choice == "cancel":
-        DL_CACHE.pop(dl_id, None)
+        DL_CACHE.pop(q.message.message_id, None)
         return await q.edit_message_text("❌ Dibatalkan")
 
-    DL_CACHE.pop(dl_id, None)
+    DL_CACHE.pop(q.message.message_id, None)
 
     await q.edit_message_text(
         f"⏳ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
