@@ -106,7 +106,6 @@ def save_json_file(path, data):
         logger.exception("Failed to save %s", path)
 
 # ---- ai mode 
-
 def load_ai_mode():
     return load_json_file(AI_MODE_FILE, {})
 def save_ai_mode(data):
@@ -1483,6 +1482,131 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+# ---- GEMINI ONLY (multi-model) ----
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+GEMINI_MODELS = {
+    "flash": "gemini-2.5-flash",
+    "pro": "gemini-2.5-pro",
+    "lite": "gemini-2.0-flash-lite-001",
+}
+
+def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
+    if not GEMINI_API_KEY:
+        return False, "API key Gemini belum diset. Set GEMINI_API_KEY di .env"
+
+    if not prompt:
+        return False, "Tidak ada prompt."
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={GEMINI_API_KEY}"
+    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
+    try:
+        r = requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=30
+        )
+        r.raise_for_status()
+
+        data = r.json()
+        candidates = data.get("candidates") or []
+
+        if not candidates:
+            return True, "Model merespon tapi tanpa candidates."
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if parts:
+            return True, parts[0].get("text", "").strip()
+
+        return True, json.dumps(candidates[0], ensure_ascii=False)
+
+    except Exception as e:
+        return False, f"Gagal memanggil Gemini: {e}"
+
+
+#model
+async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        _ask_ai_gemini_sync,
+        prompt,
+        model
+    )
+
+#default ai
+async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text(
+            "Pilih mode AI:\n/setmodeai flash\n/setmodeai pro\n/setmodeai lite"
+        )
+    mode = context.args[0].lower()
+    if mode not in GEMINI_MODELS:
+        return await update.message.reply_text("Pilihan hanya: flash / pro / lite")
+    chat_id = str(update.effective_chat.id)
+    _ai_mode[chat_id] = mode
+    save_ai_mode(_ai_mode)
+    await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
+
+#cmd
+async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    model_key = _ai_mode.get(chat_id, "flash")
+    prompt = ""
+
+    if context.args:
+        first = context.args[0].lower()
+        if first in GEMINI_MODELS:
+            model_key = first
+            prompt = " ".join(context.args[1:])
+        else:
+            prompt = " ".join(context.args)
+    elif update.message.reply_to_message:
+        prompt = update.message.reply_to_message.text or ""
+
+    if not prompt:
+        return await update.message.reply_text(
+            f"Model default chat: {model_key.upper()}\n"
+            "Contoh:\n"
+            "/ai apa itu relativitas?\n"
+            "/ai pro jelasin teori string"
+        )
+
+    model_name = GEMINI_MODELS.get(model_key, GEMINI_MODELS["flash"])
+    loading = await update.message.reply_text("⏳ Memproses...")
+
+    ok, answer = await ask_ai_gemini(prompt, model=model_name)
+
+    if not ok:
+        try:
+            await loading.edit_text(f"❗ Error: {answer}")
+        except Exception:
+            await update.message.reply_text(f"❗ Error: {answer}")
+        return
+
+    header = f"💡 Jawaban ({model_key.upper()})"
+    body = answer.strip()
+    final = f"{header}\n\n{body}"
+
+    try:
+        await loading.edit_text(final[:4000])
+    except Exception:
+        await update.message.reply_text(final[:4000])
+        
 # ======================
 # 🔤 SIMPLE TRANSLATOR (/tr) — FIXED
 # ======================
@@ -2447,132 +2571,6 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
                
-
-# ---- GEMINI ONLY (multi-model) ----
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-GEMINI_MODELS = {
-    "flash": "gemini-2.5-flash",
-    "pro": "gemini-2.5-pro",
-    "lite": "gemini-2.0-flash-lite-001",
-}
-
-def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
-    if not GEMINI_API_KEY:
-        return False, "API key Gemini belum diset. Set GEMINI_API_KEY di .env"
-
-    if not prompt:
-        return False, "Tidak ada prompt."
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={GEMINI_API_KEY}"
-    )
-
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
-    }
-
-    try:
-        r = requests.post(
-            url,
-            headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=30
-        )
-        r.raise_for_status()
-
-        data = r.json()
-        candidates = data.get("candidates") or []
-
-        if not candidates:
-            return True, "Model merespon tapi tanpa candidates."
-
-        parts = candidates[0].get("content", {}).get("parts", [])
-        if parts:
-            return True, parts[0].get("text", "").strip()
-
-        return True, json.dumps(candidates[0], ensure_ascii=False)
-
-    except Exception as e:
-        return False, f"Gagal memanggil Gemini: {e}"
-
-
-#model
-async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None,
-        _ask_ai_gemini_sync,
-        prompt,
-        model
-    )
-
-#default ai
-async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text(
-            "Pilih mode AI:\n/setmodeai flash\n/setmodeai pro\n/setmodeai lite"
-        )
-    mode = context.args[0].lower()
-    if mode not in GEMINI_MODELS:
-        return await update.message.reply_text("Pilihan hanya: flash / pro / lite")
-    chat_id = str(update.effective_chat.id)
-    _ai_mode[chat_id] = mode
-    save_ai_mode(_ai_mode)
-    await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
-
-#cmd
-async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    model_key = _ai_mode.get(chat_id, "flash")
-    prompt = ""
-
-    if context.args:
-        first = context.args[0].lower()
-        if first in GEMINI_MODELS:
-            model_key = first
-            prompt = " ".join(context.args[1:])
-        else:
-            prompt = " ".join(context.args)
-    elif update.message.reply_to_message:
-        prompt = update.message.reply_to_message.text or ""
-
-    if not prompt:
-        return await update.message.reply_text(
-            f"Model default chat: {model_key.upper()}\n"
-            "Contoh:\n"
-            "/ai apa itu relativitas?\n"
-            "/ai pro jelasin teori string"
-        )
-
-    model_name = GEMINI_MODELS.get(model_key, GEMINI_MODELS["flash"])
-    loading = await update.message.reply_text("⏳ Memproses...")
-
-    ok, answer = await ask_ai_gemini(prompt, model=model_name)
-
-    if not ok:
-        try:
-            await loading.edit_text(f"❗ Error: {answer}")
-        except Exception:
-            await update.message.reply_text(f"❗ Error: {answer}")
-        return
-
-    header = f"💡 Jawaban ({model_key.upper()})"
-    body = answer.strip()
-    final = f"{header}\n\n{body}"
-
-    try:
-        await loading.edit_text(final[:4000])
-    except Exception:
-        await update.message.reply_text(final[:4000])
-        
 # ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
