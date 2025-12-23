@@ -486,6 +486,9 @@ async def get_asupan_fast(bot):
 # ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    
+    if chat.type == "private":
+        pass
 
     if not is_asupan_enabled(chat_id):
         return await update.message.reply_text(
