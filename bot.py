@@ -83,6 +83,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 
+#asupan grup
+ASUPAN_GROUP_FILE = "asupan_groups.json"
+ASUPAN_ENABLED_CHATS = set()
+
 #tumbal
 ASUPAN_STARTUP_CHAT_ID = int(os.getenv("ASUPAN_STARTUP_CHAT_ID", "0")) or None
 
@@ -292,6 +296,71 @@ ASUPAN_FETCHING = False
 ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
 
+#load asuoan
+def load_asupan_groups():
+    global ASUPAN_ENABLED_CHATS
+    if not os.path.exists(ASUPAN_GROUP_FILE):
+        ASUPAN_ENABLED_CHATS = set()
+        return
+
+    try:
+        with open(ASUPAN_GROUP_FILE, "r") as f:
+            data = json.load(f)
+            ASUPAN_ENABLED_CHATS = set(data.get("enabled_chats", []))
+    except Exception:
+        ASUPAN_ENABLED_CHATS = set()
+        
+def save_asupan_groups():
+    with open(ASUPAN_GROUP_FILE, "w") as f:
+        json.dump(
+            {"enabled_chats": list(ASUPAN_ENABLED_CHATS)},
+            f,
+            indent=2
+        )
+
+def is_asupan_enabled(chat_id: int) -> bool:
+    return chat_id in ASUPAN_ENABLED_CHATS
+    
+async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id != BOT_OWNER_ID:
+        return await update.message.reply_text("❌ Lu bukan owner.")
+
+    ASUPAN_ENABLED_CHATS.add(chat.id)
+    save_asupan_groups()
+
+    await update.message.reply_text("✅ Asupan diaktifkan di grup ini.")
+    
+async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id != BOT_OWNER_ID:
+        return await update.message.reply_text("❌ Lu bukan owner.")
+
+    ASUPAN_ENABLED_CHATS.discard(chat.id)
+    save_asupan_groups()
+
+    await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
+   
+async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if user.id != BOT_OWNER_ID:
+        return await update.message.reply_text("❌ Lu bukan owner.")
+
+    if not ASUPAN_ENABLED_CHATS:
+        return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
+
+    text = "<b>📋 Grup Asupan Aktif</b>\n\n"
+    for cid in ASUPAN_ENABLED_CHATS:
+        text += f"• <code>{cid}</code>\n"
+
+    await update.message.reply_text(text, parse_mode="HTML")
+    
+
 # ======================
 # INLINE KEYBOARD
 # ======================
@@ -417,6 +486,13 @@ async def get_asupan_fast(bot):
 # /asupan COMMAND
 # ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+
+    if not is_asupan_enabled(chat_id):
+        return await update.message.reply_text(
+            "🚫 Fitur asupan tidak tersedia di grup ini, pm @hirohitokiyoshi untuk mengaktifkan."
+        )
+
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
@@ -430,7 +506,6 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.delete()
 
-        # warm cache di background (non-blocking)
         context.application.create_task(
             warm_asupan_cache(context.bot)
         )
@@ -2687,6 +2762,8 @@ def main():
     )
     
     app.post_shutdown = post_shutdown
+    
+    load_asupan_groups()
 
     # ==================================================
     # 🔥 COMMAND HANDLERS
@@ -2705,6 +2782,9 @@ def main():
     app.add_handler(CommandHandler("stats", stats_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("tr", tr_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("enableasupan", enable_asupan_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("disableasupan", disable_asupan_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("asupanlist", asupanlist_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("asupan", asupan_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("restart", restart_cmd, block=False), group=-1)
 
