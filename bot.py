@@ -702,13 +702,13 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.reply_text(
     (
-        "📎 <b>Link terdeteksi</b>\n\n"
-        "Mau download video ini?\n"
-        "Pilih tombol di bawah 👇"
+        "👀 <b>Ketemu link video</b>\n\n"
+        "Mau aku downloadin?\n"
+        "Tenang, ga auto kok 😄"
     ),
     reply_markup=keyboard,
     parse_mode="HTML"
-    )
+)
     
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -2866,7 +2866,7 @@ def main():
     
     
     #hebdnrjenndndn
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect), block=False), group=-1)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False), group=-1)
     
     # ==================================================
     # INLINE CALLBACKS
