@@ -11,7 +11,6 @@ import shlex
 import shutil
 import asyncio
 import logging
-import requests
 import aiohttp
 import random
 import urllib.parse
@@ -1491,7 +1490,7 @@ GEMINI_MODELS = {
     "lite": "gemini-2.0-flash-lite-001",
 }
 
-def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
+async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
     if not GEMINI_API_KEY:
         return False, "API key Gemini belum diset. Set GEMINI_API_KEY di .env"
 
@@ -1514,17 +1513,18 @@ def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
     }
 
     try:
-        r = requests.post(
+        session = await get_session()
+        async with session.post(
             url,
             headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=30
-        )
-        r.raise_for_status()
+            json=payload
+        ) as resp:
+            if resp.status != 200:
+                return False, f"HTTP {resp.status}: {await resp.text()}"
 
-        data = r.json()
+            data = await resp.json()
+
         candidates = data.get("candidates") or []
-
         if not candidates:
             return True, "Model merespon tapi tanpa candidates."
 
@@ -1534,6 +1534,8 @@ def _ask_ai_gemini_sync(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
 
         return True, json.dumps(candidates[0], ensure_ascii=False)
 
+    except asyncio.TimeoutError:
+        return False, "Timeout memanggil Gemini"
     except Exception as e:
         return False, f"Gagal memanggil Gemini: {e}"
 
