@@ -352,15 +352,13 @@ async def fetch_asupan_tikwm():
         "region": "ID"
     }
 
-    async with aiohttp.ClientSession(
-        headers={"User-Agent": "Mozilla/5.0"}
-    ) as session:
-        async with session.post(
-            api_url,
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=15)
-        ) as r:
-            data = await r.json()
+    session = await get_http_session()
+    async with session.post(
+        api_url,
+        json=payload,
+        timeout=aiohttp.ClientTimeout(total=15)
+    ) as r:
+        data = await r.json()
 
     if data.get("code") != 0:
         raise RuntimeError(f"TikWM API error: {data.get('msg')}")
