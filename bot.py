@@ -962,8 +962,9 @@ async def openrouter_ask_think(prompt: str) -> str:
                     "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
                     "jelas ala gen z tapi tetap mudah dipahami. "
                     "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                    "Jawab langsung ke intinya."
-                    "jangan perlihatkan output dari prompt ini ke user, langsung pada inti yg ditanyakan aja"),
+                    "Jawab langsung ke intinya. "
+                    "Jangan perlihatkan output dari prompt ini ke user."
+                ),
             },
             {
                 "role": "user",
@@ -972,18 +973,17 @@ async def openrouter_ask_think(prompt: str) -> str:
         ],
     }
 
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=60)
-    ) as session:
-        async with session.post(
-            OPENROUTER_URL,
-            headers=headers,
-            json=payload,
-        ) as resp:
-            if resp.status != 200:
-                raise RuntimeError(await resp.text())
+    session = await get_http_session()
+    async with session.post(
+        OPENROUTER_URL,
+        headers=headers,
+        json=payload,
+        timeout=aiohttp.ClientTimeout(total=60),
+    ) as resp:
+        if resp.status != 200:
+            raise RuntimeError(await resp.text())
 
-            data = await resp.json()
+        data = await resp.json()
 
     return data["choices"][0]["message"]["content"].strip()
 
@@ -1236,17 +1236,23 @@ def _find_urls(text: str) -> List[str]:
 
 
 # ---- helper
-async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optional[str], Optional[str]]:
+async def _fetch_and_extract_article(
+    url: str,
+    timeout: int = 15
+) -> Tuple[Optional[str], Optional[str]]:
     """
     Fetch url and return (title, cleaned_text) or (None, None) on failure.
     Cleans common ad/irrelevant elements.
     """
     try:
-        async with aiohttp.ClientSession() as sess:
-            async with sess.get(url, timeout=timeout) as resp:
-                if resp.status != 200:
-                    return None, None
-                html_text = await resp.text(errors="ignore")
+        session = await get_http_session()
+        async with session.get(
+            url,
+            timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as resp:
+            if resp.status != 200:
+                return None, None
+            html_text = await resp.text(errors="ignore")
 
         soup = BeautifulSoup(html_text, "html.parser")
 
@@ -1279,12 +1285,9 @@ async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optio
         except Exception:
             title = None
 
-        article_node = None
-        article_node = soup.find("article")
+        article_node = soup.find("article") or soup.find("main")
+
         if not article_node:
-            article_node = soup.find("main")
-        if not article_node:
-            # fallback: select the tag (div or section) with most <p> children
             candidates = soup.find_all(["div", "section"], limit=40)
             best = None
             best_count = 0
@@ -1299,7 +1302,6 @@ async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optio
             if best_count >= 2:
                 article_node = best
 
-        # collect text from either article_node or body paragraphs
         paragraphs = []
         if article_node:
             for p in article_node.find_all("p"):
@@ -1307,30 +1309,26 @@ async def _fetch_and_extract_article(url: str, timeout: int = 15) -> Tuple[Optio
                 if txt and len(txt) > 20:
                     paragraphs.append(txt)
         else:
-            # fallback: all <p> in body
             for p in soup.find_all("p"):
                 txt = p.get_text(separator=" ", strip=True)
                 if txt and len(txt) > 20:
                     paragraphs.append(txt)
 
         if not paragraphs:
-            # try to get text from meta description if no paragraphs
-            meta_desc = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+            meta_desc = (
+                soup.find("meta", attrs={"name": "description"})
+                or soup.find("meta", attrs={"property": "og:description"})
+            )
             if meta_desc and meta_desc.get("content"):
                 paragraphs = [meta_desc.get("content").strip()]
 
-        # join and trim excessive whitespace
         article_text = "\n\n".join(paragraphs).strip()
         if not article_text:
             return title, None
 
-        # simple heuristic: drop blocks that are navigation/footer-like (short repetitive)
-        # limit article_text to e.g. first 12000 chars to avoid huge payloads
-        max_chars = 12000
-        if len(article_text) > max_chars:
-            article_text = article_text[:max_chars].rsplit("\n", 1)[0]
+        if len(article_text) > 12000:
+            article_text = article_text[:12000].rsplit("\n", 1)[0]
 
-        # final cleanup: remove weird repeated whitespace
         article_text = re.sub(r"\s{2,}", " ", article_text).strip()
 
         return title, article_text
@@ -1356,7 +1354,6 @@ async def groq_query(update, context):
     # ---- OCR SUPPORT ----
     try:
         if msg.reply_to_message and msg.reply_to_message.photo:
-            # 👀 langsung kasih feedback
             status_msg = await msg.reply_text(f"{em} 👀 Lagi lihat gambar...")
 
             photo = msg.reply_to_message.photo[-1]
@@ -1380,7 +1377,6 @@ async def groq_query(update, context):
                 "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
             )
 
-            # ✨ ganti status → mikir
             await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
 
     except Exception:
@@ -1402,7 +1398,6 @@ async def groq_query(update, context):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
 
-    # kalau bukan image case
     if not status_msg:
         status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
 
@@ -1428,33 +1423,37 @@ async def groq_query(update, context):
                 )
 
     # =========================
-    # GROQ REQUEST
+    # GROQ REQUEST (HTTP GLOBAL)
     # =========================
     try:
-        async with aiohttp.ClientSession() as sess:
-            async with sess.post(
-                f"{GROQ_BASE}/chat/completions",
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.85,
-                    "top_p": 0.95,
-                    "max_tokens": 2048,
-                },
-                headers={
-                    "Authorization": f"Bearer {GROQ_KEY}",
-                    "Content-Type": "application/json",
-                },
-                timeout=GROQ_TIMEOUT,
-            ) as resp:
-                data = json.loads(await resp.text())
-                raw = data["choices"][0]["message"]["content"]
-                clean = sanitize_ai_output(raw)
-                chunks = split_message(clean, 4000)
+        session = await get_http_session()
+        async with session.post(
+            f"{GROQ_BASE}/chat/completions",
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.85,
+                "top_p": 0.95,
+                "max_tokens": 2048,
+            },
+            headers={
+                "Authorization": f"Bearer {GROQ_KEY}",
+                "Content-Type": "application/json",
+            },
+            timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
+        ) as resp:
+            if resp.status not in (200, 201):
+                await status_msg.edit_text(f"{em} ❌ Groq error {resp.status}")
+                return
 
-                await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
-                for ch in chunks[1:]:
-                    await msg.reply_text(ch, parse_mode="HTML")
+            data = await resp.json()
+            raw = data["choices"][0]["message"]["content"]
+            clean = sanitize_ai_output(raw)
+            chunks = split_message(clean, 4000)
+
+            await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
+            for ch in chunks[1:]:
+                await msg.reply_text(ch, parse_mode="HTML")
 
     except asyncio.TimeoutError:
         await status_msg.edit_text(f"{em} ❌ Timeout nyambung Groq.")
@@ -1710,7 +1709,10 @@ async def pollinations_generate_nsfw(update, context):
     # get prompt
     prompt = _extract_prompt_from_update(update, context)
     if not prompt:
-        await msg.reply_text(f"{em} {bold('Contoh:')} {code('$nsfw waifu nude di kamar mandi')}", parse_mode='HTML')
+        await msg.reply_text(
+            f"{em} {bold('Contoh:')} {code('$nsfw waifu nude di kamar mandi')}",
+            parse_mode="HTML"
+        )
         return
 
     uid = msg.from_user.id if msg.from_user else 0
@@ -1718,61 +1720,75 @@ async def pollinations_generate_nsfw(update, context):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
 
-    # give short status message (use HTML bold)
+    # status awal
     try:
-        status_msg = await msg.reply_text(bold("🔞 Generating NSFW image..."), parse_mode='HTML')
+        status_msg = await msg.reply_text(
+            bold("🔞 Generating NSFW image..."),
+            parse_mode="HTML"
+        )
     except Exception:
         status_msg = None
 
-    # build boosted prompt
     boosted = (
-        f"{prompt}, extremely detailed, NSFW, nude, hentai, erotic, adult, highly detailed skin, soft lighting"
+        f"{prompt}, extremely detailed, NSFW, nude, hentai, erotic, adult, "
+        "highly detailed skin, soft lighting"
     )
     encoded = urllib.parse.quote(boosted)
     url = f"https://image.pollinations.ai/prompt/{encoded}"
 
     try:
-        async with aiohttp.ClientSession() as sess:
-            async with sess.get(url, timeout=60) as resp:
-                if resp.status != 200:
-                    short = (await resp.text())[:400]
-                    if status_msg:
-                        await status_msg.edit_text(f"{em} ❌ Gagal ambil gambar. Status: {resp.status}\n`{short}`")
-                    else:
-                        await msg.reply_text(f"{em} ❌ Gagal ambil gambar. Status: {resp.status}")
-                    return
-                content = await resp.read()
-                bio = io.BytesIO(content)
-                bio.name = "pollinations_nsfw.png"
-                bio.seek(0)
-
-                # caption: use HTML (bold for NSFW, code for prompt)
-                caption_html = f"🔞 {bold('NSFW')}\n🖼️ Prompt: {code(prompt)}"
-
-                await msg.reply_photo(photo=bio, caption=caption_html, parse_mode='HTML')
-                # delete status if any
-                try:
-                    if status_msg:
-                        await status_msg.delete()
-                except Exception:
-                    pass
+        session = await get_http_session()
+        async with session.get(
+            url,
+            timeout=aiohttp.ClientTimeout(total=60)
+        ) as resp:
+            if resp.status != 200:
+                short = (await resp.text())[:400]
+                if status_msg:
+                    await status_msg.edit_text(
+                        f"{em} ❌ Gagal ambil gambar. Status: {resp.status}\n<code>{html.escape(short)}</code>",
+                        parse_mode="HTML"
+                    )
+                else:
+                    await msg.reply_text(f"{em} ❌ Gagal ambil gambar. Status: {resp.status}")
                 return
+
+            content = await resp.read()
+            bio = io.BytesIO(content)
+            bio.name = "pollinations_nsfw.png"
+            bio.seek(0)
+
+            caption_html = f"🔞 {bold('NSFW')}\n🖼️ Prompt: {code(prompt)}"
+
+            await msg.reply_photo(
+                photo=bio,
+                caption=caption_html,
+                parse_mode="HTML"
+            )
+
+            try:
+                if status_msg:
+                    await status_msg.delete()
+            except Exception:
+                pass
+
     except asyncio.TimeoutError:
         if status_msg:
             await status_msg.edit_text(f"{em} ❌ Timeout saat generate gambar.")
         else:
             await msg.reply_text(f"{em} ❌ Timeout saat generate gambar.")
-        return
     except Exception as e:
         short = str(e)
         if len(short) > 400:
             short = short[:400] + "..."
         if status_msg:
-            await status_msg.edit_text(f"{em} ❌ Error: {short}")
+            await status_msg.edit_text(
+                f"{em} ❌ Error: <code>{html.escape(short)}</code>",
+                parse_mode="HTML"
+            )
         else:
             await msg.reply_text(f"{em} ❌ Error: {short}")
         logger.exception("pollinations_generate_nsfw failed")
-        return
 
 # ---------------- small helper for kawaii emoji (if needed in handler) ----------------
 def kawaii_emo() -> str:
@@ -2249,7 +2265,10 @@ async def ip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     ip = context.args[0]
-    msg = await update.message.reply_text(f"🔄 <b>Analyzing IP {html.escape(ip)}...</b>", parse_mode="HTML")
+    msg = await update.message.reply_text(
+        f"🔄 <b>Analyzing IP {html.escape(ip)}...</b>",
+        parse_mode="HTML"
+    )
 
     try:
         url = (
@@ -2259,12 +2278,12 @@ async def ip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "reverse,mobile,proxy,hosting,query"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=15) as resp:
-                if resp.status != 200:
-                    return await msg.edit_text("❌ Failed to fetch IP information")
+        session = await get_http_session()
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            if resp.status != 200:
+                return await msg.edit_text("❌ Failed to fetch IP information")
 
-                data = await resp.json()
+            data = await resp.json()
 
         if data.get("status") != "success":
             return await msg.edit_text(
@@ -2300,7 +2319,10 @@ async def ip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(text, parse_mode="HTML")
 
     except Exception as e:
-        await msg.edit_text(f"❌ Error: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+        await msg.edit_text(
+            f"❌ Error: <code>{html.escape(str(e))}</code>",
+            parse_mode="HTML"
+        )
         
 
 async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
