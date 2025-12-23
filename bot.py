@@ -146,7 +146,6 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
-OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
 IMG_W, IMG_H = 900, 520
 
 # =========================
@@ -325,7 +324,7 @@ async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id != BOT_OWNER_ID:
+    if user.id != OWNER_ID:
         return await update.message.reply_text("❌ Lu bukan owner.")
 
     ASUPAN_ENABLED_CHATS.add(chat.id)
@@ -337,7 +336,7 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id != BOT_OWNER_ID:
+    if user.id != OWNER_ID:
         return await update.message.reply_text("❌ Lu bukan owner.")
 
     ASUPAN_ENABLED_CHATS.discard(chat.id)
@@ -348,7 +347,7 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    if user.id != BOT_OWNER_ID:
+    if user.id != OWNER_ID:
         return await update.message.reply_text("❌ Lu bukan owner.")
 
     if not ASUPAN_ENABLED_CHATS:
