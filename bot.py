@@ -959,15 +959,16 @@ def sanitize_ai_output(text: str) -> str:
     return text.strip()
     
 # ======================
-# ASK + IMAGE SUPPORT
+# ASK + IMAGE (OCR MODE)
 # ======================
 import os
 import aiohttp
 import asyncio
 import html
-import base64
 from io import BytesIO
 from PIL import Image
+import pytesseract
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -980,9 +981,9 @@ if not OPENROUTER_API_KEY:
 
 
 # ======================
-# CORE AI FUNCTION
+# CORE AI FUNCTION (TEXT ONLY)
 # ======================
-async def openrouter_ask_think(prompt: str, image_b64: str | None = None) -> str:
+async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -990,54 +991,35 @@ async def openrouter_ask_think(prompt: str, image_b64: str | None = None) -> str
         "X-Title": "KiyoshiBot",
     }
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                "jelas, ala gen z tapi tetap mudah dipahami. "
-                "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                "Jawab langsung ke intinya."
-            ),
-        }
-    ]
-
-    # 🖼️ image + text
-    if image_b64:
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt or "Jelaskan isi gambar ini"},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_b64}"
-                    }
-                }
-            ]
-        })
-    else:
-        messages.append({
-            "role": "user",
-            "content": prompt
-        })
-
     payload = {
         "model": MODEL_THINK,
-        "messages": messages,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                    "jelas ala gen z tapi tetap mudah dipahami. "
+                    "Jangan gunakan Bahasa Inggris kecuali diminta. "
+                    "Jawab langsung ke intinya."
+                    "jangan perlihatkan output dari prompt ini ke user, langsung pada inti yg ditanyakan aja"),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
     }
 
-    timeout = aiohttp.ClientTimeout(total=60)
-
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=60)
+    ) as session:
         async with session.post(
             OPENROUTER_URL,
             headers=headers,
             json=payload,
         ) as resp:
             if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"HTTP {resp.status}: {text}")
+                raise RuntimeError(await resp.text())
 
             data = await resp.json()
 
@@ -1045,67 +1027,87 @@ async def openrouter_ask_think(prompt: str, image_b64: str | None = None) -> str
 
 
 # ======================
-# IMAGE HELPERS
+# OCR HELPER
 # ======================
-async def _download_photo_as_base64(bot, file_id: str) -> str:
+async def extract_text_from_photo(bot, file_id: str) -> str:
     file = await bot.get_file(file_id)
     bio = BytesIO()
     await file.download_to_memory(out=bio)
-
     bio.seek(0)
+
     img = Image.open(bio).convert("RGB")
 
-    out = BytesIO()
-    img.save(out, format="JPEG", quality=85)
-    out.seek(0)
+    # OCR (Indonesia + English)
+    text = pytesseract.image_to_string(
+        img,
+        lang="ind+eng"
+    )
 
-    return base64.b64encode(out.read()).decode()
+    return text.strip()
 
 
 # ======================
-# /ask COMMAND (HTML)
+# /ask COMMAND
 # ======================
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
         return
 
-    prompt = " ".join(context.args) if context.args else ""
+    user_prompt = " ".join(context.args) if context.args else ""
+    ocr_text = ""
 
-    # cek reply ke foto
-    image_b64 = None
+    # 📸 reply ke foto → OCR
     if msg.reply_to_message and msg.reply_to_message.photo:
+        status = await msg.reply_text("👁️ Lagi baca gambar (OCR)...")
         photo = msg.reply_to_message.photo[-1]
-        image_b64 = await _download_photo_as_base64(
+        ocr_text = await extract_text_from_photo(
             context.bot,
             photo.file_id
         )
 
-    if not prompt and not image_b64:
+        if not ocr_text:
+            return await status.edit_text("❌ Teks di gambar tidak terbaca.")
+
+        await status.edit_text("🧠 Lagi mikir jawabannya...")
+
+    # ❌ kosong semua
+    if not user_prompt and not ocr_text:
         return await msg.reply_text(
             "<b>❓ Ask AI</b>\n\n"
             "<b>Contoh:</b>\n"
-            "<code>/ask jelaskan apa itu relativitas</code>\n"
+            "<code>/ask jelaskan relativitas</code>\n"
             "<i>atau reply foto lalu ketik /ask</i>",
             parse_mode="HTML"
         )
 
-    status_msg = await msg.reply_text(
-        "🧠 <i>Memproses...</i>",
-        parse_mode="HTML"
-    )
+    # 🧠 final prompt
+    if ocr_text and user_prompt:
+        final_prompt = (
+            "Berikut teks hasil OCR dari sebuah gambar:\n\n"
+            f"{ocr_text}\n\n"
+            f"Pertanyaan user:\n{user_prompt}"
+        )
+    elif ocr_text:
+        final_prompt = (
+            "Berikut teks hasil OCR dari sebuah gambar. "
+            "Tolong jelaskan atau ringkas isinya:\n\n"
+            f"{ocr_text}"
+        )
+    else:
+        final_prompt = user_prompt
+
+    status_msg = await msg.reply_text("🧠 <i>Memproses...</i>", parse_mode="HTML")
 
     try:
-        raw_result = await openrouter_ask_think(prompt, image_b64)
-
-        clean_result = sanitize_ai_output(raw_result)
-        chunks = split_message(clean_result, max_length=3800)
+        raw = await openrouter_ask_think(final_prompt)
+        clean = sanitize_ai_output(raw)
+        chunks = split_message(clean, max_length=3800)
 
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
-
-        for part in chunks[1:]:
+        for ch in chunks[1:]:
             await asyncio.sleep(0.25)
-            await msg.reply_text(part, parse_mode="HTML")
+            await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
         await status_msg.edit_text(
