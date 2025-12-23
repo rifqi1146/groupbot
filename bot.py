@@ -669,6 +669,73 @@ async def resolve_tiktok_url(url: str) -> str:
         raise RuntimeError("Invalid TikTok URL")
     return final
 
+#autodl
+async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg or not msg.text:
+        return
+
+    text = msg.text.strip()
+
+    # skip command
+    if text.startswith("/"):
+        return
+
+    # detect platform
+    if not (is_tiktok(text) or is_instagram(text)):
+        return
+
+    # generate dl_id
+    dl_id = uuid.uuid4().hex[:8]
+    DL_CACHE[dl_id] = {
+        "url": text,
+        "user": msg.from_user.id,
+        "reply_to": msg.message_id
+    }
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬇️ Download", callback_data=f"dlask:{dl_id}:go"),
+            InlineKeyboardButton("❌ Close", callback_data=f"dlask:{dl_id}:close"),
+        ]
+    ])
+
+    await msg.reply_text(
+    (
+        "📎 <b>Link terdeteksi</b>\n\n"
+        "Mau download video ini?\n"
+        "Pilih tombol di bawah 👇"
+    ),
+    reply_markup=keyboard,
+    parse_mode="HTML"
+    )
+    
+async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    _, dl_id, action = q.data.split(":", 2)
+    data = DL_CACHE.get(dl_id)
+
+    if not data:
+        return await q.edit_message_text("❌ Request expired")
+
+    if q.from_user.id != data["user"]:
+        return await q.answer("Bukan request lu", show_alert=True)
+
+    if action == "close":
+        DL_CACHE.pop(dl_id, None)
+        return await q.message.delete()
+
+    # action == go → lanjut ke flow lama
+    DL_CACHE.pop(dl_id, None)
+
+    await q.edit_message_text(
+        "📥 <b>Pilih format</b>",
+        reply_markup=dl_keyboard(dl_id),
+        parse_mode="HTML"
+    )
+    
 #douyin api
 async def douyin_download(url, bot, chat_id, status_msg_id):
     uid = uuid.uuid4().hex
@@ -2796,7 +2863,11 @@ def main():
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
-
+    
+    
+    #hebdnrjenndndn
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect), block=False), group=-1)
+    
     # ==================================================
     # INLINE CALLBACKS
     # ==================================================
@@ -2804,6 +2875,7 @@ def main():
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
+    app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
 
     # ==================================================
     # 💲 DOLLAR ROUTER
