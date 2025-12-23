@@ -485,22 +485,22 @@ async def get_asupan_fast(bot):
 # /asupan COMMAND
 # ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    
-    if chat.type == "private":
-        pass
+    chat = update.effective_chat
+    chat_id = chat.id
 
-    if not is_asupan_enabled(chat_id):
-        return await update.message.reply_text(
-            "🚫 Fitur asupan tidak tersedia di grup ini, pm @hirohitokiyoshi untuk mengaktifkan."
-        )
+    # ✅ PM selalu boleh
+    if chat.type != "private":
+        if not is_asupan_enabled(chat_id):
+            return await update.message.reply_text(
+                "🚫 Fitur asupan tidak tersedia di grup ini, pm @hirohitokiyoshi untuk mengaktifkan."
+            )
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
         data = await get_asupan_fast(context.bot)
 
-        await update.effective_chat.send_video(
+        await chat.send_video(
             video=data["file_id"],
             reply_to_message_id=update.message.message_id,
             reply_markup=asupan_keyboard(update.effective_user.id)
@@ -508,6 +508,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.delete()
 
+        # warm cache non-blocking
         context.application.create_task(
             warm_asupan_cache(context.bot)
         )
