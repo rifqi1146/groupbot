@@ -295,92 +295,84 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         return await msg.reply_text(
-            "❌ Gunakan:\n"
-            "<code>/weather jakarta</code>",
+            "❌ Contoh: <code>/weather jakarta</code>",
             parse_mode="HTML"
         )
 
     city = " ".join(context.args).strip()
     if not city:
-        return await msg.reply_text("❌ Nama kota tidak valid.")
-
-    url = f"https://wttr.in/{city}?format=j1"
+        return await msg.reply_text(
+            "❌ Contoh: <code>/weather jakarta</code>",
+            parse_mode="HTML"
+        )
 
     status_msg = await msg.reply_text(
-        f"🌤 <b>Mengambil cuaca:</b> <code>{html.escape(city.title())}</code>",
+        f"🌤 Mengambil cuaca untuk <b>{city.title()}</b>...",
         parse_mode="HTML"
     )
 
-    spinner_running = True
+    session = await get_http_session()
 
-    async def spinner():
-        i = 0
-        while spinner_running:
-            try:
-                await status_msg.edit_text(
-                    f"{WEATHER_SPIN_FRAMES[i % len(WEATHER_SPIN_FRAMES)]} "
-                    f"<b>Mengambil cuaca:</b> <code>{html.escape(city.title())}</code>",
-                    parse_mode="HTML"
-                )
-            except Exception:
-                pass
-            i += 1
-            await asyncio.sleep(0.7)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; TelegramBot)"
+    }
 
-    spin_task = context.application.create_task(spinner())
+    urls = [
+        f"http://wttr.in/{city}?format=j1",
+        f"https://wttr.in/{city}?format=j1",
+    ]
 
-    try:
-        session = await get_http_session()
-        async with session.get(url, timeout=15) as resp:
-            if resp.status != 200:
-                spinner_running = False
-                spin_task.cancel()
-                return await status_msg.edit_text("❌ Gagal mengambil data cuaca.")
+    data = None
 
-            data = await resp.json()
-
+    for url in urls:
         try:
-            current = data.get("current_condition", [])[0]
-            desc = current.get("weatherDesc", [{}])[0].get("value", "N/A")
-            temp = current.get("temp_C", "N/A")
-            feels = current.get("FeelsLikeC", "N/A")
-            humidity = current.get("humidity", "N/A")
-            wind = f"{current.get('windspeedKmph','N/A')} km/h ({current.get('winddir16Point','N/A')})"
-            cloud = current.get("cloudcover", "N/A")
-
-            astronomy = data.get("weather", [{}])[0].get("astronomy", [{}])[0]
-            sunrise = astronomy.get("sunrise", "N/A")
-            sunset = astronomy.get("sunset", "N/A")
+            async with session.get(
+                url,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    break
         except Exception:
-            spinner_running = False
-            spin_task.cancel()
-            return await status_msg.edit_text("❌ Gagal parsing data cuaca.")
+            continue
 
-        spinner_running = False
-        spin_task.cancel()
-
-        report = (
-            f"🌤 <b>Cuaca — {html.escape(city.title())}</b>\n\n"
-            f"🔎 <b>Kondisi:</b> {html.escape(desc)}\n"
-            f"🌡 <b>Suhu:</b> {temp}°C (Terasa {feels}°C)\n"
-            f"💧 <b>Kelembapan:</b> {humidity}%\n"
-            f"💨 <b>Angin:</b> {html.escape(wind)}\n"
-            f"☁️ <b>Awan:</b> {cloud}%\n\n"
-            f"🌅 <b>Matahari Terbit:</b> {sunrise}\n"
-            f"🌇 <b>Matahari Terbenam:</b> {sunset}\n\n"
-            f"📅 <i>{time.strftime('%Y-%m-%d %H:%M:%S')}</i>"
+    if not data:
+        return await status_msg.edit_text(
+            "❌ Gagal mengambil data cuaca.\n"
+            "Server cuaca sedang sibuk, coba lagi nanti."
         )
 
-        await status_msg.edit_text(report, parse_mode="HTML")
+    try:
+        current = data.get("current_condition", [{}])[0]
 
-    except asyncio.TimeoutError:
-        spinner_running = False
-        spin_task.cancel()
-        await status_msg.edit_text("❌ Timeout mengambil data cuaca.")
-    except Exception as e:
-        spinner_running = False
-        spin_task.cancel()
-        await status_msg.edit_text(f"❌ Error: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+        weather_desc = current.get("weatherDesc", [{"value": "N/A"}])[0]["value"]
+        temp_c = current.get("temp_C", "N/A")
+        feels = current.get("FeelsLikeC", "N/A")
+        humidity = current.get("humidity", "N/A")
+        wind = f"{current.get('windspeedKmph','N/A')} km/h ({current.get('winddir16Point','N/A')})"
+        cloud = current.get("cloudcover", "N/A")
+
+        astronomy = data.get("weather", [{}])[0].get("astronomy", [{}])[0]
+        sunrise = astronomy.get("sunrise", "N/A")
+        sunset = astronomy.get("sunset", "N/A")
+
+    except Exception:
+        return await status_msg.edit_text("❌ Error parsing data cuaca.")
+
+    report = (
+        f"🌤 <b>Weather — {city.title()}</b>\n\n"
+        f"🔎 Kondisi : {weather_desc}\n"
+        f"🌡 Suhu : {temp_c}°C (Terasa {feels}°C)\n"
+        f"💧 Kelembaban : {humidity}%\n"
+        f"💨 Angin : {wind}\n"
+        f"☁️ Awan : {cloud}%\n\n"
+        f"🌅 Sunrise : {sunrise}\n"
+        f"🌇 Sunset  : {sunset}\n\n"
+        f"🕒 Update : {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+    await status_msg.edit_text(report, parse_mode="HTML")
         
 #asupannnnn
 import aiohttp, random, logging, asyncio, time
