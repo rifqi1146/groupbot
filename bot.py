@@ -962,16 +962,51 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
-    session = await get_http_session()
+    path = None
 
     try:
-        # ===== TIKTOK =====
+        # =========================
+        # MP3 → PAKAI KODE LAMA
+        # =========================
+        if fmt_key == "mp3":
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text="🎵 <b>Mengambil audio...</b>",
+                parse_mode="HTML"
+            )
+
+            path = await ytdlp_download(
+                raw_url,
+                "mp3",
+                bot,
+                chat_id,
+                status_msg_id
+            )
+
+            if not path or not os.path.exists(path):
+                raise RuntimeError("Gagal extract audio")
+
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=path,
+                reply_to_message_id=reply_to,
+                disable_notification=True
+            )
+
+            await bot.delete_message(chat_id, status_msg_id)
+            return
+
+        # =========================
+        # VIDEO MODE
+        # =========================
         if is_tiktok(raw_url):
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
                 url = raw_url
 
+            session = await get_http_session()
             async with session.post(
                 "https://www.tikwm.com/api/",
                 data={"url": url}
@@ -983,7 +1018,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             d = data["data"]
 
-            # ===== SLIDESHOW / FOTO =====
+            # ===== SLIDESHOW =====
             if d.get("images"):
                 await bot.edit_message_text(
                     chat_id=chat_id,
@@ -999,29 +1034,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     reply_to_message_id=reply_to
                 )
 
-                # audio (kalau ada)
-                audio_url = extract_music_url(d.get("music"))
-                if audio_url:
+                # audio (kalau ada, bonus)
+                music = d.get("music", {})
+                audio_url = music.get("play_url")
+                if isinstance(audio_url, str):
                     await bot.send_audio(
                         chat_id=chat_id,
                         audio=audio_url,
                         reply_to_message_id=reply_to
                     )
-
-                await bot.delete_message(chat_id, status_msg_id)
-                return
-
-            # ===== VIDEO → MP3 =====
-            if fmt_key == "mp3":
-                audio_url = extract_music_url(d.get("music"))
-                if not audio_url:
-                    raise RuntimeError("Audio tidak tersedia")
-
-                await bot.send_audio(
-                    chat_id=chat_id,
-                    audio=audio_url,
-                    reply_to_message_id=reply_to
-                )
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
@@ -1035,27 +1056,33 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 chat_id=chat_id,
                 video=video_url,
                 supports_streaming=True,
-                reply_to_message_id=reply_to
+                reply_to_message_id=reply_to,
+                disable_notification=True
             )
 
             await bot.delete_message(chat_id, status_msg_id)
             return
 
-        # ===== INSTAGRAM / FALLBACK =====
-        path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
+        # =========================
+        # INSTAGRAM / FALLBACK
+        # =========================
+        path = await ytdlp_download(
+            raw_url,
+            "video",
+            bot,
+            chat_id,
+            status_msg_id
+        )
 
-        if fmt_key == "mp3":
-            await bot.send_audio(
-                chat_id=chat_id,
-                audio=path,
-                reply_to_message_id=reply_to
-            )
-        else:
-            await bot.send_video(
-                chat_id=chat_id,
-                video=path,
-                reply_to_message_id=reply_to
-            )
+        if not path or not os.path.exists(path):
+            raise RuntimeError("Download gagal")
+
+        await bot.send_video(
+            chat_id=chat_id,
+            video=path,
+            reply_to_message_id=reply_to,
+            disable_notification=True
+        )
 
         await bot.delete_message(chat_id, status_msg_id)
 
@@ -1068,6 +1095,13 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             )
         except Exception:
             pass
+
+    finally:
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
