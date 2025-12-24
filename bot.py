@@ -2751,7 +2751,6 @@ def main():
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ask", ask_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
-    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
     app.add_handler(CommandHandler("enablensfw", enablensfw_cmd))
     app.add_handler(CommandHandler("disablensfw", disablensfw_cmd))
     app.add_handler(CommandHandler("nsfwlist", nsfwlist_cmd))
