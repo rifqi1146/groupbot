@@ -170,37 +170,64 @@ def run_speedtest():
 def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
     start = 135
     end = 405
-    angle = start + (min(value, max_val) / max_val) * (end - start)
+    ratio = min(value / max_val, 1.0)
+    angle = start + ratio * (end - start)
 
-    # arc bg
+    # background
     draw.arc(
         [cx-r, cy-r, cx+r, cy+r],
         start=start, end=end,
-        fill=(60,60,60), width=18
+        fill=(45,45,45), width=26
     )
-    # arc fg
+
+    # foreground
     draw.arc(
         [cx-r, cy-r, cx+r, cy+r],
         start=start, end=angle,
-        fill=(0,170,255), width=18
+        fill=(0,170,255), width=26
     )
 
-    draw.text((cx, cy-10), f"{value:.1f}",
-              fill="white", anchor="mm", font=FONT_BIG)
-    draw.text((cx, cy+35), unit,
-              fill=(180,180,180), anchor="mm", font=FONT_UNIT)
-    draw.text((cx, cy+r-10), label,
-              fill=(160,160,160), anchor="mm", font=FONT_LABEL)
+    # value
+    draw.text(
+        (cx, cy-8),
+        f"{value:.1f}",
+        fill="white",
+        anchor="mm",
+        font=FONT_BIG
+    )
+
+    # unit
+    draw.text(
+        (cx, cy+32),
+        unit,
+        fill=(170,170,170),
+        anchor="mm",
+        font=FONT_UNIT
+    )
+
+    # label
+    draw.text(
+        (cx, cy+r-5),
+        label,
+        fill=(140,140,140),
+        anchor="mm",
+        font=FONT_LABEL
+    )
 
 #image generator
 def generate_image(data):
-    img = Image.new("RGB", (IMG_W, IMG_H), (18,18,18))
+    img = Image.new("RGB", (IMG_W, IMG_H), (14,14,14))
     draw = ImageDraw.Draw(img)
 
+    # subtle gradient top
+    for y in range(120):
+        shade = 14 + int(y * 0.15)
+        draw.line((0, y, IMG_W, y), fill=(shade, shade, shade))
+
     # header
-    draw.text((40, 30), "Speedtest",
+    draw.text((40, 28), "Speedtest",
               fill="white", font=FONT_TITLE)
-    draw.text((40, 65), "by Ookla",
+    draw.text((40, 64), "by Ookla",
               fill=(0,170,255), font=FONT_SMALL)
 
     ping = data["ping"]["latency"]
@@ -209,26 +236,40 @@ def generate_image(data):
     isp  = data["isp"]
     srv  = data["server"]["location"]
 
-    # ping
-    draw.text((IMG_W-40, 40),
-              f"PING  {ping:.1f} ms",
-              fill="white", anchor="ra", font=FONT_LABEL)
+    # ping (top right)
+    draw.text(
+        (IMG_W-40, 38),
+        f"PING  {ping:.1f} ms",
+        fill="white",
+        anchor="ra",
+        font=FONT_LABEL
+    )
 
-    # gauges
-    draw_gauge(draw, 300, 300, 130, down, 500, "DOWNLOAD", "Mbps")
-    draw_gauge(draw, 600, 300, 130, up,   200, "UPLOAD",   "Mbps")
+    # gauges (centered)
+    draw_gauge(draw, 300, 300, 140, down, 800, "DOWNLOAD", "Mbps")
+    draw_gauge(draw, 600, 300, 140, up,   800, "UPLOAD",   "Mbps")
 
     # footer
-    draw.text((40, IMG_H-60),
-              f"Server: {srv}",
-              fill=(180,180,180), font=FONT_SMALL)
-    draw.text((40, IMG_H-35),
-              f"Provider: {isp}",
-              fill=(180,180,180), font=FONT_SMALL)
+    draw.text(
+        (40, IMG_H-60),
+        f"Server: {srv}",
+        fill=(180,180,180),
+        font=FONT_SMALL
+    )
+    draw.text(
+        (40, IMG_H-35),
+        f"Provider: {isp}",
+        fill=(180,180,180),
+        font=FONT_SMALL
+    )
 
-    draw.text((IMG_W-40, IMG_H-35),
-              time.strftime("%Y-%m-%d %H:%M:%S"),
-              fill=(120,120,120), anchor="ra", font=FONT_SMALL)
+    draw.text(
+        (IMG_W-40, IMG_H-35),
+        time.strftime("%Y-%m-%d %H:%M:%S"),
+        fill=(130,130,130),
+        anchor="ra",
+        font=FONT_SMALL
+    )
 
     bio = BytesIO()
     bio.name = "speedtest.png"
