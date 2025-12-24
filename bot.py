@@ -1032,6 +1032,8 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     return None
 
 #worker
+from telegram import InputMediaPhoto
+
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
@@ -1050,7 +1052,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
 
-                # cek video rusak / static
                 if is_invalid_video(path):
                     try:
                         os.remove(path)
@@ -1060,13 +1061,12 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             except Exception:
                 # =========================
-                # 2️⃣ STATIC / DOUYIN GAGAL
-                # → KIRIM SEMUA FOTO SLIDESHOW
+                # 2️⃣ STATIC → MEDIA GROUP
                 # =========================
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="🖼️ Slideshow terdeteksi, mengirim semua foto...",
+                    text="🖼️ Slideshow terdeteksi, mengirim album...",
                     parse_mode="HTML"
                 )
 
@@ -1079,18 +1079,23 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     data = await r.json()
 
                 images = data.get("data", {}).get("images") or []
-
                 if not images:
                     raise RuntimeError("Foto slideshow tidak ditemukan")
 
-                for i, img in enumerate(images, start=1):
-                    await bot.send_photo(
-                        chat_id=chat_id,
-                        photo=img,
-                        caption=f"📷 Slide {i}/{len(images)}" if len(images) > 1 else None,
-                        reply_to_message_id=reply_to if i == 1 else None
+                media = []
+                for i, img in enumerate(images):
+                    media.append(
+                        InputMediaPhoto(
+                            media=img,
+                            caption="📸 Slideshow TikTok" if i == 0 else None
+                        )
                     )
-                    await asyncio.sleep(0.35)  # anti flood
+
+                await bot.send_media_group(
+                    chat_id=chat_id,
+                    media=media,
+                    reply_to_message_id=reply_to
+                )
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
@@ -1108,7 +1113,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             raise RuntimeError("Platform tidak didukung")
 
         # =========================
-        # 3️⃣ FLOW NORMAL (VIDEO / MP3)
+        # 3️⃣ FLOW NORMAL
         # =========================
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
