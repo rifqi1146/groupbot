@@ -735,6 +735,20 @@ def normalize_url(text: str) -> str:
     text = text.split("\n")[0]
     return text
     
+async def extract_tiktok_thumb(url: str) -> str | None:
+    session = await get_http_session()
+    async with session.post(
+        "https://www.tikwm.com/api/",
+        data={"url": url},
+        timeout=aiohttp.ClientTimeout(total=15)
+    ) as r:
+        data = await r.json()
+
+    if data.get("code") != 0:
+        return None
+
+    return data["data"].get("cover") or data["data"].get("origin_cover")
+    
 async def resolve_tiktok_url(url: str) -> str:
     session = await get_http_session()
     async with session.get(
@@ -936,7 +950,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
     try:
         if is_tiktok(raw_url):
-        
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
@@ -944,14 +957,53 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
+                if os.path.getsize(path) < 200_000:
+                    raise RuntimeError("Static TikTok detected")
+
             except Exception:
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="⚠️ Download gagal, fallback ke yt-dlp...",
+                    text="🎵 Konten static terdeteksi, kirim thumbnail + audio...",
                     parse_mode="HTML"
                 )
-                path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+
+                thumb = None
+                try:
+                    session = await get_http_session()
+                    async with session.post(
+                        "https://www.tikwm.com/api/",
+                        data={"url": url},
+                        timeout=aiohttp.ClientTimeout(total=15)
+                    ) as r:
+                        data = await r.json()
+                        if data.get("code") == 0:
+                            thumb = (
+                                data["data"].get("cover")
+                                or data["data"].get("origin_cover")
+                            )
+                except Exception:
+                    pass
+
+                audio = await ytdlp_download(url, "mp3", bot, chat_id, status_msg_id)
+
+                if thumb:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=thumb,
+                        caption="🖼️ Thumbnail TikTok",
+                        reply_to_message_id=reply_to
+                    )
+
+                await bot.send_audio(
+                    chat_id=chat_id,
+                    audio=audio,
+                    reply_to_message_id=reply_to,
+                    disable_notification=True
+                )
+
+                await bot.delete_message(chat_id, status_msg_id)
+                return
 
         elif is_instagram(raw_url):
             path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
