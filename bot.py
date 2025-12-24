@@ -679,25 +679,23 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    if not q.message.reply_to_message:
-        return await q.edit_message_text("❌ Request expired")
+    _, dl_id, action = q.data.split(":", 2)
 
-    src_msg_id = q.message.reply_to_message.message_id
-    data = DL_CACHE.get(src_msg_id)
-
+    data = DL_CACHE.get(dl_id)
     if not data:
         return await q.edit_message_text("❌ Request expired")
 
     if q.from_user.id != data["user"]:
         return await q.answer("Bukan request lu", show_alert=True)
 
-    if q.data == "dlask:close":
-        DL_CACHE.pop(src_msg_id, None)
+    if action == "close":
+        DL_CACHE.pop(dl_id, None)
         return await q.message.delete()
 
+    # lanjut ke pilih format
     await q.edit_message_text(
         "📥 <b>Pilih format</b>",
-        reply_markup=dl_keyboard(str(src_msg_id)),
+        reply_markup=dl_keyboard(dl_id),
         parse_mode="HTML"
     )
 
@@ -911,10 +909,9 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    _, src_msg_id, choice = q.data.split(":", 2)
-    src_msg_id = int(src_msg_id)
+    _, dl_id, choice = q.data.split(":", 2)
 
-    data = DL_CACHE.get(src_msg_id)
+    data = DL_CACHE.get(dl_id)
     if not data:
         return await q.edit_message_text("❌ Data expired")
 
@@ -922,10 +919,10 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.answer("Bukan request lu", show_alert=True)
 
     if choice == "cancel":
-        DL_CACHE.pop(src_msg_id, None)
+        DL_CACHE.pop(dl_id, None)
         return await q.edit_message_text("❌ Dibatalkan")
 
-    DL_CACHE.pop(src_msg_id, None)
+    DL_CACHE.pop(dl_id, None)
 
     await q.edit_message_text(
         f"⏳ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
