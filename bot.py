@@ -2034,6 +2034,7 @@ HELP_TEXT = {
         "• 🏓 /ping — Check bot latency\n"
         "• ⬇️ /dl — Download videos (TikTok / Instagram)\n"
         "• 😋 /asupan — Random TikTok content\n"
+        "• ☁️ /weather — Weather information\n"
         "• 🔍 /gsearch — Search something on Google\n"
         "• 🌐 /tr — Translate text to another language\n"
     ),
