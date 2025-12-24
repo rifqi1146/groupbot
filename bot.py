@@ -94,6 +94,28 @@ ASUPAN_STARTUP_CHAT_ID = int(os.getenv("ASUPAN_STARTUP_CHAT_ID", "0")) or None
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
 
+#nsfw
+import json, os
+
+NSFW_FILE = "data/nsfw_groups.json"
+os.makedirs("data", exist_ok=True)
+
+def _load_nsfw():
+    if not os.path.exists(NSFW_FILE):
+        return {"groups": []}
+    with open(NSFW_FILE, "r") as f:
+        return json.load(f)
+
+def _save_nsfw(data):
+    with open(NSFW_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def is_nsfw_allowed(chat_id: int, chat_type: str) -> bool:
+    if chat_type == "private":
+        return True
+    data = _load_nsfw()
+    return chat_id in data["groups"]
+    
 # json helper
 def load_json_file(path, default):
     try:
@@ -1760,28 +1782,80 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text("❌ Semua translator gagal")
     
 #nsfw
+async def enablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Owner only.")
+
+    if chat.type == "private":
+        return await update.message.reply_text("ℹ️ NSFW selalu aktif di PM.")
+
+    data = _load_nsfw()
+    if chat.id not in data["groups"]:
+        data["groups"].append(chat.id)
+        _save_nsfw(data)
+
+    await update.message.reply_text("🔞 NSFW diaktifkan di grup ini.")
+    
+async def disablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Owner only.")
+
+    data = _load_nsfw()
+    if chat.id in data["groups"]:
+        data["groups"].remove(chat.id)
+        _save_nsfw(data)
+
+    await update.message.reply_text("🚫 NSFW dimatikan di grup ini.")
+    
+async def nsfwlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Owner only.")
+
+    data = _load_nsfw()
+    if not data["groups"]:
+        return await update.message.reply_text("📭 Tidak ada grup NSFW.")
+
+    text = "🔞 <b>NSFW Whitelisted Groups</b>\n\n"
+    for gid in data["groups"]:
+        text += f"• <code>{gid}</code>\n"
+
+    await update.message.reply_text(text, parse_mode="HTML")
+    
 async def pollinations_generate_nsfw(update, context):
     """
-    Usage: $nsfw <prompt>  OR  reply to message with image prompt
-    Sends generated NSFW image (use with caution).
+    Usage: /nsfw <prompt>
     """
-    em = _emo()
     msg = update.message
     if not msg:
         return
 
+    chat = update.effective_chat
+
+    # 🚫 cek izin NSFW
+    if not is_nsfw_allowed(chat.id, chat.type):
+        return await msg.reply_text(
+            "🚫 NSFW tidak tersedia di grup ini.\n"
+            "PM bot atau hubungi @hirohitokiyoshi untuk mengaktifkan."
+        )
+
+    em = _emo()
+
     prompt = _extract_prompt_from_update(update, context)
     if not prompt:
-        await msg.reply_text(
-            f"{em} {bold('Contoh:')} {code('$nsfw waifu nude di kamar mandi')}",
+        return await msg.reply_text(
+            f"{em} {bold('Contoh:')} {code('/nsfw waifu anime')}",
             parse_mode="HTML"
         )
-        return
 
     uid = msg.from_user.id if msg.from_user else 0
     if uid and not _can(uid):
-        await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
-        return
+        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
 
     try:
         status_msg = await msg.reply_text(
@@ -1800,57 +1874,32 @@ async def pollinations_generate_nsfw(update, context):
 
     try:
         session = await get_http_session()
-        async with session.get(
-            url,
-            timeout=aiohttp.ClientTimeout(total=60)
-        ) as resp:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
             if resp.status != 200:
-                short = (await resp.text())[:400]
-                if status_msg:
-                    await status_msg.edit_text(
-                        f"{em} ❌ Gagal ambil gambar. Status: {resp.status}\n<code>{html.escape(short)}</code>",
-                        parse_mode="HTML"
-                    )
-                else:
-                    await msg.reply_text(f"{em} ❌ Gagal ambil gambar. Status: {resp.status}")
-                return
+                err = (await resp.text())[:300]
+                return await status_msg.edit_text(
+                    f"{em} ❌ Gagal generate.\n<code>{html.escape(err)}</code>",
+                    parse_mode="HTML"
+                )
 
-            content = await resp.read()
-            bio = io.BytesIO(content)
-            bio.name = "pollinations_nsfw.png"
-            bio.seek(0)
-
-            caption_html = f"🔞 {bold('NSFW')}\n🖼️ Prompt: {code(prompt)}"
+            bio = io.BytesIO(await resp.read())
+            bio.name = "nsfw.png"
 
             await msg.reply_photo(
                 photo=bio,
-                caption=caption_html,
+                caption=f"🔞 {bold('NSFW')}\n🖼️ Prompt: {code(prompt)}",
                 parse_mode="HTML"
             )
 
-            try:
-                if status_msg:
-                    await status_msg.delete()
-            except Exception:
-                pass
+            if status_msg:
+                await status_msg.delete()
 
-    except asyncio.TimeoutError:
-        if status_msg:
-            await status_msg.edit_text(f"{em} ❌ Timeout saat generate gambar.")
-        else:
-            await msg.reply_text(f"{em} ❌ Timeout saat generate gambar.")
     except Exception as e:
-        short = str(e)
-        if len(short) > 400:
-            short = short[:400] + "..."
         if status_msg:
             await status_msg.edit_text(
-                f"{em} ❌ Error: <code>{html.escape(short)}</code>",
+                f"{em} ❌ Error: <code>{html.escape(str(e))}</code>",
                 parse_mode="HTML"
             )
-        else:
-            await msg.reply_text(f"{em} ❌ Error: {short}")
-        logger.exception("pollinations_generate_nsfw failed")
 
 #-kawaiiii
 def kawaii_emo() -> str:
@@ -2702,7 +2751,10 @@ def main():
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ask", ask_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
-
+    app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw))
+    app.add_handler(CommandHandler("enablensfw", enablensfw_cmd))
+    app.add_handler(CommandHandler("disablensfw", disablensfw_cmd))
+    app.add_handler(CommandHandler("nsfwlist", nsfwlist_cmd))
     app.add_handler(CommandHandler("speedtest", speedtest_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ip", ip_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("whoisdomain", whoisdomain_cmd, block=False), group=-1)
