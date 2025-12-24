@@ -966,7 +966,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
     try:
         # =========================
-        # MP3 → PAKAI KODE LAMA
+        # MP3 → SELALU yt-dlp (AMAN)
         # =========================
         if fmt_key == "mp3":
             await bot.edit_message_text(
@@ -1027,22 +1027,29 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     parse_mode="HTML"
                 )
 
-                # foto pertama
+                # kirim foto pertama
                 await bot.send_photo(
                     chat_id=chat_id,
                     photo=d["images"][0],
                     reply_to_message_id=reply_to
                 )
 
-                # audio (kalau ada, bonus)
-                music = d.get("music", {})
-                audio_url = music.get("play_url")
-                if isinstance(audio_url, str):
+                # audio slideshow → yt-dlp (bukan Douyin)
+                audio_path = await ytdlp_download(
+                    raw_url,
+                    "mp3",
+                    bot,
+                    chat_id,
+                    status_msg_id
+                )
+
+                if audio_path and os.path.exists(audio_path):
                     await bot.send_audio(
                         chat_id=chat_id,
-                        audio=audio_url,
+                        audio=audio_path,
                         reply_to_message_id=reply_to
                     )
+                    os.remove(audio_path)
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
