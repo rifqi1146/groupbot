@@ -972,22 +972,43 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except Exception:
                 url = raw_url
 
-            # === VIDEO MODE → DOUYIN PRIORITY ===
-            if fmt_key != "mp3":
-                try:
-                    path = await douyin_download(url, bot, chat_id, status_msg_id)
-                except Exception:
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=status_msg_id,
-                        text="⚠️ Douyin gagal, fallback ke yt-dlp...",
-                        parse_mode="HTML"
-                    )
-                    path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+            # === CEK APAKAH SLIDESHOW (STATIC) ===
+            is_static = False
+            try:
+                session = await get_http_session()
+                async with session.post(
+                    "https://www.tikwm.com/api/",
+                    data={"url": url},
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as r:
+                    meta = await r.json()
 
-            # === MP3 MODE → YTDLP ONLY (STABIL) ===
-            else:
+                if meta.get("code") == 0:
+                    if meta.get("data", {}).get("images"):
+                        is_static = True
+            except Exception:
+                pass  # kalau gagal cek, anggap video biasa
+
+            # === STATIC → YTDLP (BIAR THUMBNAIL AMAN) ===
+            if is_static:
                 path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+
+            # === VIDEO MP4 → DOUYIN ===
+            else:
+                if fmt_key != "mp3":
+                    try:
+                        path = await douyin_download(url, bot, chat_id, status_msg_id)
+                    except Exception:
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=status_msg_id,
+                            text="⚠️ Douyin gagal, fallback ke yt-dlp...",
+                            parse_mode="HTML"
+                        )
+                        path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+                else:
+                    # mp3 selalu yt-dlp
+                    path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
         elif is_instagram(raw_url):
             path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
