@@ -735,19 +735,33 @@ def normalize_url(text: str) -> str:
     text = text.split("\n")[0]
     return text
     
-def is_valid_video(path: str) -> bool:
+import subprocess, json
+
+def is_invalid_video(path: str) -> bool:
     try:
-        import subprocess
-        r = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=codec_type", "-of", "csv=p=0", path],
+        p = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=duration,width,height",
+                "-of", "json",
+                path
+            ],
             capture_output=True,
-            text=True,
-            timeout=5
+            text=True
         )
-        return bool(r.stdout.strip())
+        info = json.loads(p.stdout)
+        stream = info["streams"][0]
+
+        duration = float(stream.get("duration", 0))
+        width = int(stream.get("width", 0))
+        height = int(stream.get("height", 0))
+
+        # video static / rusak
+        return duration < 1.5 or width == 0 or height == 0
     except Exception:
-        return False
+        return True
         
 def extract_music_url(music):
     if not music:
@@ -1003,12 +1017,24 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except Exception:
                 url = raw_url  # fallback aman
 
-            # ===== PRIORITAS DOUYIN =====
+            # =========================
+            # PRIORITAS: DOUYIN
+            # =========================
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
 
+                # 🔥 DETEKSI VIDEO STATIC / HITAM
+                if is_invalid_video(path):
+                    try:
+                        os.remove(path)
+                    except:
+                        pass
+                    raise RuntimeError("Static video detected")
+
             except Exception:
-                # douyin gagal / static
+                # =========================
+                # FALLBACK: YT-DLP
+                # =========================
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
@@ -1024,8 +1050,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     status_msg_id
                 )
 
-                # ===== PATCH UTAMA =====
-                # yt-dlp gak ngasilin file → kirim thumbnail aja
+                # =========================
+                # YT-DLP GAGAL → KIRIM THUMBNAIL
+                # =========================
                 if not path or not os.path.exists(path):
                     thumb = await ytdlp_get_thumbnail(url)
 
@@ -1060,7 +1087,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         else:
             raise RuntimeError("Platform tidak didukung")
 
-        # ===== NORMAL FLOW (VIDEO / MP3) =====
+        # =========================
+        # NORMAL FLOW (VIDEO / MP3)
+        # =========================
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
 
