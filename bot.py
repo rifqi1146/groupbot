@@ -946,109 +946,102 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
-    video_path = None
-    audio_path = None
+    session = await get_http_session()
 
     try:
+        # resolve tiktok
         if is_tiktok(raw_url):
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
                 url = raw_url
 
-            # ambil metadata (thumbnail)
-            session = await get_http_session()
+            # === DOUYIN API ===
             async with session.post(
                 "https://www.tikwm.com/api/",
                 data={"url": url},
-                timeout=aiohttp.ClientTimeout(total=15)
+                timeout=aiohttp.ClientTimeout(total=20)
             ) as r:
-                meta = await r.json()
+                data = await r.json()
 
-            if meta.get("code") != 0:
-                raise RuntimeError("Gagal ambil metadata TikTok")
+            if data.get("code") != 0:
+                raise RuntimeError("Douyin API error")
 
-            data = meta["data"]
-            thumb = data.get("cover") or data.get("origin_cover")
+            d = data["data"]
 
-            # download video (sementara)
-            video_path = await douyin_download(url, bot, chat_id, status_msg_id)
-
-            # 🔥 STATIC DETECTION (PAKAI DURASI & SIZE)
-            if os.path.getsize(video_path) < 300_000:
+            # ===== SLIDESHOW / STATIC =====
+            if d.get("images"):
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="🎵 Konten audio-only terdeteksi",
+                    text="🖼️ <b>Konten slideshow terdeteksi</b>\nMengirim foto + audio...",
                     parse_mode="HTML"
                 )
 
-                # 1️⃣ kirim thumbnail
-                if thumb:
-                    await bot.send_photo(
+                # kirim cover / first image
+                img_url = d["images"][0]
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=img_url,
+                    reply_to_message_id=reply_to
+                )
+
+                # kirim audio
+                music = d.get("music", {}).get("play_url")
+                if music:
+                    await bot.send_audio(
                         chat_id=chat_id,
-                        photo=thumb,
-                        caption="🖼️ Thumbnail TikTok",
+                        audio=music,
                         reply_to_message_id=reply_to
                     )
 
-                # 2️⃣ extract audio PASTI MP3
-                audio_path = await ytdlp_download(
-                    url,
-                    "mp3",
-                    bot,
-                    chat_id,
-                    status_msg_id
-                )
+                await bot.delete_message(chat_id, status_msg_id)
+                return
 
-                # 3️⃣ kirim audio (BUKAN VIDEO)
+            # ===== VIDEO NORMAL =====
+            if fmt_key == "mp3":
+                audio_url = d.get("music", {}).get("play_url")
+                if not audio_url:
+                    raise RuntimeError("Audio tidak ditemukan")
+
                 await bot.send_audio(
                     chat_id=chat_id,
-                    audio=audio_path,
-                    reply_to_message_id=reply_to,
-                    disable_notification=True
+                    audio=audio_url,
+                    reply_to_message_id=reply_to
                 )
-
                 await bot.delete_message(chat_id, status_msg_id)
-                return  # ⛔ STOP TOTAL
+                return
 
-        # ======================
-        # VIDEO NORMAL
-        # ======================
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="⬆️ <b>Mengunggah video...</b>",
-            parse_mode="HTML"
-        )
+            # video normal
+            video_url = d.get("play")
+            if not video_url:
+                raise RuntimeError("Video URL kosong")
 
-        await bot.send_video(
-            chat_id=chat_id,
-            video=video_path,
-            supports_streaming=True,
-            reply_to_message_id=reply_to,
-            disable_notification=True
-        )
+            await bot.send_video(
+                chat_id=chat_id,
+                video=video_url,
+                supports_streaming=True,
+                reply_to_message_id=reply_to
+            )
+            await bot.delete_message(chat_id, status_msg_id)
+            return
+
+        # === INSTAGRAM / FALLBACK ===
+        path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
+
+        if fmt_key == "mp3":
+            await bot.send_audio(chat_id, path, reply_to_message_id=reply_to)
+        else:
+            await bot.send_video(chat_id, path, reply_to_message_id=reply_to)
 
         await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text=f"❌ Gagal: {e}"
-            )
-        except Exception:
-            pass
-
-    finally:
-        for p in (video_path, audio_path):
-            if p and os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text=f"❌ Gagal: {e}"
+        )
 
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
