@@ -123,20 +123,17 @@ from telegram.ext import ContextTypes
 
 OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
 
-async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+import sys, os
 
-    if user_id != OWNER_ID:
+async def restart_cmd(update, context):
+    if update.effective_user.id != OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
-    await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
+    await update.message.reply_text("♻️ Restarting bot...")
 
-    # flush logs
     sys.stdout.flush()
     sys.stderr.flush()
-
-    # restart process
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+    sys.exit(0)
     
 #speedtest
 import os, json, time, math, asyncio, subprocess, logging
