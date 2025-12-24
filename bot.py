@@ -648,7 +648,9 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (is_tiktok(text) or is_instagram(text)):
         return
 
-    DL_CACHE[msg.message_id] = {
+    dl_id = uuid.uuid4().hex[:8]
+
+    DL_CACHE[dl_id] = {
         "url": text,
         "user": update.effective_user.id,
         "reply_to": msg.message_id,
@@ -657,8 +659,8 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⬇️ Download", callback_data="dlask:go"),
-            InlineKeyboardButton("❌ Close", callback_data="dlask:close"),
+            InlineKeyboardButton("⬇️ Download", callback_data=f"dlask:{dl_id}:go"),
+            InlineKeyboardButton("❌ Close", callback_data=f"dlask:{dl_id}:close"),
         ]
     ])
 
