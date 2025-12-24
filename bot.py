@@ -946,7 +946,8 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
-    path = None
+    video_path = None
+    audio_path = None
 
     try:
         if is_tiktok(raw_url):
@@ -955,7 +956,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except Exception:
                 url = raw_url
 
-            # ambil metadata TikTok dulu (thumbnail dll)
+            # ambil metadata (thumbnail)
             session = await get_http_session()
             async with session.post(
                 "https://www.tikwm.com/api/",
@@ -970,16 +971,11 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             data = meta["data"]
             thumb = data.get("cover") or data.get("origin_cover")
 
-            # download video
-            try:
-                path = await douyin_download(url, bot, chat_id, status_msg_id)
-            except Exception:
-                path = await ytdlp_download(url, "mp3", bot, chat_id, status_msg_id)
+            # download video (sementara)
+            video_path = await douyin_download(url, bot, chat_id, status_msg_id)
 
-            # =========================
-            # 🔥 DETEKSI STATIC VIDEO
-            # =========================
-            if path and os.path.getsize(path) < 250_000:
+            # 🔥 STATIC DETECTION (PAKAI DURASI & SIZE)
+            if os.path.getsize(video_path) < 300_000:
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
@@ -996,53 +992,43 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         reply_to_message_id=reply_to
                     )
 
-                # 2️⃣ download audio murni
-                audio = await ytdlp_download(url, "mp3", bot, chat_id, status_msg_id)
+                # 2️⃣ extract audio PASTI MP3
+                audio_path = await ytdlp_download(
+                    url,
+                    "mp3",
+                    bot,
+                    chat_id,
+                    status_msg_id
+                )
 
+                # 3️⃣ kirim audio (BUKAN VIDEO)
                 await bot.send_audio(
                     chat_id=chat_id,
-                    audio=audio,
+                    audio=audio_path,
                     reply_to_message_id=reply_to,
                     disable_notification=True
                 )
 
                 await bot.delete_message(chat_id, status_msg_id)
-                return  # ⛔ STOP total, jangan lanjut send_video
+                return  # ⛔ STOP TOTAL
 
-        elif is_instagram(raw_url):
-            path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
-
-        else:
-            raise RuntimeError("Platform tidak didukung")
-
-        # =========================
+        # ======================
         # VIDEO NORMAL
-        # =========================
-        if not path or not os.path.exists(path):
-            raise RuntimeError("Download gagal")
-
+        # ======================
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=status_msg_id,
-            text="⬆️ <b>Mengunggah...</b>",
+            text="⬆️ <b>Mengunggah video...</b>",
             parse_mode="HTML"
         )
 
-        if fmt_key == "mp3":
-            await bot.send_audio(
-                chat_id=chat_id,
-                audio=path,
-                reply_to_message_id=reply_to,
-                disable_notification=True
-            )
-        else:
-            await bot.send_video(
-                chat_id=chat_id,
-                video=path,
-                supports_streaming=True,
-                reply_to_message_id=reply_to,
-                disable_notification=True
-            )
+        await bot.send_video(
+            chat_id=chat_id,
+            video=video_path,
+            supports_streaming=True,
+            reply_to_message_id=reply_to,
+            disable_notification=True
+        )
 
         await bot.delete_message(chat_id, status_msg_id)
 
@@ -1057,11 +1043,12 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             pass
 
     finally:
-        if path and os.path.exists(path):
-            try:
-                os.remove(path)
-            except Exception:
-                pass
+        for p in (video_path, audio_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
