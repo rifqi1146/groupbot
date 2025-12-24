@@ -1032,6 +1032,9 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     return None
 
 #worker
+# =========================
+# WORKER (FINAL FIX)
+# =========================
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
@@ -1042,65 +1045,46 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
-                url = raw_url  # fallback aman
+                url = raw_url
 
             # =========================
-            # PRIORITAS: DOUYIN
+            # 1️⃣ COBA DOUYIN (PRIORITAS)
             # =========================
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
 
-                # 🔥 DETEKSI VIDEO STATIC / HITAM
+                # cek video rusak / static
                 if is_invalid_video(path):
                     try:
                         os.remove(path)
                     except:
                         pass
-                    raise RuntimeError("Static video detected")
+                    raise RuntimeError("Static video")
 
             except Exception:
                 # =========================
-                # FALLBACK: YT-DLP
+                # 2️⃣ STATIC / DOUYIN GAGAL
+                # → KIRIM THUMBNAIL DOUYIN
                 # =========================
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="⚠️ Douyin gagal / static, fallback ke yt-dlp...",
+                    text="🖼️ Konten static terdeteksi, mengirim thumbnail...",
                     parse_mode="HTML"
                 )
 
-                path = await ytdlp_download(
-                    url,
-                    fmt_key,
-                    bot,
-                    chat_id,
-                    status_msg_id
+                thumb = await extract_tiktok_thumb(url)
+                if not thumb:
+                    raise RuntimeError("Thumbnail tidak ditemukan")
+
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=thumb,
+                    reply_to_message_id=reply_to
                 )
 
-                # =========================
-                # YT-DLP GAGAL → KIRIM THUMBNAIL
-                # =========================
-                if not path or not os.path.exists(path):
-                    thumb = await ytdlp_get_thumbnail(url)
-
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=status_msg_id,
-                        text="🖼️ Konten static terdeteksi, mengirim thumbnail...",
-                        parse_mode="HTML"
-                    )
-
-                    if thumb:
-                        await bot.send_photo(
-                            chat_id=chat_id,
-                            photo=thumb,
-                            reply_to_message_id=reply_to
-                        )
-                    else:
-                        raise RuntimeError("Thumbnail tidak ditemukan")
-
-                    await bot.delete_message(chat_id, status_msg_id)
-                    return
+                await bot.delete_message(chat_id, status_msg_id)
+                return
 
         elif is_instagram(raw_url):
             path = await ytdlp_download(
@@ -1115,7 +1099,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             raise RuntimeError("Platform tidak didukung")
 
         # =========================
-        # NORMAL FLOW (VIDEO / MP3)
+        # 3️⃣ FLOW NORMAL (VIDEO / MP3)
         # =========================
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
@@ -1152,14 +1136,14 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 message_id=status_msg_id,
                 text=f"❌ Gagal: {e}"
             )
-        except Exception:
+        except:
             pass
 
     finally:
         if path and os.path.exists(path):
             try:
                 os.remove(path)
-            except Exception:
+            except:
                 pass
 
 #dl cmd
