@@ -970,55 +970,23 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
-                url = raw_url  # fallback
+                url = raw_url
 
-            # ===============================
-            # CEK STATIC / SLIDESHOW (THUMB ONLY)
-            # ===============================
-            try:
-                session = await get_http_session()
-                async with session.post(
-                    "https://www.tikwm.com/api/",
-                    data={"url": url}
-                ) as r:
-                    data = await r.json()
+            # === VIDEO MODE → DOUYIN PRIORITY ===
+            if fmt_key != "mp3":
+                try:
+                    path = await douyin_download(url, bot, chat_id, status_msg_id)
+                except Exception:
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text="⚠️ Douyin gagal, fallback ke yt-dlp...",
+                        parse_mode="HTML"
+                    )
+                    path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
-                if data.get("code") == 0:
-                    d = data.get("data", {})
-                    if d.get("images"):
-                        thumb = d["images"][0]
-
-                        await bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=status_msg_id,
-                            text="🖼️ <b>Konten foto terdeteksi</b>",
-                            parse_mode="HTML"
-                        )
-
-                        await bot.send_photo(
-                            chat_id=chat_id,
-                            photo=thumb,
-                            reply_to_message_id=reply_to,
-                            disable_notification=True
-                        )
-
-                        await bot.delete_message(chat_id, status_msg_id)
-                        return
-            except Exception:
-                pass  # kalau cek static gagal, lanjut normal
-
-            # ===============================
-            # VIDEO / MP3 NORMAL (FLOW LAMA)
-            # ===============================
-            try:
-                path = await douyin_download(url, bot, chat_id, status_msg_id)
-            except Exception:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text="⚠️ Download gagal, fallback ke yt-dlp...",
-                    parse_mode="HTML"
-                )
+            # === MP3 MODE → YTDLP ONLY (STABIL) ===
+            else:
                 path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
         elif is_instagram(raw_url):
