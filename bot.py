@@ -965,131 +965,93 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     path = None
 
     try:
-        # =========================
-        # MP3 → SELALU yt-dlp (AMAN)
-        # =========================
+        if is_tiktok(raw_url):
+
+            try:
+                url = await resolve_tiktok_url(raw_url)
+            except Exception:
+                url = raw_url  # fallback
+
+            # ===============================
+            # CEK STATIC / SLIDESHOW (THUMB ONLY)
+            # ===============================
+            try:
+                session = await get_http_session()
+                async with session.post(
+                    "https://www.tikwm.com/api/",
+                    data={"url": url}
+                ) as r:
+                    data = await r.json()
+
+                if data.get("code") == 0:
+                    d = data.get("data", {})
+                    if d.get("images"):
+                        thumb = d["images"][0]
+
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=status_msg_id,
+                            text="🖼️ <b>Konten foto terdeteksi</b>",
+                            parse_mode="HTML"
+                        )
+
+                        await bot.send_photo(
+                            chat_id=chat_id,
+                            photo=thumb,
+                            reply_to_message_id=reply_to,
+                            disable_notification=True
+                        )
+
+                        await bot.delete_message(chat_id, status_msg_id)
+                        return
+            except Exception:
+                pass  # kalau cek static gagal, lanjut normal
+
+            # ===============================
+            # VIDEO / MP3 NORMAL (FLOW LAMA)
+            # ===============================
+            try:
+                path = await douyin_download(url, bot, chat_id, status_msg_id)
+            except Exception:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text="⚠️ Download gagal, fallback ke yt-dlp...",
+                    parse_mode="HTML"
+                )
+                path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+
+        elif is_instagram(raw_url):
+            path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
+
+        else:
+            raise RuntimeError("Platform tidak didukung")
+
+        if not path or not os.path.exists(path):
+            raise RuntimeError("Download gagal")
+
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="⬆️ <b>Mengunggah...</b>",
+            parse_mode="HTML"
+        )
+
         if fmt_key == "mp3":
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text="🎵 <b>Mengambil audio...</b>",
-                parse_mode="HTML"
-            )
-
-            path = await ytdlp_download(
-                raw_url,
-                "mp3",
-                bot,
-                chat_id,
-                status_msg_id
-            )
-
-            if not path or not os.path.exists(path):
-                raise RuntimeError("Gagal extract audio")
-
             await bot.send_audio(
                 chat_id=chat_id,
                 audio=path,
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
-
-            await bot.delete_message(chat_id, status_msg_id)
-            return
-
-        # =========================
-        # VIDEO MODE
-        # =========================
-        if is_tiktok(raw_url):
-            try:
-                url = await resolve_tiktok_url(raw_url)
-            except Exception:
-                url = raw_url
-
-            session = await get_http_session()
-            async with session.post(
-                "https://www.tikwm.com/api/",
-                data={"url": url}
-            ) as r:
-                data = await r.json()
-
-            if data.get("code") != 0:
-                raise RuntimeError("Douyin API error")
-
-            d = data["data"]
-
-            # ===== SLIDESHOW =====
-            if d.get("images"):
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text="🖼️ <b>Slideshow terdeteksi</b>\nMengirim foto + audio...",
-                    parse_mode="HTML"
-                )
-
-                # kirim foto pertama
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=d["images"][0],
-                    reply_to_message_id=reply_to
-                )
-
-                # audio slideshow → yt-dlp (bukan Douyin)
-                audio_path = await ytdlp_download(
-                    raw_url,
-                    "mp3",
-                    bot,
-                    chat_id,
-                    status_msg_id
-                )
-
-                if audio_path and os.path.exists(audio_path):
-                    await bot.send_audio(
-                        chat_id=chat_id,
-                        audio=audio_path,
-                        reply_to_message_id=reply_to
-                    )
-                    os.remove(audio_path)
-
-                await bot.delete_message(chat_id, status_msg_id)
-                return
-
-            # ===== VIDEO NORMAL =====
-            video_url = d.get("play")
-            if not video_url:
-                raise RuntimeError("Video URL kosong")
-
+        else:
             await bot.send_video(
                 chat_id=chat_id,
-                video=video_url,
+                video=path,
                 supports_streaming=True,
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
-
-            await bot.delete_message(chat_id, status_msg_id)
-            return
-
-        # =========================
-        # INSTAGRAM / FALLBACK
-        # =========================
-        path = await ytdlp_download(
-            raw_url,
-            "video",
-            bot,
-            chat_id,
-            status_msg_id
-        )
-
-        if not path or not os.path.exists(path):
-            raise RuntimeError("Download gagal")
-
-        await bot.send_video(
-            chat_id=chat_id,
-            video=path,
-            reply_to_message_id=reply_to,
-            disable_notification=True
-        )
 
         await bot.delete_message(chat_id, status_msg_id)
 
