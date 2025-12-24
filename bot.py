@@ -735,6 +735,22 @@ def normalize_url(text: str) -> str:
     text = text.split("\n")[0]
     return text
     
+def extract_music_url(music):
+    if not music:
+        return None
+
+    play = music.get("play_url") if isinstance(music, dict) else None
+
+    if isinstance(play, str):
+        return play
+
+    if isinstance(play, dict):
+        urls = play.get("url_list")
+        if isinstance(urls, list) and urls:
+            return urls[0]
+
+    return None
+    
 async def extract_tiktok_thumb(url: str) -> str | None:
     session = await get_http_session()
     async with session.post(
@@ -949,18 +965,16 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     session = await get_http_session()
 
     try:
-        # resolve tiktok
+        # ===== TIKTOK =====
         if is_tiktok(raw_url):
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
                 url = raw_url
 
-            # === DOUYIN API ===
             async with session.post(
                 "https://www.tikwm.com/api/",
-                data={"url": url},
-                timeout=aiohttp.ClientTimeout(total=20)
+                data={"url": url}
             ) as r:
                 data = await r.json()
 
@@ -969,50 +983,50 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             d = data["data"]
 
-            # ===== SLIDESHOW / STATIC =====
+            # ===== SLIDESHOW / FOTO =====
             if d.get("images"):
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="🖼️ <b>Konten slideshow terdeteksi</b>\nMengirim foto + audio...",
+                    text="🖼️ <b>Slideshow terdeteksi</b>\nMengirim foto + audio...",
                     parse_mode="HTML"
                 )
 
-                # kirim cover / first image
-                img_url = d["images"][0]
+                # foto pertama
                 await bot.send_photo(
                     chat_id=chat_id,
-                    photo=img_url,
+                    photo=d["images"][0],
                     reply_to_message_id=reply_to
                 )
 
-                # kirim audio
-                music = d.get("music", {}).get("play_url")
-                if music:
+                # audio (kalau ada)
+                audio_url = extract_music_url(d.get("music"))
+                if audio_url:
                     await bot.send_audio(
                         chat_id=chat_id,
-                        audio=music,
+                        audio=audio_url,
                         reply_to_message_id=reply_to
                     )
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
 
-            # ===== VIDEO NORMAL =====
+            # ===== VIDEO → MP3 =====
             if fmt_key == "mp3":
-                audio_url = d.get("music", {}).get("play_url")
+                audio_url = extract_music_url(d.get("music"))
                 if not audio_url:
-                    raise RuntimeError("Audio tidak ditemukan")
+                    raise RuntimeError("Audio tidak tersedia")
 
                 await bot.send_audio(
                     chat_id=chat_id,
                     audio=audio_url,
                     reply_to_message_id=reply_to
                 )
+
                 await bot.delete_message(chat_id, status_msg_id)
                 return
 
-            # video normal
+            # ===== VIDEO NORMAL =====
             video_url = d.get("play")
             if not video_url:
                 raise RuntimeError("Video URL kosong")
@@ -1023,25 +1037,37 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 supports_streaming=True,
                 reply_to_message_id=reply_to
             )
+
             await bot.delete_message(chat_id, status_msg_id)
             return
 
-        # === INSTAGRAM / FALLBACK ===
+        # ===== INSTAGRAM / FALLBACK =====
         path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
 
         if fmt_key == "mp3":
-            await bot.send_audio(chat_id, path, reply_to_message_id=reply_to)
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=path,
+                reply_to_message_id=reply_to
+            )
         else:
-            await bot.send_video(chat_id, path, reply_to_message_id=reply_to)
+            await bot.send_video(
+                chat_id=chat_id,
+                video=path,
+                reply_to_message_id=reply_to
+            )
 
         await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text=f"❌ Gagal: {e}"
-        )
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"❌ Gagal: {e}"
+            )
+        except Exception:
+            pass
 
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
