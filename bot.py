@@ -331,7 +331,7 @@ async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
 
     if user.id != OWNER_ID:
-        return await update.message.reply_text("❌ Lu bukan owner.")
+        return await update.message.reply_text("❌ Owner only.")
 
     ASUPAN_ENABLED_CHATS.add(chat.id)
     save_asupan_groups()
@@ -343,7 +343,7 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chat = update.effective_chat
 
     if user.id != OWNER_ID:
-        return await update.message.reply_text("❌ Lu bukan owner.")
+        return await update.message.reply_text("❌ Owner only.")
 
     ASUPAN_ENABLED_CHATS.discard(chat.id)
     save_asupan_groups()
@@ -354,7 +354,7 @@ async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if user.id != OWNER_ID:
-        return await update.message.reply_text("❌ Lu bukan owner.")
+        return await update.message.reply_text("❌ Owner only.")
 
     if not ASUPAN_ENABLED_CHATS:
         return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
@@ -1837,7 +1837,6 @@ async def pollinations_generate_nsfw(update, context):
 
     chat = update.effective_chat
 
-    # 🚫 cek izin NSFW
     if not is_nsfw_allowed(chat.id, chat.type):
         return await msg.reply_text(
             "🚫 NSFW tidak tersedia di grup ini.\n"
@@ -1867,7 +1866,7 @@ async def pollinations_generate_nsfw(update, context):
 
     boosted = (
         f"{prompt}, extremely detailed, NSFW, nude, hentai, erotic, adult, "
-        "highly detailed skin, soft lighting"
+        "soft lighting, bdsm"
     )
     encoded = urllib.parse.quote(boosted)
     url = f"https://image.pollinations.ai/prompt/{encoded}"
