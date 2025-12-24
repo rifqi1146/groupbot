@@ -765,6 +765,23 @@ def extract_music_url(music):
 
     return None
     
+async def ytdlp_get_thumbnail(url: str) -> str | None:
+    cmd = [
+        "/opt/yt-dlp/userbot/yt-dlp",
+        "--skip-download",
+        "--print", "%(thumbnail)s",
+        url
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL
+    )
+
+    out = (await proc.stdout.read()).decode().strip()
+    return out if out.startswith("http") else None
+    
 async def extract_tiktok_thumb(url: str) -> str | None:
     session = await get_http_session()
     async with session.post(
@@ -980,35 +997,70 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
     try:
         if is_tiktok(raw_url):
+
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
-                url = raw_url  # fallback short link
+                url = raw_url  # fallback aman
 
-            # === TRY DOUYIN FIRST ===
+            # ===== PRIORITAS DOUYIN =====
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
 
-                # 🔴 VALIDASI VIDEO (INI KUNCI)
-                if fmt_key != "mp3" and not is_valid_video(path):
-                    raise RuntimeError("Static / invalid video from douyin")
-
             except Exception:
-                # === FALLBACK KE YT-DLP ===
+                # douyin gagal / static
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
                     text="⚠️ Douyin gagal / static, fallback ke yt-dlp...",
                     parse_mode="HTML"
                 )
-                path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
+
+                path = await ytdlp_download(
+                    url,
+                    fmt_key,
+                    bot,
+                    chat_id,
+                    status_msg_id
+                )
+
+                # ===== PATCH UTAMA =====
+                # yt-dlp gak ngasilin file → kirim thumbnail aja
+                if not path or not os.path.exists(path):
+                    thumb = await ytdlp_get_thumbnail(url)
+
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text="🖼️ Konten static terdeteksi, mengirim thumbnail...",
+                        parse_mode="HTML"
+                    )
+
+                    if thumb:
+                        await bot.send_photo(
+                            chat_id=chat_id,
+                            photo=thumb,
+                            reply_to_message_id=reply_to
+                        )
+                    else:
+                        raise RuntimeError("Thumbnail tidak ditemukan")
+
+                    await bot.delete_message(chat_id, status_msg_id)
+                    return
 
         elif is_instagram(raw_url):
-            path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
+            path = await ytdlp_download(
+                raw_url,
+                fmt_key,
+                bot,
+                chat_id,
+                status_msg_id
+            )
 
         else:
             raise RuntimeError("Platform tidak didukung")
 
+        # ===== NORMAL FLOW (VIDEO / MP3) =====
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
 
@@ -1019,7 +1071,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             parse_mode="HTML"
         )
 
-        # === SEND RESULT ===
         if fmt_key == "mp3":
             await bot.send_audio(
                 chat_id=chat_id,
