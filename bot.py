@@ -729,6 +729,12 @@ def is_instagram(url: str) -> bool:
     return "instagram.com" in url or "instagr.am" in url
 
 #resolve tt
+def normalize_url(text: str) -> str:
+    text = text.strip()
+    text = text.replace("\u200b", "")
+    text = text.split("\n")[0]
+    return text
+    
 async def resolve_tiktok_url(url: str) -> str:
     session = await get_http_session()
     async with session.get(
@@ -739,8 +745,11 @@ async def resolve_tiktok_url(url: str) -> str:
         final = str(r.url)
 
     final = final.split("?")[0]
-    if "/video/" not in final:
+
+    # jangan terlalu ketat
+    if "tiktok.com" not in final:
         raise RuntimeError("Invalid TikTok URL")
+
     return final
 
 #auto detect
@@ -749,7 +758,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.text:
         return
 
-    text = msg.text.strip()
+    text = normalize_url(msg.text)
 
     if text.startswith("/"):
         return
@@ -926,9 +935,13 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     path = None
 
     try:
-
         if is_tiktok(raw_url):
-            url = await resolve_tiktok_url(raw_url)
+        
+            try:
+                url = await resolve_tiktok_url(raw_url)
+            except Exception:
+                url = raw_url  # fallback
+
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
             except Exception:
@@ -966,8 +979,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         else:
             await bot.send_video(
                 chat_id=chat_id,
-                video=path,                    
-                supports_streaming=True,      
+                video=path,
+                supports_streaming=True,
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
