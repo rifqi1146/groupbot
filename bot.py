@@ -735,6 +735,20 @@ def normalize_url(text: str) -> str:
     text = text.split("\n")[0]
     return text
     
+def is_valid_video(path: str) -> bool:
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", path],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
+        
 def extract_music_url(music):
     if not music:
         return None
@@ -966,29 +980,28 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
     try:
         if is_tiktok(raw_url):
-
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
-                url = raw_url
+                url = raw_url  # fallback short link
 
-            # === MP3 SELALU YTDLP (PALING STABIL) ===
-            if fmt_key == "mp3":
+            # === TRY DOUYIN FIRST ===
+            try:
+                path = await douyin_download(url, bot, chat_id, status_msg_id)
+
+                # 🔴 VALIDASI VIDEO (INI KUNCI)
+                if fmt_key != "mp3" and not is_valid_video(path):
+                    raise RuntimeError("Static / invalid video from douyin")
+
+            except Exception:
+                # === FALLBACK KE YT-DLP ===
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text="⚠️ Douyin gagal / static, fallback ke yt-dlp...",
+                    parse_mode="HTML"
+                )
                 path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
-
-            else:
-                # === VIDEO → COBA DOUYIN DULU ===
-                try:
-                    path = await douyin_download(url, bot, chat_id, status_msg_id)
-                except Exception:
-                    # === GAGAL → ANGKAT JADI STATIC / FALLBACK ===
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=status_msg_id,
-                        text="⚠️ Mode video gagal, fallback ke yt-dlp...",
-                        parse_mode="HTML"
-                    )
-                    path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
         elif is_instagram(raw_url):
             path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
@@ -1006,6 +1019,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             parse_mode="HTML"
         )
 
+        # === SEND RESULT ===
         if fmt_key == "mp3":
             await bot.send_audio(
                 chat_id=chat_id,
