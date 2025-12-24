@@ -50,7 +50,7 @@ try:
 except Exception:
     psutil = None
 
-#html
+#----HTML helper
 def bold(text: str) -> str:
     return f"<b>{html.escape(text)}</b>"
 
@@ -93,8 +93,7 @@ ASUPAN_STARTUP_CHAT_ID = int(os.getenv("ASUPAN_STARTUP_CHAT_ID", "0")) or None
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
-
-# json helper
+# ---- simple JSON helpers ----
 def load_json_file(path, default):
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -131,7 +130,7 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
 
-    # flush logs
+    # flush logs biar aman
     sys.stdout.flush()
     sys.stderr.flush()
 
@@ -149,7 +148,9 @@ log = logging.getLogger(__name__)
 
 IMG_W, IMG_H = 900, 520
 
-#util
+# =========================
+# UTIL
+# =========================
 def is_owner(user_id: int) -> bool:
     return user_id == OWNER_ID
 
@@ -167,6 +168,9 @@ def run_speedtest():
         raise RuntimeError("Speedtest failed")
     return json.loads(p.stdout)
 
+# =========================
+# DRAW OOKLA STYLE IMAGE
+# =========================
 def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
     start = 135
     end = 405
@@ -192,7 +196,9 @@ def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
     draw.text((cx, cy+r-10), label,
               fill=(160,160,160), anchor="mm", font=FONT_LABEL)
 
-#image generator
+# =========================
+# IMAGE GENERATOR
+# =========================
 def generate_image(data):
     img = Image.new("RGB", (IMG_W, IMG_H), (18,18,18))
     draw = ImageDraw.Draw(img)
@@ -245,7 +251,9 @@ FONT_UNIT  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 FONT_LABEL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
 FONT_SMALL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
 
-#cmd speedtest
+# =========================
+# COMMAND
+# =========================
 async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         return await update.message.reply_text("❌ Owner only")
@@ -265,7 +273,9 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status.edit_text(f"❌ Failed: {e}")
         
-#asupannnnn
+# ======================
+# ASUPAN (FILE_ID MODE - NO FLICKER + COOLDOWN)
+# ======================
 import aiohttp, random, logging, asyncio, time
 from telegram import (
     InlineKeyboardButton,
@@ -281,7 +291,7 @@ ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 10
 ASUPAN_FETCHING = False
 
-# cooldown user
+# cooldown user (user_id: last_time)
 ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
 
@@ -350,7 +360,9 @@ async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="HTML")
     
 
-#inline keyboard
+# ======================
+# INLINE KEYBOARD
+# ======================
 def asupan_keyboard(owner_id: int):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
@@ -425,6 +437,9 @@ async def fetch_asupan_tikwm():
 
     return random.choice(videos)["play"]
 
+# ======================
+# PREFETCH FILE_ID (AMAN)
+# ======================
 async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
@@ -449,7 +464,9 @@ async def warm_asupan_cache(bot):
     finally:
         ASUPAN_FETCHING = False
 
-#get asupan
+# ======================
+# GET ASUPAN FAST
+# ======================
 async def get_asupan_fast(bot):
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
@@ -464,11 +481,14 @@ async def get_asupan_fast(bot):
     await msg.delete()
     return {"file_id": file_id}
 
-#cmd asupan
+# ======================
+# /asupan COMMAND
+# ======================
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     chat_id = chat.id
 
+    # ✅ PM selalu boleh
     if chat.type != "private":
         if not is_asupan_enabled(chat_id):
             return await update.message.reply_text(
@@ -488,6 +508,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.delete()
 
+        # warm cache non-blocking
         context.application.create_task(
             warm_asupan_cache(context.bot)
         )
@@ -495,7 +516,9 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
 
-#asupan callback
+# ======================
+# CALLBACK: GANTI ASUPAN (SMOOTH + COOLDOWN)
+# ======================
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
@@ -507,6 +530,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("❌ Invalid callback", show_alert=True)
         return
 
+    # 🚫 BUKAN PEMILIK ASUPAN
     if user_id != owner_id:
         await q.answer(
             "❌ Bukan asupan lu dongo!",
@@ -514,6 +538,9 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ======================
+    # COOLDOWN CHECK
+    # ======================
     now = time.time()
     last = ASUPAN_COOLDOWN.get(user_id, 0)
     if now - last < ASUPAN_COOLDOWN_SEC:
@@ -563,7 +590,7 @@ async def send_asupan_once(bot):
         log.warning(f"[ASUPAN STARTUP] Failed: {e}")
 
 async def startup_tasks(app):
-    await asyncio.sleep(3)
+    await asyncio.sleep(3)  # kasih waktu bot hidup
     if not ASUPAN_STARTUP_CHAT_ID:
         log.warning("[ASUPAN STARTUP] Chat_id is empty")
         return
@@ -573,7 +600,9 @@ async def startup_tasks(app):
     except Exception as e:
         log.warning(f"[ASUPAN STARTUP] {e}")
                         
-#dl config
+# =====================
+# DL CONFIG (DOUYIN PRIMARY + YTDLP FALLBACK)
+# =====================
 import asyncio, aiohttp, os, uuid, time, re, logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -585,7 +614,9 @@ os.makedirs(TMP_DIR, exist_ok=True)
 
 MAX_TG_SIZE = 1900 * 1024 * 1024
 
-#format
+# =====================
+# FORMAT MAP
+# =====================
 DL_FORMATS = {
     "video": {"label": "🎥 Video"},
     "mp3": {"label": "🎵 MP3"},
@@ -593,7 +624,9 @@ DL_FORMATS = {
 
 DL_CACHE = {}
 
-#ux
+# =====================
+# UI
+# =====================
 def progress_bar(percent: float, length: int = 10) -> str:
     filled = int(percent / 100 * length)
     return "█" * filled + "░" * (length - filled)
@@ -609,7 +642,9 @@ def dl_keyboard(dl_id: str):
         ]
     ])
 
-#platform check
+# =====================
+# PLATFORM CHECK
+# =====================
 def is_youtube(url: str) -> bool:
     return any(x in url for x in ("youtube.com", "youtu.be", "music.youtube.com"))
 
@@ -634,7 +669,9 @@ async def resolve_tiktok_url(url: str) -> str:
         raise RuntimeError("Invalid TikTok URL")
     return final
 
-#auto detect
+# =====================
+# AUTO DL DETECT (FIXED)
+# =====================
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
@@ -642,12 +679,15 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = msg.text.strip()
 
+    # skip command
     if text.startswith("/"):
         return
 
+    # detect platform
     if not (is_tiktok(text) or is_instagram(text)):
         return
 
+    # simpan cache pakai MESSAGE_ID (INI KUNCI)
     DL_CACHE[msg.message_id] = {
         "url": text,
         "user": update.effective_user.id,
@@ -672,11 +712,14 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-#ask callback
+# =====================
+# DL ASK CALLBACK (FIXED)
+# =====================
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
+    # pesan link asli = reply_to_message
     if not q.message.reply_to_message:
         return await q.edit_message_text("❌ Request expired")
 
@@ -693,6 +736,7 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DL_CACHE.pop(src_msg_id, None)
         return await q.message.delete()
 
+    # lanjut ke pilihan format
     await q.edit_message_text(
         "📥 <b>Pilih format</b>",
         reply_markup=dl_keyboard(str(src_msg_id)),
@@ -706,6 +750,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
 
     session = await get_http_session()
 
+    # ---- REQUEST DOUYIN API ----
     async with session.post(
         "https://www.tikwm.com/api/",
         data={"url": url},
@@ -720,6 +765,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     if not video_url:
         raise RuntimeError("Video URL kosong")
 
+    # ---- DOWNLOAD VIDEO ----
     async with session.get(video_url) as r:
         total = int(r.headers.get("Content-Length", 0))
         downloaded = 0
@@ -745,7 +791,9 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
 
     return out_path
 
-#fallback ytdlp
+# =====================
+# YT-DLP FALLBACK (IG + TT)
+# =====================
 async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     vid = re.search(r"/(video|reel)/(\d+)", url)
     vid = vid.group(2) if vid else uuid.uuid4().hex
@@ -811,13 +859,15 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 
     return None
 
-#worker
+# =====================
+# WORKER
+# =====================
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
 
     try:
-
+        # TikTok → Douyin → yt-dlp
         if is_tiktok(raw_url):
             url = await resolve_tiktok_url(raw_url)
             try:
@@ -831,6 +881,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 )
                 path = await ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id)
 
+        # Instagram → yt-dlp langsung
         elif is_instagram(raw_url):
             path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
 
@@ -847,6 +898,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             parse_mode="HTML"
         )
 
+        # =========================
+        # FAST UPLOAD PATCH
+        # =========================
         if fmt_key == "mp3":
             await bot.send_audio(
                 chat_id=chat_id,
@@ -857,8 +911,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         else:
             await bot.send_video(
                 chat_id=chat_id,
-                video=path,                    
-                supports_streaming=True,      
+                video=path,                     # ⬅️ PATH LANGSUNG
+                supports_streaming=True,        # ⬅️ WAJIB
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
@@ -882,7 +936,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except Exception:
                 pass
 
-#dl cmd
+# =====================
+# /dl COMMAND
+# =====================
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("❌ Kirim link TikTok / IG")
@@ -904,7 +960,9 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-#dl callback
+# =====================
+# DL CALLBACK (FORMAT PICK)
+# =====================
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -923,6 +981,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DL_CACHE.pop(src_msg_id, None)
         return await q.edit_message_text("❌ Dibatalkan")
 
+    # hapus cache sebelum download (ANTI DOUBLE CLICK)
     DL_CACHE.pop(src_msg_id, None)
 
     await q.edit_message_text(
@@ -1005,11 +1064,11 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
 
     return final_chunks
 
-# sanitize 
 def sanitize_ai_output(text: str) -> str:
     if not text:
         return ""
 
+    # normalize newline
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     # kill HTML line breaks early
@@ -1111,6 +1170,7 @@ async def extract_text_from_photo(bot, file_id: str) -> str:
 
     img = Image.open(bio).convert("RGB")
 
+    # OCR (Indonesia + English)
     text = pytesseract.image_to_string(
         img,
         lang="ind+eng"
@@ -1128,11 +1188,13 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_prompt = " ".join(context.args) if context.args else ""
     ocr_text = ""
 
+    # SATU status message dari awal
     status_msg = await msg.reply_text(
         "🧠 <i>Memproses...</i>",
         parse_mode="HTML"
     )
 
+    # 📸 reply ke foto → OCR
     if msg.reply_to_message and msg.reply_to_message.photo:
         await status_msg.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
 
@@ -1150,6 +1212,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status_msg.edit_text("🧠 <i>Lagi mikir jawabannya...</i>", parse_mode="HTML")
 
+    # ❌ kosong semua
     if not user_prompt and not ocr_text:
         return await status_msg.edit_text(
             "<b>❓ Ask AI</b>\n\n"
@@ -1159,6 +1222,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
+    # 🧠 final prompt
     if ocr_text and user_prompt:
         final_prompt = (
             "Berikut teks hasil dari sebuah gambar:\n\n"
@@ -1179,6 +1243,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, max_length=3800)
 
+        # edit message yang sama
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
 
         for ch in chunks[1:]:
@@ -1191,7 +1256,9 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         
-#groq
+# ---- GROQ + Pollinations
+logger = logging.getLogger(__name__)
+
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -1286,7 +1353,7 @@ def split_message(text: str, max_length: int = 4000) -> List[str]:
                 final.append(c[i:i+max_length])
     return final
 
-#helper
+# ---- helper
 def _extract_prompt_from_update(update, context) -> str:
     """
     Try common sources:
@@ -1295,6 +1362,7 @@ def _extract_prompt_from_update(update, context) -> str:
      - reply_to_message.text or caption
     Returns empty string if none found.
     """
+    # 1) context.args (set by your router)
     try:
         if getattr(context, "args", None):
             joined = " ".join(context.args).strip()
@@ -1303,11 +1371,12 @@ def _extract_prompt_from_update(update, context) -> str:
     except Exception:
         pass
 
+    # 2) if message text contains command and args -> take remainder
     try:
         msg = update.message
         if msg and getattr(msg, "text", None):
             txt = msg.text.strip()
-           
+            # remove leading $ and command
             if txt.startswith("$"):
                 parts = txt[1:].strip().split(maxsplit=1)
                 if len(parts) > 1:
@@ -1315,6 +1384,7 @@ def _extract_prompt_from_update(update, context) -> str:
     except Exception:
         pass
 
+    # 3) if replied to a message with text/caption
     try:
         if msg and getattr(msg, "reply_to_message", None):
             rm = msg.reply_to_message
@@ -1327,7 +1397,7 @@ def _extract_prompt_from_update(update, context) -> str:
 
     return ""
     
-#helper url
+# ---- helper: find urls in text ----
 _URL_RE = re.compile(
     r"(https?://[^\s'\"<>]+)", re.IGNORECASE
 )
@@ -1337,6 +1407,8 @@ def _find_urls(text: str) -> List[str]:
         return []
     return _URL_RE.findall(text)
 
+
+# ---- helper
 async def _fetch_and_extract_article(
     url: str,
     timeout: int = 15
@@ -1357,9 +1429,11 @@ async def _fetch_and_extract_article(
 
         soup = BeautifulSoup(html_text, "html.parser")
 
+        # remove scripts, styles, noscript
         for tag in soup(["script", "style", "noscript", "iframe", "svg", "canvas", "picture"]):
             tag.decompose()
 
+        # remove nodes that look like ads, sponsors, cookie banners, paywall overlays
         ad_indicators = [
             "ad", "ads", "advert", "sponsor", "cookie", "consent", "subscription",
             "subscribe", "paywall", "related", "promo", "banner", "popup", "overlay"
@@ -1376,6 +1450,7 @@ async def _fetch_and_extract_article(
             except Exception:
                 continue
 
+        # prefer <article>, <main>, or biggest <div> containing many <p>
         title = None
         try:
             if soup.title and soup.title.string:
@@ -1435,7 +1510,7 @@ async def _fetch_and_extract_article(
         return None, None
 
 
-# handler
+# ---- GROQ handler
 async def groq_query(update, context):
     em = _emo()
     msg = update.message
@@ -1444,9 +1519,12 @@ async def groq_query(update, context):
 
     prompt = _extract_prompt_from_update(update, context)
 
+    # =========================
+    # STATUS MESSAGE (EARLY)
+    # =========================
     status_msg = None
 
-    #ocr
+    # ---- OCR SUPPORT ----
     try:
         if msg.reply_to_message and msg.reply_to_message.photo:
             status_msg = await msg.reply_text(f"{em} 👀 Lagi lihat gambar...")
@@ -1501,6 +1579,9 @@ async def groq_query(update, context):
         await status_msg.edit_text(f"{em} ❌ Prompt kosong.")
         return
 
+    # =========================
+    # URL ARTICLE HANDLING
+    # =========================
     urls = _find_urls(prompt)
     if urls:
         first_url = urls[0]
@@ -1514,6 +1595,9 @@ async def groq_query(update, context):
                     "Ringkas dengan bullet point + kesimpulan singkat."
                 )
 
+    # =========================
+    # GROQ REQUEST (HTTP GLOBAL)
+    # =========================
     try:
         session = await get_http_session()
         async with session.post(
@@ -1564,7 +1648,7 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-#gemini
+# ---- GEMINI ONLY (multi-model) ----
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 GEMINI_MODELS = {
@@ -1682,7 +1766,9 @@ async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
 
 
-#translator
+# ======================
+# 🔤 SIMPLE TRANSLATOR (/tr) — FIXED
+# ======================
 from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -1690,6 +1776,7 @@ import html
 
 DEFAULT_LANG = "en"
 
+# daftar kode bahasa umum (biar aman & cepat)
 VALID_LANGS = {
     "en","id","ja","ko","zh","fr","de","es","it","ru","ar","hi","pt","tr",
     "vi","th","ms","nl","pl","uk","sv","fi"
@@ -1700,20 +1787,29 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_lang = DEFAULT_LANG
     text = ""
 
+    # ======================
+    # PARSE ARGUMENT (FIXED)
+    # ======================
     if args:
         first = args[0].lower()
 
+        # /tr en hello bro
         if first in VALID_LANGS and len(args) >= 2:
             target_lang = first
             text = " ".join(args[1:])
 
+        # /tr en (reply)
         elif first in VALID_LANGS and len(args) == 1:
             target_lang = first
 
+        # /tr apa kabar bro?
         else:
             target_lang = DEFAULT_LANG
             text = " ".join(args)
 
+    # ======================
+    # AMBIL TEXT
+    # ======================
     if not text:
         if update.message.reply_to_message and update.message.reply_to_message.text:
             text = update.message.reply_to_message.text
@@ -1731,6 +1827,9 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text("🔤 Translating...")
 
+    # ======================
+    # TRANSLATOR POOL
+    # ======================
     translators = []
     try: translators.append(("Google", GoogleTranslator))
     except: pass
@@ -1742,6 +1841,9 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not translators:
         return await msg.edit_text("❌ Translator tidak tersedia")
 
+    # ======================
+    # TRANSLATE
+    # ======================
     for name, T in translators:
         try:
             tr = T(source="auto", target=target_lang)
@@ -1766,7 +1868,7 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.edit_text("❌ Semua translator gagal")
     
-#nsfw
+# ---- Pollinations NSFW
 async def pollinations_generate_nsfw(update, context):
     """
     Usage: $nsfw <prompt>  OR  reply to message with image prompt
@@ -1777,6 +1879,7 @@ async def pollinations_generate_nsfw(update, context):
     if not msg:
         return
 
+    # get prompt
     prompt = _extract_prompt_from_update(update, context)
     if not prompt:
         await msg.reply_text(
@@ -1790,6 +1893,7 @@ async def pollinations_generate_nsfw(update, context):
         await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
         return
 
+    # status awal
     try:
         status_msg = await msg.reply_text(
             bold("🔞 Generating NSFW image..."),
@@ -1859,12 +1963,12 @@ async def pollinations_generate_nsfw(update, context):
             await msg.reply_text(f"{em} ❌ Error: {short}")
         logger.exception("pollinations_generate_nsfw failed")
 
-#-kawaiiii
+# ---------------- small helper for kawaii emoji (if needed in handler) ----------------
 def kawaii_emo() -> str:
     EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
     return random.choice(EMOS)
 
-#start
+# ---- commands ----
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = (user.first_name or "").strip() or "there"
@@ -1946,7 +2050,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    #close
+    # CLOSE
     if data == "help:close":
         try:
             await q.message.delete()
@@ -1954,7 +2058,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    #menu/helpp
+    # MENU
     if data == "help:menu":
         await q.edit_message_text(
             HELP_TEXT["help:menu"],
@@ -1963,7 +2067,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    #category 
+    # CATEGORY
     text = HELP_TEXT.get(data)
     if text:
         await q.edit_message_text(
@@ -1972,7 +2076,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-#stats
+# --- Helper & stats
 try:
     import psutil
 except Exception:
@@ -2055,6 +2159,7 @@ def get_python_version():
         return "N/A"
 
 def get_pretty_uptime():
+    # /proc/uptime preferred (Android friendly)
     try:
         with open("/proc/uptime", "r") as f:
             up_seconds = float(f.readline().split()[0])
@@ -2128,13 +2233,15 @@ def progress_bar(percent: float, length: int = 12) -> str:
     bar = "▰" * filled + "▱" * empty
     return f"{bar} {p:.1f}%"
 
-#cmd stats
+# --- Handler Command Stats (Style B + progress bars) ---
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ---------- BASIC ----------
     ram = get_ram_info()
     storage = get_storage_info()
     cpu_cores = get_cpu_cores()
     uptime = get_pretty_uptime()
-    
+
+    # ---------- OS NAME (FIX UBUNTU) ----------
     try:
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release") as f:
@@ -2152,6 +2259,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kernel = platform.release()
     python_ver = platform.python_version()
 
+    # ---------- CPU INFO ----------
     try:
         cpu_load = psutil.cpu_percent(interval=None)
     except Exception:
@@ -2163,6 +2271,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         cpu_freq = "N/A"
 
+    # ---------- RAM + SWAP ----------
     swap_line = ""
     try:
         swap = psutil.swap_memory()
@@ -2174,6 +2283,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # ---------- NETWORK ----------
     net_line = ""
     try:
         net = psutil.net_io_counters()
@@ -2185,10 +2295,12 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # ---------- OUTPUT ----------
     lines = []
     lines.append("<b>📈 System Stats</b>")
     lines.append("")
 
+    # CPU
     lines.append("<b>⚙️ CPU</b>")
     lines.append(f"  Cores : {cpu_cores}")
     lines.append(f"  Load  : {cpu_load:.1f}%")
@@ -2196,6 +2308,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append(f"  {progress_bar(cpu_load)}")
     lines.append("")
 
+    # RAM
     if ram:
         lines.append("<b>🧠 RAM</b>")
         lines.append(f"  {humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])} ({ram['percent']:.1f}%)")
@@ -2207,6 +2320,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines.append("")
 
+    # Storage
     if storage and "/" in storage:
         v = storage["/"]
         pct = (v["used"] / v["total"] * 100) if v["total"] else 0.0
@@ -2216,6 +2330,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines.append("")
 
+    # System
     lines.append("<b>🖥️ System</b>")
     lines.append(f"  OS     : {html.escape(os_name)}")
     lines.append(f"  Kernel : {html.escape(kernel)}")
@@ -2313,7 +2428,6 @@ async def whoisdomain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         
-#cmd ip
 async def ip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
@@ -2407,11 +2521,13 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     info = {}
 
+    # ---------------- IP RESOLVE ----------------
     try:
         info["ip"] = socket.gethostbyname(domain)
     except Exception:
         info["ip"] = "Not found"
 
+    # ---------------- WHOIS ----------------
     try:
         w = whois.whois(domain)
         info["registrar"] = w.registrar or "Not available"
@@ -2424,6 +2540,7 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info["expires"] = "Not available"
         info["nameservers"] = []
 
+    # ---------------- HTTP CHECK ----------------
     try:
         session = await get_http_session()
         async with session.get(
@@ -2437,6 +2554,7 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info["http_status"] = "Not available"
         info["server"] = "Not available"
 
+    # ---------------- FORMAT NS ----------------
     if info["nameservers"]:
         ns_text = "\n".join(
             f"• {html.escape(ns)}" for ns in info["nameservers"][:5]
@@ -2444,6 +2562,7 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         ns_text = "Not available"
 
+    # ---------------- RESULT ----------------
     text = (
         "<b>🌐 Domain Information</b>\n\n"
         f"<b>Domain:</b> <code>{html.escape(domain)}</code>\n"
@@ -2463,11 +2582,17 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #google search 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
-GSEARCH_CACHE = {}
-MAX_GSEARCH_CACHE = 50         
-GSEARCH_CACHE_TTL = 300      
 
-#gsearch request
+# ======================
+# CACHE CONFIG
+# ======================
+GSEARCH_CACHE = {}
+MAX_GSEARCH_CACHE = 50          # hard limit cache
+GSEARCH_CACHE_TTL = 300         # 5 menit
+
+# ======================
+# GOOGLE SEARCH REQUEST
+# ======================
 async def google_search(query: str, page: int = 0, limit: int = 5):
     try:
         start = page * limit + 1
@@ -2499,7 +2624,10 @@ async def google_search(query: str, page: int = 0, limit: int = 5):
     except Exception as e:
         return False, str(e)
 
-#inline keyboard
+
+# ======================
+# INLINE KEYBOARD
+# ======================
 def gsearch_keyboard(search_id: str, page: int):
     return InlineKeyboardMarkup([
         [
@@ -2512,7 +2640,10 @@ def gsearch_keyboard(search_id: str, page: int):
         ]
     ])
 
-#gsearch cmd
+
+# ======================
+# /gsearch COMMAND
+# ======================
 async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
@@ -2524,6 +2655,7 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     search_id = uuid.uuid4().hex[:8]
 
+    # 🧹 HARD LIMIT CACHE
     if len(GSEARCH_CACHE) >= MAX_GSEARCH_CACHE:
         GSEARCH_CACHE.pop(next(iter(GSEARCH_CACHE)))
 
@@ -2531,7 +2663,7 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "query": query,
         "page": 0,
         "user": update.effective_user.id,
-        "ts": time.time(),
+        "ts": time.time(),   # ⏱️ timestamp
     }
 
     msg = await update.message.reply_text("🔍 Lagi nyari di Google...")
@@ -2558,7 +2690,10 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
 
-#callback
+
+# ======================
+# CALLBACK QUERY
+# ======================
 async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -2568,6 +2703,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _, a, b = q.data.split(":", 2)
 
+    # ❌ CLOSE
     if a == "close":
         GSEARCH_CACHE.pop(b, None)
         return await q.message.delete()
@@ -2579,10 +2715,12 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data:
         return await q.message.edit_text("❌ Data search expired.")
 
+    # ⏱️ TTL CHECK (ANTI RAM BOCOR)
     if time.time() - data["ts"] > GSEARCH_CACHE_TTL:
         GSEARCH_CACHE.pop(search_id, None)
         return await q.message.edit_text("❌ Search expired.")
 
+    # 🔒 LOCK KE USER
     if q.from_user.id != data["user"]:
         return await q.answer("Ini bukan search lu dongo", show_alert=True)
 
@@ -2595,7 +2733,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.message.edit_text("❌ Gada hasil lagi.")
 
     data["page"] = page
-    data["ts"] = time.time()
+    data["ts"] = time.time()  # refresh TTL
 
     text = f"🔍 <b>Google Search:</b> <i>{html.escape(query)}</i>\n\n"
     for i, r in enumerate(res, start=1 + page * 5):
@@ -2612,7 +2750,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
                
-#dollar prefix
+# ---- dollar-prefix router ----
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
     "ip": ip_cmd,
@@ -2676,6 +2814,7 @@ async def get_http_session():
 async def post_shutdown(app):
     global HTTP_SESSION
 
+    # close aiohttp session
     if HTTP_SESSION and not HTTP_SESSION.closed:
         try:
             await HTTP_SESSION.close()
@@ -2687,8 +2826,10 @@ async def post_shutdown(app):
 #main
 def main():
     logger.info("Initializing bot...")
-    
-    #build
+
+    # ======================
+    # BUILD APPLICATION
+    # ======================
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -2703,7 +2844,9 @@ def main():
     
     load_asupan_groups()
 
-    # command handlers
+    # ==================================================
+    # 🔥 COMMAND HANDLERS
+    # ==================================================
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
@@ -2723,28 +2866,37 @@ def main():
     app.add_handler(CommandHandler("asupanlist", asupanlist_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("asupan", asupan_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("restart", restart_cmd, block=False), group=-1)
+
+    # AI
     app.add_handler(CommandHandler("ai", ai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
     
+    
     #hebdnrjenndndn
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False), group=-1)
     
-    #inline callback
+    # ==================================================
+    # INLINE CALLBACKS
+    # ==================================================
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
-    
-    #dollar prefi
+
+    # ==================================================
+    # 💲 DOLLAR ROUTER
+    # ==================================================
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
     )
 
-
+    # ======================
+    # BANNER (AMAN)
+    # ======================
     try:
         banner = r"""
   ____        _   _       ____        _
@@ -2758,6 +2910,9 @@ def main():
     except Exception:
         logger.exception("Banner failed")
 
+    # ======================
+    # POST INIT (FINAL & AMAN)
+    # ======================
     async def post_init(app):
         try:
             await app.bot.set_my_commands([
@@ -2778,6 +2933,7 @@ def main():
         except Exception:
             pass
 
+        # kirim asupan SEKALI pas bot nyala
         await asyncio.sleep(5)
 
         if not ASUPAN_STARTUP_CHAT_ID:
@@ -2791,6 +2947,10 @@ def main():
             logger.warning(f"[ASUPAN STARTUP] Failed: {e}")
 
     app.post_init = post_init
+
+    # ======================
+    # RUN BOT (HARUS PALING AKHIR)
+    # ======================
     logger.info("Launching polling loop...")
     print("Launching... (listening for updates)")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
