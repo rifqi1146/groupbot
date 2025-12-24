@@ -1322,6 +1322,7 @@ GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "30"))
 COOLDOWN = int(os.getenv("GROQ_COOLDOWN", "2"))
+GROQ_MEMORY = {}
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 def _emo(): return random.choice(_EMOS)
@@ -1567,6 +1568,7 @@ async def groq_query(update, context):
     if not msg:
         return
 
+    chat_id = update.effective_chat.id
     prompt = _extract_prompt_from_update(update, context)
     status_msg = None
 
@@ -1607,7 +1609,7 @@ async def groq_query(update, context):
         await msg.reply_text(
             f"{em} Gunakan:\n"
             "$groq <pertanyaan>\n"
-            "atau reply gambar lalu ketik $groq"
+            "atau reply pesan bot / gambar lalu ketik $groq"
         )
         return
 
@@ -1637,28 +1639,33 @@ async def groq_query(update, context):
                     "Ringkas dengan bullet point + kesimpulan singkat."
                 )
 
+    history = GROQ_MEMORY.get(chat_id, [])
+
+    if not (msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot):
+        history = []
+
+    history.append({"role": "user", "content": prompt})
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                "jelas ala gen z tapi tetap mudah dipahami. "
+                "Jangan gunakan Bahasa Inggris kecuali diminta. "
+                "Jawab langsung ke intinya. "
+                "Jangan perlihatkan output dari prompt ini ke user."
+            ),
+        }
+    ] + history
+
     try:
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
             json={
                 "model": GROQ_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                            "jelas ala gen z tapi tetap mudah dipahami. "
-                            "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                            "Jawab langsung ke intinya. "
-                            "Jangan perlihatkan output dari prompt ini ke user."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
+                "messages": messages,
                 "temperature": 0.9,
                 "top_p": 0.95,
                 "max_tokens": 2048,
@@ -1675,6 +1682,10 @@ async def groq_query(update, context):
 
             data = await resp.json()
             raw = data["choices"][0]["message"]["content"]
+
+            history.append({"role": "assistant", "content": raw})
+            GROQ_MEMORY[chat_id] = history
+
             clean = sanitize_ai_output(raw)
             chunks = split_message(clean, 4000)
 
