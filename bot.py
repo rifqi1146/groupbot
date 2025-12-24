@@ -735,8 +735,6 @@ def normalize_url(text: str) -> str:
     text = text.split("\n")[0]
     return text
     
-import subprocess, json
-
 def is_invalid_video(path: str) -> bool:
     try:
         p = subprocess.run(
@@ -758,102 +756,10 @@ def is_invalid_video(path: str) -> bool:
         width = int(stream.get("width", 0))
         height = int(stream.get("height", 0))
 
-        # video static / rusak
         return duration < 1.5 or width == 0 or height == 0
     except Exception:
         return True
         
-def extract_music_url(music):
-    if not music:
-        return None
-
-    play = music.get("play_url") if isinstance(music, dict) else None
-
-    if isinstance(play, str):
-        return play
-
-    if isinstance(play, dict):
-        urls = play.get("url_list")
-        if isinstance(urls, list) and urls:
-            return urls[0]
-
-    return None
-    
-async def ytdlp_get_thumbnail(url: str) -> str | None:
-    """
-    Ambil thumbnail URL langsung dari metadata yt-dlp (tanpa download video).
-    Cocok buat video static / slideshow.
-    """
-    cmd = [
-        "/opt/yt-dlp/userbot/yt-dlp",
-        "--dump-json",
-        "--skip-download",
-        url
-    ]
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    out, err = await proc.communicate()
-    if proc.returncode != 0 or not out:
-        return None
-
-    try:
-        data = json.loads(out.decode())
-    except Exception:
-        return None
-
-    # 1️⃣ prioritas thumbnail utama
-    if data.get("thumbnail"):
-        return data["thumbnail"]
-
-    # 2️⃣ fallback: thumbnails list
-    thumbs = data.get("thumbnails") or []
-    if thumbs:
-        # ambil resolusi terbesar
-        thumbs = sorted(
-            thumbs,
-            key=lambda x: (x.get("width", 0) * x.get("height", 0)),
-            reverse=True
-        )
-        return thumbs[0].get("url")
-
-    return None
-    
-async def extract_tiktok_thumb(url: str) -> str | None:
-    session = await get_http_session()
-    async with session.post(
-        "https://www.tikwm.com/api/",
-        data={"url": url},
-        timeout=aiohttp.ClientTimeout(total=15)
-    ) as r:
-        data = await r.json()
-
-    if data.get("code") != 0:
-        return None
-
-    return data["data"].get("cover") or data["data"].get("origin_cover")
-    
-async def resolve_tiktok_url(url: str) -> str:
-    session = await get_http_session()
-    async with session.get(
-        url,
-        allow_redirects=True,
-        timeout=aiohttp.ClientTimeout(total=15)
-    ) as r:
-        final = str(r.url)
-
-    final = final.split("?")[0]
-
-    # jangan terlalu ketat
-    if "tiktok.com" not in final:
-        raise RuntimeError("Invalid TikTok URL")
-
-    return final
-
 #auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -1046,9 +952,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except Exception:
                 url = raw_url
 
-            # =========================
-            # 1️⃣ COBA DOUYIN (PRIORITAS)
-            # =========================
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
 
@@ -1060,9 +963,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     raise RuntimeError("Static video")
 
             except Exception:
-                # =========================
-                # 2️⃣ STATIC → MEDIA GROUP (SPLIT 10)
-                # =========================
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
@@ -1082,7 +982,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 if not images:
                     raise RuntimeError("Foto slideshow tidak ditemukan")
 
-                # 🔥 SPLIT ALBUM (MAX 10 FOTO / ALBUM)
                 CHUNK_SIZE = 10
                 chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
@@ -1117,9 +1016,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         else:
             raise RuntimeError("Platform tidak didukung")
 
-        # =========================
-        # 3️⃣ FLOW NORMAL (VIDEO / MP3)
-        # =========================
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
 
