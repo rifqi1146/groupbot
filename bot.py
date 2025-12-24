@@ -131,9 +131,7 @@ async def restart_cmd(update, context):
 
     await update.message.reply_text("♻️ Restarting bot...")
 
-    sys.stdout.flush()
-    sys.stderr.flush()
-    sys.exit(0)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
     
 #speedtest
 import os, json, time, math, asyncio, subprocess, logging
