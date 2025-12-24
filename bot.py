@@ -1061,7 +1061,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             except Exception:
                 # =========================
-                # 2️⃣ STATIC → MEDIA GROUP
+                # 2️⃣ STATIC → MEDIA GROUP (SPLIT 10)
                 # =========================
                 await bot.edit_message_text(
                     chat_id=chat_id,
@@ -1082,20 +1082,25 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 if not images:
                     raise RuntimeError("Foto slideshow tidak ditemukan")
 
-                media = []
-                for i, img in enumerate(images):
-                    media.append(
-                        InputMediaPhoto(
-                            media=img,
-                            caption="📸 Slideshow TikTok" if i == 0 else None
-                        )
-                    )
+                # 🔥 SPLIT ALBUM (MAX 10 FOTO / ALBUM)
+                CHUNK_SIZE = 10
+                chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
-                await bot.send_media_group(
-                    chat_id=chat_id,
-                    media=media,
-                    reply_to_message_id=reply_to
-                )
+                for idx, chunk in enumerate(chunks):
+                    media = []
+                    for i, img in enumerate(chunk):
+                        media.append(
+                            InputMediaPhoto(
+                                media=img,
+                                caption="📸 Slideshow TikTok" if idx == 0 and i == 0 else None
+                            )
+                        )
+
+                    await bot.send_media_group(
+                        chat_id=chat_id,
+                        media=media,
+                        reply_to_message_id=reply_to if idx == 0 else None
+                    )
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
@@ -1113,7 +1118,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             raise RuntimeError("Platform tidak didukung")
 
         # =========================
-        # 3️⃣ FLOW NORMAL
+        # 3️⃣ FLOW NORMAL (VIDEO / MP3)
         # =========================
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
