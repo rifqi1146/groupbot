@@ -953,40 +953,41 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
-                url = raw_url  # fallback
+                url = raw_url
 
+            # ambil metadata TikTok dulu (thumbnail dll)
+            session = await get_http_session()
+            async with session.post(
+                "https://www.tikwm.com/api/",
+                data={"url": url},
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as r:
+                meta = await r.json()
+
+            if meta.get("code") != 0:
+                raise RuntimeError("Gagal ambil metadata TikTok")
+
+            data = meta["data"]
+            thumb = data.get("cover") or data.get("origin_cover")
+
+            # download video
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
-                if os.path.getsize(path) < 200_000:
-                    raise RuntimeError("Static TikTok detected")
-
             except Exception:
+                path = await ytdlp_download(url, "mp3", bot, chat_id, status_msg_id)
+
+            # =========================
+            # 🔥 DETEKSI STATIC VIDEO
+            # =========================
+            if path and os.path.getsize(path) < 250_000:
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="🎵 Konten static terdeteksi, kirim thumbnail + audio...",
+                    text="🎵 Konten audio-only terdeteksi",
                     parse_mode="HTML"
                 )
 
-                thumb = None
-                try:
-                    session = await get_http_session()
-                    async with session.post(
-                        "https://www.tikwm.com/api/",
-                        data={"url": url},
-                        timeout=aiohttp.ClientTimeout(total=15)
-                    ) as r:
-                        data = await r.json()
-                        if data.get("code") == 0:
-                            thumb = (
-                                data["data"].get("cover")
-                                or data["data"].get("origin_cover")
-                            )
-                except Exception:
-                    pass
-
-                audio = await ytdlp_download(url, "mp3", bot, chat_id, status_msg_id)
-
+                # 1️⃣ kirim thumbnail
                 if thumb:
                     await bot.send_photo(
                         chat_id=chat_id,
@@ -994,6 +995,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         caption="🖼️ Thumbnail TikTok",
                         reply_to_message_id=reply_to
                     )
+
+                # 2️⃣ download audio murni
+                audio = await ytdlp_download(url, "mp3", bot, chat_id, status_msg_id)
 
                 await bot.send_audio(
                     chat_id=chat_id,
@@ -1003,7 +1007,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 )
 
                 await bot.delete_message(chat_id, status_msg_id)
-                return
+                return  # ⛔ STOP total, jangan lanjut send_video
 
         elif is_instagram(raw_url):
             path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
@@ -1011,6 +1015,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         else:
             raise RuntimeError("Platform tidak didukung")
 
+        # =========================
+        # VIDEO NORMAL
+        # =========================
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
 
