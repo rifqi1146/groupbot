@@ -780,21 +780,48 @@ def extract_music_url(music):
     return None
     
 async def ytdlp_get_thumbnail(url: str) -> str | None:
+    """
+    Ambil thumbnail URL langsung dari metadata yt-dlp (tanpa download video).
+    Cocok buat video static / slideshow.
+    """
     cmd = [
         "/opt/yt-dlp/userbot/yt-dlp",
+        "--dump-json",
         "--skip-download",
-        "--print", "%(thumbnail)s",
         url
     ]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.PIPE
     )
 
-    out = (await proc.stdout.read()).decode().strip()
-    return out if out.startswith("http") else None
+    out, err = await proc.communicate()
+    if proc.returncode != 0 or not out:
+        return None
+
+    try:
+        data = json.loads(out.decode())
+    except Exception:
+        return None
+
+    # 1️⃣ prioritas thumbnail utama
+    if data.get("thumbnail"):
+        return data["thumbnail"]
+
+    # 2️⃣ fallback: thumbnails list
+    thumbs = data.get("thumbnails") or []
+    if thumbs:
+        # ambil resolusi terbesar
+        thumbs = sorted(
+            thumbs,
+            key=lambda x: (x.get("width", 0) * x.get("height", 0)),
+            reverse=True
+        )
+        return thumbs[0].get("url")
+
+    return None
     
 async def extract_tiktok_thumb(url: str) -> str | None:
     session = await get_http_session()
