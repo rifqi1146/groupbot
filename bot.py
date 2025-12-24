@@ -1226,14 +1226,21 @@ async def extract_text_from_photo(bot, file_id: str) -> str:
 
     return text.strip()
 
-
 #askcmd
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
         return
 
-    user_prompt = " ".join(context.args) if context.args else ""
+    user_prompt = ""
+    if context.args:
+        user_prompt = " ".join(context.args).strip()
+    elif msg.reply_to_message:
+        if msg.reply_to_message.text:
+            user_prompt = msg.reply_to_message.text.strip()
+        elif msg.reply_to_message.caption:
+            user_prompt = msg.reply_to_message.caption.strip()
+
     ocr_text = ""
 
     status_msg = await msg.reply_text(
@@ -1242,7 +1249,10 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if msg.reply_to_message and msg.reply_to_message.photo:
-        await status_msg.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
+        await status_msg.edit_text(
+            "👁️ <i>Lagi baca gambar...</i>",
+            parse_mode="HTML"
+        )
 
         photo = msg.reply_to_message.photo[-1]
         ocr_text = await extract_text_from_photo(
@@ -1256,27 +1266,31 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
 
-        await status_msg.edit_text("🧠 <i>Lagi mikir jawabannya...</i>", parse_mode="HTML")
+        await status_msg.edit_text(
+            "🧠 <i>Lagi mikir jawabannya...</i>",
+            parse_mode="HTML"
+        )
 
     if not user_prompt and not ocr_text:
         return await status_msg.edit_text(
             "<b>❓ Ask AI</b>\n\n"
             "<b>Contoh:</b>\n"
             "<code>/ask jelaskan relativitas</code>\n"
-            "<i>atau reply foto lalu ketik /ask</i>",
+            "<i>atau reply pesan / foto lalu ketik /ask</i>",
             parse_mode="HTML"
         )
 
     if ocr_text and user_prompt:
         final_prompt = (
-            "Berikut teks hasil dari sebuah gambar:\n\n"
+            "Berikut teks hasil OCR dari sebuah gambar:\n\n"
             f"{ocr_text}\n\n"
-            f"Pertanyaan user:\n{user_prompt}"
+            "Pertanyaan user terkait gambar tersebut:\n"
+            f"{user_prompt}"
         )
     elif ocr_text:
         final_prompt = (
-            "Berikut teks hasil dari sebuah gambar. "
-            "Tolong jelaskan atau ringkas isinya:\n\n"
+            "Berikut teks hasil OCR dari sebuah gambar. "
+            "Tolong jelaskan atau ringkas isinya dengan jelas:\n\n"
             f"{ocr_text}"
         )
     else:
@@ -1287,7 +1301,10 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, max_length=3800)
 
-        await status_msg.edit_text(chunks[0], parse_mode="HTML")
+        await status_msg.edit_text(
+            chunks[0],
+            parse_mode="HTML"
+        )
 
         for ch in chunks[1:]:
             await asyncio.sleep(0.25)
