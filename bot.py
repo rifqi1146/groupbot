@@ -117,26 +117,6 @@ def save_ai_mode(data):
 _ai_mode = load_ai_mode()
     
 #restart
-import os, sys
-from telegram import Update
-from telegram.ext import ContextTypes
-
-OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
-
-async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if user_id != OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
-
-    await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
-
-    # flush logs
-    sys.stdout.flush()
-    sys.stderr.flush()
-
-    # restart process
-    os.execv(sys.executable, [sys.executable] + sys.argv)
     
 #speedtest
 import os, json, time, math, asyncio, subprocess, logging
