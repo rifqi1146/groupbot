@@ -1032,9 +1032,6 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     return None
 
 #worker
-# =========================
-# WORKER (FINAL FIX)
-# =========================
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
@@ -1064,24 +1061,36 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except Exception:
                 # =========================
                 # 2️⃣ STATIC / DOUYIN GAGAL
-                # → KIRIM THUMBNAIL DOUYIN
+                # → KIRIM SEMUA FOTO SLIDESHOW
                 # =========================
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text="🖼️ Konten static terdeteksi, mengirim thumbnail...",
+                    text="🖼️ Slideshow terdeteksi, mengirim semua foto...",
                     parse_mode="HTML"
                 )
 
-                thumb = await extract_tiktok_thumb(url)
-                if not thumb:
-                    raise RuntimeError("Thumbnail tidak ditemukan")
+                session = await get_http_session()
+                async with session.post(
+                    "https://www.tikwm.com/api/",
+                    data={"url": url},
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as r:
+                    data = await r.json()
 
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=thumb,
-                    reply_to_message_id=reply_to
-                )
+                images = data.get("data", {}).get("images") or []
+
+                if not images:
+                    raise RuntimeError("Foto slideshow tidak ditemukan")
+
+                for i, img in enumerate(images, start=1):
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=img,
+                        caption=f"📷 Slide {i}/{len(images)}" if len(images) > 1 else None,
+                        reply_to_message_id=reply_to if i == 1 else None
+                    )
+                    await asyncio.sleep(0.35)  # anti flood
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
