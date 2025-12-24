@@ -167,16 +167,41 @@ def run_speedtest():
         raise RuntimeError("Speedtest failed")
     return json.loads(p.stdout)
 
-def generate_image(data):
-    # color palette ala Ookla
-    BG = (20, 24, 36)
-    CYAN = (0, 176, 255)
-    PURPLE = (155, 89, 255)
-    WHITE = (235, 235, 235)
-    MUTED = (150, 150, 150)
+def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
+    start = 135
+    end = 405
+    angle = start + (min(value, max_val) / max_val) * (end - start)
 
-    img = Image.new("RGB", (IMG_W, IMG_H), BG)
+    # arc bg
+    draw.arc(
+        [cx-r, cy-r, cx+r, cy+r],
+        start=start, end=end,
+        fill=(60,60,60), width=18
+    )
+    # arc fg
+    draw.arc(
+        [cx-r, cy-r, cx+r, cy+r],
+        start=start, end=angle,
+        fill=(0,170,255), width=18
+    )
+
+    draw.text((cx, cy-10), f"{value:.1f}",
+              fill="white", anchor="mm", font=FONT_BIG)
+    draw.text((cx, cy+35), unit,
+              fill=(180,180,180), anchor="mm", font=FONT_UNIT)
+    draw.text((cx, cy+r-10), label,
+              fill=(160,160,160), anchor="mm", font=FONT_LABEL)
+
+#image generator
+def generate_image(data):
+    img = Image.new("RGB", (IMG_W, IMG_H), (18,18,18))
     draw = ImageDraw.Draw(img)
+
+    # header
+    draw.text((40, 30), "Speedtest",
+              fill="white", font=FONT_TITLE)
+    draw.text((40, 65), "by Ookla",
+              fill=(0,170,255), font=FONT_SMALL)
 
     ping = data["ping"]["latency"]
     down = data["download"]["bandwidth"] * 8 / 1e6
@@ -184,59 +209,33 @@ def generate_image(data):
     isp  = data["isp"]
     srv  = data["server"]["location"]
 
-    # =====================
-    # HEADER
-    # =====================
-    draw.text((40, 30), "Speedtest", fill=WHITE, font=FONT_TITLE)
-    draw.text((40, 65), "by Ookla", fill=CYAN, font=FONT_SMALL)
+    # ping
+    draw.text((IMG_W-40, 40),
+              f"PING  {ping:.1f} ms",
+              fill="white", anchor="ra", font=FONT_LABEL)
 
-    draw.text(
-        (IMG_W - 40, 40),
-        f"PING  {ping:.1f} ms",
-        fill=WHITE,
-        anchor="ra",
-        font=FONT_LABEL
-    )
+    # gauges
+    draw_gauge(draw, 300, 300, 130, down, 500, "DOWNLOAD", "Mbps")
+    draw_gauge(draw, 600, 300, 130, up,   200, "UPLOAD",   "Mbps")
 
-    # divider
-    draw.line((40, 100, IMG_W - 40, 100), fill=(50, 55, 70), width=1)
+    # footer
+    draw.text((40, IMG_H-60),
+              f"Server: {srv}",
+              fill=(180,180,180), font=FONT_SMALL)
+    draw.text((40, IMG_H-35),
+              f"Provider: {isp}",
+              fill=(180,180,180), font=FONT_SMALL)
 
-    # =====================
-    # DOWNLOAD
-    # =====================
-    draw.text((200, 150), "⬇ DOWNLOAD", fill=CYAN, anchor="mm", font=FONT_LABEL)
-    draw.text((200, 200), f"{down:.1f}", fill=WHITE, anchor="mm", font=FONT_BIG)
-    draw.text((200, 245), "Mbps", fill=MUTED, anchor="mm", font=FONT_UNIT)
-
-    # =====================
-    # UPLOAD
-    # =====================
-    draw.text((650, 150), "⬆ UPLOAD", fill=PURPLE, anchor="mm", font=FONT_LABEL)
-    draw.text((650, 200), f"{up:.1f}", fill=WHITE, anchor="mm", font=FONT_BIG)
-    draw.text((650, 245), "Mbps", fill=MUTED, anchor="mm", font=FONT_UNIT)
-
-    # =====================
-    # FOOTER
-    # =====================
-    draw.line((40, 320, IMG_W - 40, 320), fill=(50, 55, 70), width=1)
-
-    draw.text((40, 360), f"Server: {srv}", fill=MUTED, font=FONT_SMALL)
-    draw.text((40, 390), f"Provider: {isp}", fill=MUTED, font=FONT_SMALL)
-
-    draw.text(
-        (IMG_W - 40, IMG_H - 40),
-        time.strftime("%Y-%m-%d %H:%M:%S"),
-        fill=MUTED,
-        anchor="ra",
-        font=FONT_SMALL
-    )
+    draw.text((IMG_W-40, IMG_H-35),
+              time.strftime("%Y-%m-%d %H:%M:%S"),
+              fill=(120,120,120), anchor="ra", font=FONT_SMALL)
 
     bio = BytesIO()
     bio.name = "speedtest.png"
     img.save(bio, "PNG")
     bio.seek(0)
     return bio
-    
+
 # =========================
 # LOAD FONTS
 # =========================
