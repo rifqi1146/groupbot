@@ -1393,15 +1393,28 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #zhipuuu
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-ZHIPU_MODEL = "glm-4.6v"
+ZHIPU_MODEL = "glm-4.6-flash"
 
-async def zhipu_vision_stream(prompt: str, image_url: str):
+async def zhipu_stream(prompt: str, image_url: str | None = None):
     session = await get_http_session()
 
     headers = {
         "Authorization": f"Bearer {ZHIPU_API_KEY}",
         "Content-Type": "application/json",
     }
+
+    user_content = []
+
+    if image_url:
+        user_content.append({
+            "type": "image_url",
+            "image_url": {"url": image_url},
+        })
+
+    user_content.append({
+        "type": "text",
+        "text": prompt,
+    })
 
     payload = {
         "model": ZHIPU_MODEL,
@@ -1420,16 +1433,7 @@ async def zhipu_vision_stream(prompt: str, image_url: str):
             },
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": image_url},
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    },
-                ],
+                "content": user_content,
             },
         ],
     }
@@ -1470,32 +1474,24 @@ async def vision_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    if not msg.reply_to_message or not msg.reply_to_message.photo:
-        return await msg.reply_text(
-            "📸 Reply ke foto lalu ketik:\n"
-            "<code>/vision jelaskan gambar ini</code>",
-            parse_mode="HTML",
-        )
+    prompt = " ".join(context.args) if context.args else "Jelaskan ini."
 
-    prompt = " ".join(context.args) if context.args else "Jelaskan isi gambar ini."
+    image_url = None
 
-    status = await msg.reply_text("👀 Lagi ngeliatin gambar…", parse_mode="HTML")
+    if msg.reply_to_message and msg.reply_to_message.photo:
+        photo = msg.reply_to_message.photo[-1]
+        file = await photo.get_file()
+        image_url = file.file_path  # Telegram CDN
 
-    # ambil photo terbesar
-    photo = msg.reply_to_message.photo[-1]
-    file = await photo.get_file()
-    image_url = file.file_path  # telegram CDN URL
+    status = await msg.reply_text("🧠 Lagi mikir…", parse_mode="HTML")
 
     try:
-        await status.edit_text("🧠 Lagi mikir…", parse_mode="HTML")
-
         buffer = ""
         last_edit = time.time()
 
-        async for chunk in zhipu_vision_stream(prompt, image_url):
+        async for chunk in zhipu_stream(prompt, image_url):
             buffer += chunk
 
-            # throttle edit biar ga flood
             if time.time() - last_edit > 1.2:
                 await status.edit_text(
                     sanitize_ai_output(buffer),
@@ -1503,7 +1499,6 @@ async def vision_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 last_edit = time.time()
 
-        # final update
         await status.edit_text(
             sanitize_ai_output(buffer),
             parse_mode="HTML",
