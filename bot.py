@@ -1393,7 +1393,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #zhipuuu
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-ZHIPU_MODEL = "glm-4.6-flash"
+ZHIPU_MODEL = "glm-4.6v-flash"
 
 async def zhipu_stream(prompt: str, image_url: str | None = None):
     session = await get_http_session()
