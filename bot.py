@@ -1282,6 +1282,16 @@ async def openrouter_generate_image(prompt: str) -> list[str]:
 
     return images
     
+import base64
+from io import BytesIO
+
+def data_url_to_bytesio(data_url: str) -> BytesIO:
+    header, encoded = data_url.split(",", 1)
+    data = base64.b64decode(encoded)
+    bio = BytesIO(data)
+    bio.seek(0)
+    return bio
+    
 async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -1374,17 +1384,29 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             images = await openrouter_generate_image(prompt)
 
             if not images:
-                return await status.edit_text(
-                    "❌ <b>Gagal generate gambar.</b>",
-                    parse_mode="HTML"
-                )
+                await status.delete()
+                return await msg.reply_text("❌ Gagal generate gambar.")
 
+            # 🔥 PENTING: hapus status dulu
             await status.delete()
-            for url in images:
-                await msg.reply_photo(photo=url)
+
+            for img in images:
+                url = img["image_url"]["url"]
+
+                # base64 → BytesIO
+                if url.startswith("data:image"):
+                    bio = data_url_to_bytesio(url)
+                    await msg.reply_photo(photo=bio)
+                else:
+                    await msg.reply_photo(photo=url)
 
         except Exception as e:
-            await status.edit_text(
+            try:
+                await status.delete()
+            except:
+                pass
+
+            await msg.reply_text(
                 f"<b>❌ Gagal generate image</b>\n"
                 f"<code>{html.escape(str(e))}</code>",
                 parse_mode="HTML"
