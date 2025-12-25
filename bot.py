@@ -2929,12 +2929,44 @@ async def post_shutdown(app):
         except Exception as e:
             logger.warning(f"Failed closing HTTP session: {e}")
             
+#emotelog
+import logging
 
+class EmojiFormatter(logging.Formatter):
+    LEVEL_EMOJI = {
+        logging.INFO: "➜",
+        logging.WARNING: "⚠️",
+        logging.ERROR: "❌",
+        logging.CRITICAL: "💥",
+    }
+
+    def format(self, record):
+        emoji = self.LEVEL_EMOJI.get(record.levelno, "•")
+        record.msg = f"{emoji} {record.msg}"
+        return super().format(record)
+
+
+def setup_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        EmojiFormatter(
+            "[%(asctime)s] %(message)s",
+            datefmt="%H:%M:%S"
+        )
+    )
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    logger.addHandler(handler)
+
+    return logger
+    
 #main
 def main():
-    logger.info("Initializing bot...")
+    logger.info("🐾 Initializing bot")
     
-    #build
+    # build
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -2976,48 +3008,52 @@ def main():
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
+
+    # autodetect link
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False),
+        group=-1
+    )
     
-    #hebdnrjenndndn
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False), group=-1)
-    
-    #inline callback
+    # inline callback
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
     
-    #dollar prefi
+    # dollar prefix
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
     )
 
-
+    # ===== BANNER =====
     try:
         banner = r"""
-  ____        _   _       ____        _
- |  _ \ _   _| |_| |__   |  _ \  __ _| |_
- | |_) | | | | __| '_ \  | | | |/ _` | __|
- |  _ <| |_| | |_| |_) | | |_| | (_| | |_
- |_| \_\\__,_|\__|_.__/  |____/ \__,_|\__|
+ ／l、
+（ﾟ､ ｡ ７   < Nya~ Master! Userbot waking up…
+  l  ~ヽ       • Loading neko engine
+  じしf_, )     • Warming up whiskers
+               • Injecting kawaii into memory…
+ 💖 Ready to serve!
 """
         print(banner)
-        logger.info("Bot starting...")
+        logger.info("🐾 Bot core loaded")
     except Exception:
-        logger.exception("Banner failed")
+        logger.exception("Banner render failed")
 
     async def post_init(app):
         try:
             await app.bot.set_my_commands([
-                ("start", "Check bot status"),                
+                ("start", "Check bot status"),
                 ("help", "Show help menu"),
                 ("ping", "Check latency"),
                 ("stats", "System statistics"),
                 ("dl", "Download video"),
                 ("ai", "Ask Gemini"),
-                ("ask", "Ask ChatGpt"),
-                ("groq", "Ask GroqAi"),
+                ("ask", "Ask ChatGPT"),
+                ("groq", "Ask Groq AI"),
                 ("gsearch", "Google search"),
                 ("asupan", "Asupan 😋"),
                 ("tr", "Translate text"),
@@ -3030,18 +3066,18 @@ def main():
         await asyncio.sleep(5)
 
         if not ASUPAN_STARTUP_CHAT_ID:
-            logger.warning("[ASUPAN STARTUP] Chat_id is empty")
+            logger.warning("⚠️ ASUPAN STARTUP chat_id kosong")
             return
 
         try:
             await send_asupan_once(app.bot)
-            logger.warning("[ASUPAN STARTUP] Asupan sent")
+            logger.info("🍜 Asupan startup sent")
         except Exception as e:
-            logger.warning(f"[ASUPAN STARTUP] Failed: {e}")
+            logger.warning(f"⚠️ Asupan startup failed: {e}")
 
     app.post_init = post_init
-    logger.info("Launching polling loop...")
-    print("Launching... (listening for updates)")
+    logger.info("🐾 Polling loop started")
+    print("Listening for updates…")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
