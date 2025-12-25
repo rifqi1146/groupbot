@@ -1125,6 +1125,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_THINK = "openai/gpt-oss-120b:free"
+OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 
 if not OPENROUTER_API_KEY:
     raise RuntimeError("OPENROUTER_API_KEY not set")
@@ -1238,6 +1239,49 @@ def sanitize_ai_output(text: str) -> str:
     return text.strip()
     
 #core function
+async def openrouter_generate_image(prompt: str) -> list[str]:
+    session = await get_http_session()
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://kiyoshi.id",
+        "X-Title": "KiyoshiBot",
+    }
+
+    payload = {
+        "model": OPENROUTER_IMAGE_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        "extra_body": {
+            "modalities": ["image", "text"]
+        }
+    }
+
+    async with session.post(
+        OPENROUTER_URL,
+        headers=headers,
+        json=payload,
+        timeout=aiohttp.ClientTimeout(total=90),
+    ) as resp:
+        if resp.status != 200:
+            raise RuntimeError(await resp.text())
+
+        data = await resp.json()
+
+    images = []
+    msg = data["choices"][0]["message"]
+    for img in msg.get("images", []):
+        url = img.get("image_url", {}).get("url")
+        if url:
+            images.append(url)
+
+    return images
+    
 async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -1306,6 +1350,51 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
+    # =========================
+    # IMAGE GENERATION MODE
+    # /ask img <prompt>
+    # =========================
+    if context.args and context.args[0].lower() == "img":
+        prompt = " ".join(context.args[1:]).strip()
+
+        if not prompt:
+            return await msg.reply_text(
+                "🎨 <b>Generate Image</b>\n\n"
+                "Contoh:\n"
+                "<code>/ask img anime girl cyberpunk</code>",
+                parse_mode="HTML"
+            )
+
+        status = await msg.reply_text(
+            "🎨 <i>Lagi bikin gambar...</i>",
+            parse_mode="HTML"
+        )
+
+        try:
+            images = await openrouter_generate_image(prompt)
+
+            if not images:
+                return await status.edit_text(
+                    "❌ <b>Gagal generate gambar.</b>",
+                    parse_mode="HTML"
+                )
+
+            await status.delete()
+            for url in images:
+                await msg.reply_photo(photo=url)
+
+        except Exception as e:
+            await status.edit_text(
+                f"<b>❌ Gagal generate image</b>\n"
+                f"<code>{html.escape(str(e))}</code>",
+                parse_mode="HTML"
+            )
+
+        return  # ⛔ STOP, jangan lanjut ke logic text
+
+    # =========================
+    # ===== LOGIC LAMA =====
+    # =========================
     user_prompt = ""
     if context.args:
         user_prompt = " ".join(context.args).strip()
@@ -1350,6 +1439,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<b>❓ Ask AI</b>\n\n"
             "<b>Contoh:</b>\n"
             "<code>/ask jelaskan relativitas</code>\n"
+            "<code>/ask img anime cyberpunk</code>\n"
             "<i>atau reply pesan / foto lalu ketik /ask</i>",
             parse_mode="HTML"
         )
