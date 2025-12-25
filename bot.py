@@ -313,35 +313,28 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = await get_http_session()
 
+    url = f"https://wttr.in/{city}?format=j1"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; TelegramBot)"
+        "User-Agent": "Mozilla/5.0 (TelegramBot)"
     }
 
-    urls = [
-        f"http://wttr.in/{city}?format=j1",
-        f"https://wttr.in/{city}?format=j1",
-    ]
+    try:
+        async with session.get(
+            url,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            if resp.status != 200:
+                return await status_msg.edit_text(
+                    "❌ Gagal mengambil data cuaca.\n"
+                    "Server cuaca sedang sibuk, coba lagi nanti."
+                )
+            data = await resp.json()
 
-    data = None
-
-    for url in urls:
-        try:
-            async with session.get(
-                url,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    break
-        except Exception:
-            continue
-
-    if not data:
-        return await status_msg.edit_text(
-            "❌ Gagal mengambil data cuaca.\n"
-            "Server cuaca sedang sibuk, coba lagi nanti."
-        )
+    except asyncio.TimeoutError:
+        return await status_msg.edit_text("❌ Request timeout. Coba lagi nanti.")
+    except Exception:
+        return await status_msg.edit_text("❌ Gagal menghubungi server cuaca.")
 
     try:
         current = data.get("current_condition", [{}])[0]
