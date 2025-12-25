@@ -921,7 +921,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
                         chat_id=chat_id,
                         message_id=status_msg_id,
                         text=(
-                            "⬇️ <b>yt-dlp download...</b>\n\n"
+                            "🚀 <b>yt-dlp download...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
                         parse_mode="HTML"
@@ -1023,7 +1023,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=status_msg_id,
-            text="⬆️ <b>Mengunggah...</b>",
+            text="🚀 <b>Mengunggah...</b>",
             parse_mode="HTML"
         )
 
