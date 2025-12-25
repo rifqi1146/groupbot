@@ -1275,12 +1275,13 @@ async def openrouter_generate_image(prompt: str) -> list[str]:
 
     images = []
     msg = data["choices"][0]["message"]
-    for img in msg.get("images", []):
-        url = img.get("image_url", {}).get("url")
-        if url:
-            images.append(url)
-
-    return images
+    for url in images:
+    # base64 → BytesIO
+    if isinstance(url, str) and url.startswith("data:image"):
+        bio = data_url_to_bytesio(url)
+        await msg.reply_photo(photo=bio)
+    else:
+        await msg.reply_photo(photo=url)
     
 import base64
 from io import BytesIO
