@@ -2104,14 +2104,14 @@ async def pollinations_generate_nsfw(update, context):
 
     try:
         status_msg = await msg.reply_text(
-            bold("🔞 Generating NSFW image..."),
+            bold("🔞 Generating mage..."),
             parse_mode="HTML"
         )
     except Exception:
         status_msg = None
 
     boosted = (
-        f"{prompt}, extremely detailed, NSFW, nude, hentai, erotic, adult, "
+        f"{prompt}, nude, hentai, adult, "
         "soft lighting, bdsm"
     )
     encoded = urllib.parse.quote(boosted)
