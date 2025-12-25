@@ -1245,7 +1245,7 @@ async def openrouter_generate_image(prompt: str) -> list[str]:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://kiyoshi.id",
+        "HTTP-Referer": "https://example.com",
         "X-Title": "KiyoshiBot",
     }
 
@@ -1266,18 +1266,18 @@ async def openrouter_generate_image(prompt: str) -> list[str]:
         OPENROUTER_URL,
         headers=headers,
         json=payload,
-        timeout=aiohttp.ClientTimeout(total=90),
     ) as resp:
         if resp.status != 200:
             raise RuntimeError(await resp.text())
 
         data = await resp.json()
 
-    images = []
-    msg = data["choices"][0]["message"]
+    images: list[str] = []
+    msg = data.get("choices", [{}])[0].get("message", {})
+
     for img in msg.get("images", []):
         url = img.get("image_url", {}).get("url")
-        if url:
+        if isinstance(url, str):
             images.append(url)
 
     return images
@@ -1296,7 +1296,7 @@ async def openrouter_ask_think(prompt: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://kiyoshi.id",
+        "HTTP-Referer": "https://example.com",
         "X-Title": "KiyoshiBot",
     }
 
@@ -1360,10 +1360,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    # =========================
-    # IMAGE GENERATION MODE
-    # /ask img <prompt>
-    # =========================
     if context.args and context.args[0].lower() == "img":
         prompt = " ".join(context.args[1:]).strip()
 
@@ -1387,12 +1383,11 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status.delete()
                 return await msg.reply_text("❌ Gagal generate gambar.")
 
-            # hapus status sebelum kirim foto
             await status.delete()
 
             for url in images:
                 try:
-                    # data:image/...;base64
+
                     if isinstance(url, str) and url.startswith("data:image"):
                         bio = data_url_to_bytesio(url)
                         await msg.reply_photo(photo=bio)
@@ -1413,11 +1408,8 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
 
-        return  # ⛔ STOP, jangan lanjut ke logic text
+        return
 
-    # =========================
-    # ===== LOGIC LAMA (TEXT + OCR)
-    # =========================
     user_prompt = ""
     if context.args:
         user_prompt = " ".join(context.args).strip()
