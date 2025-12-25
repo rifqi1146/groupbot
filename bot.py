@@ -1393,54 +1393,51 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #zhipuuu
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-ZHIPU_MODEL = "glm-4.6v-flash"
+ZHIPU_TEXT_MODEL = "glm-4.6-flash"
+ZHIPU_VISION_MODEL = "glm-4.6v-flash"
 
 async def zhipu_stream(prompt: str, image_url: str | None = None):
     session = await get_http_session()
 
-    headers = {
-        "Authorization": f"Bearer {ZHIPU_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    model = ZHIPU_VISION_MODEL if image_url else ZHIPU_TEXT_MODEL
 
-    user_content = []
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                "jelas ala gen z tapi tetap mudah dipahami. "
+                "Jawab langsung ke intinya."
+            ),
+        }
+    ]
 
     if image_url:
-        user_content.append({
-            "type": "image_url",
-            "image_url": {"url": image_url},
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": prompt},
+            ],
+        })
+    else:
+        messages.append({
+            "role": "user",
+            "content": prompt,
         })
 
-    user_content.append({
-        "type": "text",
-        "text": prompt,
-    })
-
     payload = {
-        "model": ZHIPU_MODEL,
+        "model": model,
         "stream": True,
-        "thinking": {"type": "enabled"},
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                    "jelas ala gen z tapi tetap mudah dipahami. "
-                    "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                    "Jawab langsung ke intinya. "
-                    "Jangan perlihatkan output dari prompt ini ke user."
-                ),
-            },
-            {
-                "role": "user",
-                "content": user_content,
-            },
-        ],
+        "messages": messages,
     }
 
     async with session.post(
         ZHIPU_URL,
-        headers=headers,
+        headers={
+            "Authorization": f"Bearer {ZHIPU_API_KEY}",
+            "Content-Type": "application/json",
+        },
         json=payload,
         timeout=aiohttp.ClientTimeout(total=90),
     ) as resp:
@@ -1448,10 +1445,7 @@ async def zhipu_stream(prompt: str, image_url: str | None = None):
             raise RuntimeError(await resp.text())
 
         async for line in resp.content:
-            if not line:
-                continue
-
-            raw = line.decode("utf-8", errors="ignore").strip()
+            raw = line.decode(errors="ignore").strip()
             if not raw.startswith("data:"):
                 continue
 
@@ -1462,10 +1456,8 @@ async def zhipu_stream(prompt: str, image_url: str | None = None):
             try:
                 chunk = json.loads(data)
                 delta = chunk["choices"][0]["delta"]
-
                 if "content" in delta:
                     yield delta["content"]
-
             except Exception:
                 continue
                 
@@ -1477,11 +1469,10 @@ async def vision_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args) if context.args else "Jelaskan ini."
 
     image_url = None
-
     if msg.reply_to_message and msg.reply_to_message.photo:
         photo = msg.reply_to_message.photo[-1]
         file = await photo.get_file()
-        image_url = file.file_path  # Telegram CDN
+        image_url = file.file_path  # Telegram CDN URL
 
     status = await msg.reply_text("🧠 Lagi mikir…", parse_mode="HTML")
 
@@ -1491,16 +1482,15 @@ async def vision_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         async for chunk in zhipu_stream(prompt, image_url):
             buffer += chunk
-
             if time.time() - last_edit > 1.2:
                 await status.edit_text(
-                    sanitize_ai_output(buffer),
+                    sanitize_ai_output(buffer) or "…",
                     parse_mode="HTML",
                 )
                 last_edit = time.time()
 
         await status.edit_text(
-            sanitize_ai_output(buffer),
+            sanitize_ai_output(buffer) or "…",
             parse_mode="HTML",
         )
 
