@@ -792,7 +792,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.reply_text(
         (
-            "👀 <b>Ketemu link video</b>\n\n"
+            "👀 <b>Ketemu link</b>\n\n"
             "Mau aku downloadin?\n"
         ),
         reply_markup=keyboard,
@@ -862,7 +862,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
                         chat_id=chat_id,
                         message_id=status_msg_id,
                         text=(
-                            "⬇️ <b>Douyin download...</b>\n\n"
+                            "⬇️ <b>Download...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
                         parse_mode="HTML"
