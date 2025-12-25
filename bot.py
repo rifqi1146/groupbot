@@ -1276,19 +1276,22 @@ async def openrouter_ask_think(prompt: str) -> str:
 #helperocr
 async def extract_text_from_photo(bot, file_id: str) -> str:
     file = await bot.get_file(file_id)
+
     bio = BytesIO()
     await file.download_to_memory(out=bio)
     bio.seek(0)
 
     img = Image.open(bio).convert("RGB")
 
-    text = pytesseract.image_to_string(
+    text = await asyncio.to_thread(
+        pytesseract.image_to_string,
         img,
         lang="ind+eng"
     )
 
     return text.strip()
 
+    
 #askcmd
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
