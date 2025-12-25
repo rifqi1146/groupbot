@@ -866,13 +866,17 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
 
 #fallback ytdlp
 async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
+    YT_DLP = shutil.which("yt-dlp")
+    if not YT_DLP:
+        raise RuntimeError("yt-dlp not found in PATH")
+
     vid = re.search(r"/(video|reel)/(\d+)", url)
     vid = vid.group(2) if vid else uuid.uuid4().hex
     out_tpl = f"{TMP_DIR}/{vid}.%(ext)s"
 
     if fmt_key == "mp3":
         cmd = [
-            "/opt/yt-dlp/userbot/yt-dlp",
+            YT_DLP,
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
@@ -885,7 +889,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         ]
     else:
         cmd = [
-            "/opt/yt-dlp/userbot/yt-dlp",
+            YT_DLP,
             "-f", "mp4/best",
             "--merge-output-format", "mp4",
             "--newline",
@@ -909,20 +913,24 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 
         raw = line.decode(errors="ignore").strip()
         if "|" in raw:
-            pct = float(raw.split("|", 1)[0].replace("%", ""))
-            if time.time() - last >= 1.2:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=(
-                        "⬇️ <b>yt-dlp download...</b>\n\n"
-                        f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
-                    ),
-                    parse_mode="HTML"
-                )
-                last = time.time()
+            head = raw.split("|", 1)[0].replace("%", "")
+            if head.replace(".", "", 1).isdigit():
+                pct = float(head)
+                if time.time() - last >= 1.2:
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text=(
+                            "⬇️ <b>yt-dlp download...</b>\n\n"
+                            f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    last = time.time()
 
     await proc.wait()
+    if proc.returncode != 0:
+        return None
 
     for f in os.listdir(TMP_DIR):
         if vid in f:
