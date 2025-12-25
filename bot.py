@@ -1390,116 +1390,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
     
-#zhipuuu
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
-ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-ZHIPU_TEXT_MODEL = "GLM-4.5-Flash"
-ZHIPU_VISION_MODEL = "GLM-4.6V-Flash"
-
-async def zhipu_stream(prompt: str, image_url: str | None = None):
-    session = await get_http_session()
-
-    model = ZHIPU_VISION_MODEL if image_url else ZHIPU_TEXT_MODEL
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                "jelas ala gen z tapi tetap mudah dipahami. "
-                "Jawab langsung ke intinya."
-            ),
-        }
-    ]
-
-    if image_url:
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": image_url}},
-                {"type": "text", "text": prompt},
-            ],
-        })
-    else:
-        messages.append({
-            "role": "user",
-            "content": prompt,
-        })
-
-    payload = {
-        "model": model,
-        "stream": True,
-        "messages": messages,
-    }
-
-    async with session.post(
-        ZHIPU_URL,
-        headers={
-            "Authorization": f"Bearer {ZHIPU_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=aiohttp.ClientTimeout(total=90),
-    ) as resp:
-        if resp.status != 200:
-            raise RuntimeError(await resp.text())
-
-        async for line in resp.content:
-            raw = line.decode(errors="ignore").strip()
-            if not raw.startswith("data:"):
-                continue
-
-            data = raw.replace("data:", "").strip()
-            if data == "[DONE]":
-                break
-
-            try:
-                chunk = json.loads(data)
-                delta = chunk["choices"][0]["delta"]
-                if "content" in delta:
-                    yield delta["content"]
-            except Exception:
-                continue
-                
-async def vision_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg:
-        return
-
-    prompt = " ".join(context.args) if context.args else "Jelaskan ini."
-
-    image_url = None
-    if msg.reply_to_message and msg.reply_to_message.photo:
-        photo = msg.reply_to_message.photo[-1]
-        file = await photo.get_file()
-        image_url = file.file_path  # Telegram CDN URL
-
-    status = await msg.reply_text("🧠 Lagi mikir…", parse_mode="HTML")
-
-    try:
-        buffer = ""
-        last_edit = time.time()
-
-        async for chunk in zhipu_stream(prompt, image_url):
-            buffer += chunk
-            if time.time() - last_edit > 1.2:
-                await status.edit_text(
-                    sanitize_ai_output(buffer) or "…",
-                    parse_mode="HTML",
-                )
-                last_edit = time.time()
-
-        await status.edit_text(
-            sanitize_ai_output(buffer) or "…",
-            parse_mode="HTML",
-        )
-
-    except Exception as e:
-        await status.edit_text(
-            f"❌ Error\n<code>{html.escape(str(e))}</code>",
-            parse_mode="HTML",
-        )
-        
 #groq
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
@@ -3032,7 +2922,6 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
-    app.add_handler(CommandHandler("glm", vision_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ask", ask_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("weather", weather_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("ping", ping_cmd), group=-1)
