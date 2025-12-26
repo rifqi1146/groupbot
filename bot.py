@@ -149,6 +149,14 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
     
+#bot name 
+BOT_USERNAME = None
+
+async def init_bot_username(app):
+    global BOT_USERNAME
+    me = await app.bot.get_me()
+    BOT_USERNAME = me.username.lower()
+    
 #restart
 OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
 
@@ -2952,12 +2960,19 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = msg.text or msg.caption
-    if not text:
+    if not text or not text.startswith("/"):
         return
-
-    # ⛔ BUKAN COMMAND → SKIP
-    if not text.startswith("/"):
-        return
+        
+    cmd = text.split()[0].lower()
+    
+    if "@" in cmd:
+        _, mention = cmd.split("@", 1)
+        if mention != BOT_USERNAME:
+            return
+    else:
+ 
+        if msg.chat.type != "private":
+            return
 
     user = msg.from_user
     chat = msg.chat
@@ -2967,7 +2982,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = chat.type
 
     logger.info(
-        f"⚡ COMMAND [{chat_type}] {chat_name} | {user_tag} → {text}"
+        f"🤖 BOT CMD [{chat_type}] {chat_name} | {user_tag} → {text}"
     )
     
                
@@ -3161,6 +3176,15 @@ def main():
         logger.exception("Banner render failed")
 
     async def post_init(app):
+         global BOT_USERNAME
+
+       try:
+        me = await app.bot.get_me()
+        BOT_USERNAME = me.username.lower()
+        logger.info(f"🤖 Bot username loaded: @{BOT_USERNAME}")
+    except Exception as e:
+        logger.warning(f"⚠️ Gagal ambil bot username: {e}")
+
         try:
             await app.bot.set_my_commands([
                 ("start", "Check bot status"),
