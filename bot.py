@@ -367,6 +367,7 @@ log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
 ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_USER_KEYWORD = {}
 ASUPAN_FETCHING = False
 
 # cooldown user
@@ -538,11 +539,11 @@ async def warm_asupan_cache(bot):
         ASUPAN_FETCHING = False
 
 #get asupan
-async def get_asupan_fast(bot):
+async def get_asupan_fast(bot, keyword: str | None = None):
     if ASUPAN_CACHE:
         return ASUPAN_CACHE.pop(0)
 
-    url = await fetch_asupan_tikwm()
+    url = await fetch_asupan_tikwm(keyword)
     msg = await bot.send_video(
         chat_id=ASUPAN_STARTUP_CHAT_ID,
         video=url,
@@ -555,23 +556,32 @@ async def get_asupan_fast(bot):
 #cmd asupan
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    chat_id = chat.id
+    user = update.effective_user
 
     if chat.type != "private":
-        if not is_asupan_enabled(chat_id):
+        if not is_asupan_enabled(chat.id):
             return await update.message.reply_text(
-                "🚫 Fitur asupan tidak tersedia di grup ini, pm @hirohitokiyoshi untuk mengaktifkan."
+                "🚫 Fitur asupan tidak tersedia di grup ini."
             )
+
+    # ambil keyword dari command
+    keyword = " ".join(context.args).strip() if context.args else None
+
+    # simpan keyword terakhir user
+    if keyword:
+        ASUPAN_USER_KEYWORD[user.id] = keyword
+    else:
+        keyword = ASUPAN_USER_KEYWORD.get(user.id)
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        data = await get_asupan_fast(context.bot)
+        data = await get_asupan_fast(context.bot, keyword)
 
         await chat.send_video(
             video=data["file_id"],
             reply_to_message_id=update.message.message_id,
-            reply_markup=asupan_keyboard(update.effective_user.id)
+            reply_markup=asupan_keyboard(user.id)
         )
 
         await msg.delete()
@@ -591,7 +601,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         _, action, owner_id = q.data.split(":")
         owner_id = int(owner_id)
-    except:
+    except Exception:
         await q.answer("❌ Invalid callback", show_alert=True)
         return
 
@@ -615,7 +625,13 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     try:
-        data = await get_asupan_fast(context.bot)
+        # 🔥 ambil keyword terakhir user (kalau ada)
+        keyword = ASUPAN_USER_KEYWORD.get(user_id)
+
+        data = await get_asupan_fast(
+            context.bot,
+            keyword
+        )
 
         await q.message.edit_media(
             media=InputMediaVideo(media=data["file_id"]),
@@ -626,7 +642,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             warm_asupan_cache(context.bot)
         )
 
-    except Exception as e:
+    except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
 
 async def send_asupan_once(bot):
