@@ -541,10 +541,14 @@ async def warm_asupan_cache(bot):
 
 #get asupan
 async def get_asupan_fast(bot, keyword: str | None = None):
-    if ASUPAN_CACHE:
-        return ASUPAN_CACHE.pop(0)
+    # 🔥 kalau ada keyword → JANGAN pakai cache
+    if keyword:
+        url = await fetch_asupan_tikwm(keyword)
+    else:
+        if ASUPAN_CACHE:
+            return ASUPAN_CACHE.pop(0)
+        url = await fetch_asupan_tikwm()
 
-    url = await fetch_asupan_tikwm(keyword)
     msg = await bot.send_video(
         chat_id=ASUPAN_STARTUP_CHAT_ID,
         video=url,
