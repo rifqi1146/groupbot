@@ -3365,6 +3365,7 @@ def main():
         ApplicationBuilder()
         .token(BOT_TOKEN)
         .connect_timeout(20)
+        .job_queue(JobQueue())
         .read_timeout(60)
         .write_timeout(60)
         .pool_timeout(20)
