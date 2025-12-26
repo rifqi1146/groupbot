@@ -2960,38 +2960,36 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = msg.text.strip()
+
     if not text.startswith("/"):
         return
 
-    bot_username = BOT_USERNAME  # sudah lowercase
-    chat = update.effective_chat
-    user = update.effective_user
+    cmd = text.split()[0].lower()
 
-    # ambil command tanpa arg
-    cmd = text.split()[0]  # /asupan atau /asupan@bot
+    if "@" in cmd:
+        base_cmd, target = cmd.split("@", 1)
+        if target.lower() != BOT_USERNAME:
+            return
+        cmd = base_cmd
 
-    # ===== PRIVATE CHAT =====
-    if chat.type == "private":
-        target_cmd = cmd.lstrip("/").split("@")[0]
+    bot_cmds = {
+        f"/{c.command}"
+        for c in context.bot_data.get("commands", [])
+    }
 
-    # ===== GROUP / SUPERGROUP =====
-    else:
-        if "@" in cmd:
-            base, mention = cmd[1:].split("@", 1)
-            if mention.lower() != bot_username:
-                return  # command bot lain
-            target_cmd = base
-        else:
-            # TANPA TAG → cek apakah command ini milik bot kita
-            target_cmd = cmd[1:]
-            bot_commands = {c.command for c in context.bot_data.get("commands", [])}
-            if bot_commands and target_cmd not in bot_commands:
-                return
+    if cmd not in bot_cmds:
+        return
+
+    user = msg.from_user
+    name = user.full_name if user else "Unknown"
+    uid = user.id if user else "—"
+
+    chat = msg.chat
+    chat_type = chat.type.upper()
+    chat_name = chat.title or "Private"
 
     logger.info(
-        f"📥 CMD | {chat.type.upper()} | "
-        f"{user.id} ({user.username or user.first_name}) | "
-        f"/{target_cmd}"
+        f"Command | {chat_type} | {chat_name} | {uid} ({name}) | {text}"
     )
     
                
