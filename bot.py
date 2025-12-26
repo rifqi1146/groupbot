@@ -2952,47 +2952,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=gsearch_keyboard(search_id, page),
         disable_web_page_preview=False
     )
-    
-#log terminal
-async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.effective_message
-    if not msg or not msg.text:
-        return
-
-    text = msg.text.strip()
-
-    if not text.startswith("/"):
-        return
-
-    cmd = text.split()[0].lower()
-
-    if "@" in cmd:
-        base_cmd, target = cmd.split("@", 1)
-        if target.lower() != BOT_USERNAME:
-            return
-        cmd = base_cmd
-
-    bot_cmds = {
-        f"/{c.command}"
-        for c in context.bot_data.get("commands", [])
-    }
-
-    if cmd not in bot_cmds:
-        return
-
-    user = msg.from_user
-    name = user.full_name if user else "Unknown"
-    uid = user.id if user else "—"
-
-    chat = msg.chat
-    chat_type = chat.type.upper()
-    chat_name = chat.title or "Private"
-
-    logger.info(
-        f"Command | {chat_type} | {chat_name} | {uid} ({name}) | {text}"
-    )
-    
-               
+                   
 #dollar prefix
 _DOLLAR_CMD_MAP = {
     "dl": dl_cmd,
@@ -3078,7 +3038,79 @@ class EmojiFormatter(logging.Formatter):
         record.msg = f"{emoji} {record.msg}"
         return super().format(record)
 
+BOT_COMMANDS = {
+    "start",
+    "help",
+    "menu",
+    "ask",
+    "weather",
+    "ping",
+    "enablensfw",
+    "disablensfw",
+    "nsfwlist",
+    "speedtest",
+    "ip",
+    "whoisdomain",
+    "domain",
+    "dl",
+    "stats",
+    "tr",
+    "gsearch",
+    "enableasupan",
+    "disableasupan",
+    "asupanlist",
+    "asupan",
+    "restart",
+    "ai",
+    "setmodeai",
+    "groq",
+    "nsfw",
+}
 
+#log terminal
+async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    if not msg or not msg.text:
+        return
+
+    text = msg.text.strip()
+
+    prefix = None
+
+    if text.startswith("/"):
+        prefix = "/"
+    elif text.startswith("$"):
+        prefix = "$"
+    else:
+        return
+
+    cmd_token = text.split()[0].lower()
+
+    if prefix == "/":
+        if "@" in cmd_token:
+            base, target = cmd_token.split("@", 1)
+            if target.lower() != BOT_USERNAME:
+                return
+            cmd_token = base
+        cmd_name = cmd_token[1:]
+    else:
+        cmd_name = cmd_token[1:]
+    if cmd_name not in BOT_COMMANDS:
+        return
+
+    user = msg.from_user
+    name = user.full_name if user else "Unknown"
+    uid = user.id if user else "—"
+
+    chat = msg.chat
+    chat_type = chat.type.upper()
+    chat_name = chat.title or "Private"
+
+    logger.info(
+        f"📥 CMD | {chat_type} | {chat_name} | {uid} ({name}) | {text}"
+    )
+    
+#log
 def setup_logger():
     handler = logging.StreamHandler()
     handler.setFormatter(
@@ -3099,9 +3131,6 @@ def setup_logger():
 async def post_init(app):
     global BOT_USERNAME
 
-    # =========================
-    # GET BOT USERNAME
-    # =========================
     try:
         me = await app.bot.get_me()
         BOT_USERNAME = me.username.lower()
@@ -3109,9 +3138,6 @@ async def post_init(app):
     except Exception as e:
         logger.warning(f"⚠️ Gagal ambil bot username: {e}")
 
-    # =========================
-    # SET COMMAND LIST
-    # =========================
     try:
         await app.bot.set_my_commands([
             ("start", "Check bot status"),
@@ -3130,10 +3156,7 @@ async def post_init(app):
         ])
     except Exception:
         pass
-        
-    # =========================
-    # CACHE BOT COMMANDS (BUAT LOGGER)
-    # =========================
+
     try:
         cmds = await app.bot.get_my_commands()
         app.bot_data["commands"] = cmds
@@ -3144,9 +3167,6 @@ async def post_init(app):
     except Exception as e:
         logger.warning(f"⚠️ Gagal cache bot commands: {e}")
 
-    # =========================
-    # ASUPAN STARTUP
-    # =========================
     await asyncio.sleep(5)
 
     if not ASUPAN_STARTUP_CHAT_ID:
@@ -3178,7 +3198,7 @@ def main():
 
     load_asupan_groups()
 
-    # ===== COMMAND HANDLERS =====
+    #cmd handler
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
@@ -3206,7 +3226,7 @@ def main():
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
 
-    # ===== MESSAGE HANDLERS =====
+    #massage handler
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False),
         group=-1
@@ -3222,14 +3242,14 @@ def main():
         group=99
     )
 
-    # ===== CALLBACKS =====
+    #callback
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
 
-    # ===== BANNER =====
+    #bannner
     try:
         banner = r"""
  ／l、
