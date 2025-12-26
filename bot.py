@@ -2955,24 +2955,32 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    
 #dollar prefix
 _DOLLAR_CMD_MAP = {
-    "dl": dl_cmd,
-    "ip": ip_cmd,
-    "ask": ask_cmd,
-    "speedtest": speedtest_cmd,
-    "whoisdomain": whoisdomain_cmd,
-    "domain": domain_cmd,
-    "tr": tr_cmd,
-    "gsearch": gsearch_cmd,
-    "ping": ping_cmd,
     "start": start_cmd,
     "help": help_cmd,
     "menu": help_cmd,
-    "nsfw": pollinations_generate_nsfw,
-    "groq": groq_query,
-    "menu": help_cmd,
-    "setmodeai": setmodeai_cmd,
+    "ping": ping_cmd,
+    "restart": restart_cmd,
+    "ask": ask_cmd,
     "ai": ai_cmd,
+    "groq": groq_query,
+    "setmodeai": setmodeai_cmd,
+    "weather": weather_cmd,
+    "speedtest": speedtest_cmd,
+    "ip": ip_cmd,
     "stats": stats_cmd,
+    "tr": tr_cmd,
+    "gsearch": gsearch_cmd,
+    "dl": dl_cmd,
+    "domain": domain_cmd,
+    "whoisdomain": whoisdomain_cmd,
+    "asupan": asupan_cmd,
+    "asupanlist": asupanlist_cmd,
+    "enableasupan": enable_asupan_cmd,
+    "disableasupan": disable_asupan_cmd,
+    "nsfw": pollinations_generate_nsfw,
+    "enablensfw": enablensfw_cmd,
+    "disablensfw": disablensfw_cmd,
+    "nsfwlist": nsfwlist_cmd,
 }
 
 async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3107,7 +3115,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_name = chat.title or "Private"
 
     logger.info(
-        f"📥 CMD | {chat_type} | {chat_name} | {uid} ({name}) | {text}"
+        f"👀 Command | {chat_type} | {chat_name} | {uid} ({name}) | {text}"
     )
     
 #log
