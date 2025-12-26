@@ -3088,10 +3088,61 @@ def setup_logger():
 
     return logger
     
+#post init
+async def post_init(app):
+    global BOT_USERNAME
+
+    # =========================
+    # GET BOT USERNAME
+    # =========================
+    try:
+        me = await app.bot.get_me()
+        BOT_USERNAME = me.username.lower()
+        logger.info(f"🤖 Bot username loaded: @{BOT_USERNAME}")
+    except Exception as e:
+        logger.warning(f"⚠️ Gagal ambil bot username: {e}")
+
+    # =========================
+    # SET COMMAND LIST
+    # =========================
+    try:
+        await app.bot.set_my_commands([
+            ("start", "Check bot status"),
+            ("help", "Show help menu"),
+            ("ping", "Check latency"),
+            ("stats", "System statistics"),
+            ("dl", "Download video"),
+            ("ai", "Ask Gemini"),
+            ("ask", "Ask ChatGPT"),
+            ("groq", "Ask Groq AI"),
+            ("gsearch", "Google search"),
+            ("asupan", "Asupan 😋"),
+            ("tr", "Translate text"),
+            ("speedtest", "Run speed test"),
+            ("restart", "Restart bot"),
+        ])
+    except Exception:
+        pass
+
+    # =========================
+    # ASUPAN STARTUP
+    # =========================
+    await asyncio.sleep(5)
+
+    if not ASUPAN_STARTUP_CHAT_ID:
+        logger.warning("⚠️ ASUPAN STARTUP chat_id kosong")
+        return
+
+    try:
+        await send_asupan_once(app.bot)
+        logger.info("🍜 Asupan startup sent")
+    except Exception as e:
+        logger.warning(f"⚠️ Asupan startup failed: {e}")
+        
 #main
 def main():
     logger.info("🐾 Initializing bot")
-    
+
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -3107,6 +3158,7 @@ def main():
 
     load_asupan_groups()
 
+    # ===== COMMAND HANDLERS =====
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
@@ -3134,16 +3186,11 @@ def main():
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
 
+    # ===== MESSAGE HANDLERS =====
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False),
         group=-1
     )
-
-    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
-    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
-    app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
-    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
-    app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
 
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
@@ -3155,7 +3202,14 @@ def main():
         group=99
     )
 
-#banner
+    # ===== CALLBACKS =====
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
+    app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
+    app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
+    app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
+    app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
+
+    # ===== BANNER =====
     try:
         banner = r"""
  ／l、
@@ -3170,49 +3224,9 @@ def main():
     except Exception:
         logger.exception("Banner render failed")
 
-    async def post_init(app):
-    global BOT_USERNAME
-
-    try:
-        me = await app.bot.get_me()
-        BOT_USERNAME = me.username.lower()
-        logger.info(f"🤖 Bot username loaded: @{BOT_USERNAME}")
-    except Exception as e:
-        logger.warning(f"⚠️ Gagal ambil bot username: {e}")
-
-    try:
-        await app.bot.set_my_commands([
-            ("start", "Check bot status"),
-            ("help", "Show help menu"),
-            ("ping", "Check latency"),
-            ("stats", "System statistics"),
-            ("dl", "Download video"),
-            ("ai", "Ask Gemini"),
-            ("ask", "Ask ChatGPT"),
-            ("groq", "Ask Groq AI"),
-            ("gsearch", "Google search"),
-            ("asupan", "Asupan 😋"),
-            ("tr", "Translate text"),
-            ("speedtest", "Run speed test"),
-            ("restart", "Restart bot"),
-        ])
-    except Exception:
-        pass
-
-    await asyncio.sleep(5)
-
-    if not ASUPAN_STARTUP_CHAT_ID:
-        logger.warning("⚠️ ASUPAN STARTUP chat_id kosong")
-        return
-
-    try:
-        await send_asupan_once(app.bot)
-        logger.info("🍜 Asupan startup sent")
-    except Exception as e:
-        logger.warning(f"⚠️ Asupan startup failed: {e}")
-        
     logger.info("🐾 Polling loop started")
     print("Listening for updates…")
+
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
