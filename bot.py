@@ -367,6 +367,7 @@ log = logging.getLogger(__name__)
 
 ASUPAN_CACHE = []          
 ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_KEYWORD_CACHE = {}  
 ASUPAN_USER_KEYWORD = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
@@ -516,6 +517,29 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
 
     return random.choice(videos)["play"]
 
+async def warm_keyword_asupan_cache(bot, keyword: str):
+    kw = keyword.lower().strip()
+
+    # limit cache per keyword (biar gak boros)
+    cache = ASUPAN_KEYWORD_CACHE.setdefault(kw, [])
+    if cache:
+        return
+
+    try:
+        url = await fetch_asupan_tikwm(kw)
+        msg = await bot.send_video(
+            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            video=url,
+            disable_notification=True
+        )
+        cache.append({"file_id": msg.video.file_id})
+        await msg.delete()
+
+        await asyncio.sleep(1.1)  # patuh rate limit
+
+    except Exception as e:
+        log.warning(f"[ASUPAN KEYWORD PREFETCH] {kw}: {e}")
+        
 async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
@@ -547,13 +571,31 @@ async def warm_asupan_cache(bot):
 
 #get asupan
 async def get_asupan_fast(bot, keyword: str | None = None):
-    # 🔥 cache cuma dipakai kalau keyword == None (default)
-    if keyword is None and ASUPAN_CACHE:
-        return ASUPAN_CACHE.pop(0)
+    # =========================
+    # DEFAULT ASUPAN (GLOBAL CACHE)
+    # =========================
+    if keyword is None:
+        if ASUPAN_CACHE:
+            return ASUPAN_CACHE.pop(0)
 
-    # selain default → langsung fetch (tanpa cache)
-    url = await fetch_asupan_tikwm(keyword)
+        url = await fetch_asupan_tikwm(None)
+        msg = await bot.send_video(
+            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            video=url,
+            disable_notification=True
+        )
+        file_id = msg.video.file_id
+        await msg.delete()
+        return {"file_id": file_id}
 
+    kw = keyword.lower().strip()
+
+    cache = ASUPAN_KEYWORD_CACHE.get(kw)
+    if cache:
+        return cache.pop(0)
+
+    # fetch baru
+    url = await fetch_asupan_tikwm(kw)
     msg = await bot.send_video(
         chat_id=ASUPAN_STARTUP_CHAT_ID,
         video=url,
@@ -575,6 +617,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🚫 Fitur asupan tidak tersedia di grup ini."
             )
 
+    # keyword dari command (kalau ada)
     keyword = " ".join(context.args).strip() if context.args else None
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
@@ -591,11 +634,12 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=asupan_keyboard(user.id)
         )
 
-        # 🔥 simpan keyword PER MESSAGE
+        # 🔥 keyword NEMPEL KE MESSAGE, bukan ke user
         ASUPAN_MESSAGE_KEYWORD[sent.message_id] = keyword
 
         await msg.delete()
 
+        # prefetch default (biar /asupan biasa tetep ngebut)
         context.application.create_task(
             warm_asupan_cache(context.bot)
         )
@@ -616,7 +660,10 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user_id != owner_id:
-        await q.answer("❌ Bukan asupan lu dongo!", show_alert=True)
+        await q.answer(
+            "❌ Bukan asupan lu dongo!",
+            show_alert=True
+        )
         return
 
     now = time.time()
@@ -633,6 +680,8 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         msg_id = q.message.message_id
+
+        # 🔥 keyword DIAMBIL DARI MESSAGE INI
         keyword = ASUPAN_MESSAGE_KEYWORD.get(msg_id)
 
         data = await get_asupan_fast(
@@ -645,7 +694,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=asupan_keyboard(owner_id)
         )
 
-        # keyword tetap nempel
+        # keyword tetap nempel ke message yg sama
         ASUPAN_MESSAGE_KEYWORD[msg_id] = keyword
 
         context.application.create_task(
