@@ -2956,33 +2956,42 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #log terminal
 async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
-    if not msg:
+    if not msg or not msg.text:
         return
 
-    text = msg.text or msg.caption
-    if not text or not text.startswith("/"):
+    text = msg.text.strip()
+    if not text.startswith("/"):
         return
-        
-    cmd = text.split()[0].lower()
-    
-    if "@" in cmd:
-        _, mention = cmd.split("@", 1)
-        if mention != BOT_USERNAME:
-            return
+
+    bot_username = BOT_USERNAME  # sudah lowercase
+    chat = update.effective_chat
+    user = update.effective_user
+
+    # ambil command tanpa arg
+    cmd = text.split()[0]  # /asupan atau /asupan@bot
+
+    # ===== PRIVATE CHAT =====
+    if chat.type == "private":
+        target_cmd = cmd.lstrip("/").split("@")[0]
+
+    # ===== GROUP / SUPERGROUP =====
     else:
- 
-        if msg.chat.type != "private":
-            return
-
-    user = msg.from_user
-    chat = msg.chat
-
-    user_tag = f"{user.first_name} ({user.id})" if user else "Unknown"
-    chat_name = chat.title if chat.title else "Private"
-    chat_type = chat.type
+        if "@" in cmd:
+            base, mention = cmd[1:].split("@", 1)
+            if mention.lower() != bot_username:
+                return  # command bot lain
+            target_cmd = base
+        else:
+            # TANPA TAG → cek apakah command ini milik bot kita
+            target_cmd = cmd[1:]
+            bot_commands = {c.command for c in context.bot_data.get("commands", [])}
+            if bot_commands and target_cmd not in bot_commands:
+                return
 
     logger.info(
-        f"🤖 BOT CMD [{chat_type}] {chat_name} | {user_tag} → {text}"
+        f"📥 CMD | {chat.type.upper()} | "
+        f"{user.id} ({user.username or user.first_name}) | "
+        f"/{target_cmd}"
     )
     
                
@@ -3123,6 +3132,19 @@ async def post_init(app):
         ])
     except Exception:
         pass
+        
+    # =========================
+    # CACHE BOT COMMANDS (BUAT LOGGER)
+    # =========================
+    try:
+        cmds = await app.bot.get_my_commands()
+        app.bot_data["commands"] = cmds
+        logger.info(
+            "🧠 Cached bot commands: "
+            + ", ".join(c.command for c in cmds)
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Gagal cache bot commands: {e}")
 
     # =========================
     # ASUPAN STARTUP
