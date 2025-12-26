@@ -2946,9 +2946,17 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
 #log terminal
-async def log_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg:
+        return
+
+    text = msg.text or msg.caption
+    if not text:
+        return
+
+    # ⛔ BUKAN COMMAND → SKIP
+    if not text.startswith("/"):
         return
 
     user = msg.from_user
@@ -2958,10 +2966,8 @@ async def log_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_name = chat.title if chat.title else "Private"
     chat_type = chat.type
 
-    text = msg.text or msg.caption or "<non-text>"
-
     logger.info(
-        f"👀 [{chat_type}] {chat_name} | {user_tag} → {text}"
+        f"⚡ COMMAND [{chat_type}] {chat_name} | {user_tag} → {text}"
     )
     
                
@@ -3135,7 +3141,7 @@ def main():
     
     #log
     app.add_handler(
-        MessageHandler(filters.ALL, log_all_messages),
+        MessageHandler(filters.ALL, log_commands),
           group=99
     )
 
