@@ -54,6 +54,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     filters,
+    JobQueue,
     ContextTypes,
 )
 
