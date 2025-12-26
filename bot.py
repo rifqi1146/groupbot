@@ -574,9 +574,11 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # simpan keyword terakhir user
     if keyword:
-        ASUPAN_USER_KEYWORD[user.id] = keyword
+    ASUPAN_USER_KEYWORD[user.id] = keyword
     else:
-        keyword = ASUPAN_USER_KEYWORD.get(user.id)
+    # tanpa arg → reset ke default
+    ASUPAN_USER_KEYWORD.pop(user.id, None)
+    keyword = None
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
