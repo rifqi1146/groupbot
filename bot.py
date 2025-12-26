@@ -363,6 +363,8 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await status_msg.edit_text(report, parse_mode="HTML")
         
 #asupannnnn
+log = logging.getLogger(__name__)
+
 ASUPAN_CACHE = []          
 ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_FETCHING = False
