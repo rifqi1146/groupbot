@@ -519,23 +519,26 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
 
 async def warm_keyword_asupan_cache(bot, keyword: str):
     kw = keyword.lower().strip()
-
-    # limit cache per keyword (biar gak boros)
     cache = ASUPAN_KEYWORD_CACHE.setdefault(kw, [])
-    if cache:
+
+    # 🔒 jangan dobel fetch
+    if len(cache) >= ASUPAN_PREFETCH_SIZE:
         return
 
     try:
-        url = await fetch_asupan_tikwm(kw)
-        msg = await bot.send_video(
-            chat_id=ASUPAN_STARTUP_CHAT_ID,
-            video=url,
-            disable_notification=True
-        )
-        cache.append({"file_id": msg.video.file_id})
-        await msg.delete()
+        while len(cache) < ASUPAN_PREFETCH_SIZE:
+            url = await fetch_asupan_tikwm(kw)
 
-        await asyncio.sleep(1.1)  # patuh rate limit
+            msg = await bot.send_video(
+                chat_id=ASUPAN_STARTUP_CHAT_ID,
+                video=url,
+                disable_notification=True
+            )
+
+            cache.append({"file_id": msg.video.file_id})
+            await msg.delete()
+
+            await asyncio.sleep(1.1)  # patuh rate limit
 
     except Exception as e:
         log.warning(f"[ASUPAN KEYWORD PREFETCH] {kw}: {e}")
@@ -572,7 +575,7 @@ async def warm_asupan_cache(bot):
 #get asupan
 async def get_asupan_fast(bot, keyword: str | None = None):
     # =========================
-    # DEFAULT ASUPAN (GLOBAL CACHE)
+    # DEFAULT ASUPAN
     # =========================
     if keyword is None:
         if ASUPAN_CACHE:
@@ -588,13 +591,16 @@ async def get_asupan_fast(bot, keyword: str | None = None):
         await msg.delete()
         return {"file_id": file_id}
 
+    # =========================
+    # KEYWORD ASUPAN
+    # =========================
     kw = keyword.lower().strip()
-
     cache = ASUPAN_KEYWORD_CACHE.get(kw)
+
     if cache:
         return cache.pop(0)
 
-    # fetch baru
+    # fallback (jarang kepake kalo prefetch jalan)
     url = await fetch_asupan_tikwm(kw)
     msg = await bot.send_video(
         chat_id=ASUPAN_STARTUP_CHAT_ID,
@@ -603,7 +609,6 @@ async def get_asupan_fast(bot, keyword: str | None = None):
     )
     file_id = msg.video.file_id
     await msg.delete()
-
     return {"file_id": file_id}
 
 #cmd asupan
@@ -634,15 +639,22 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=asupan_keyboard(user.id)
         )
 
-        # 🔥 keyword NEMPEL KE MESSAGE, bukan ke user
+        # 🔥 keyword NEMPEL KE MESSAGE
         ASUPAN_MESSAGE_KEYWORD[sent.message_id] = keyword
 
         await msg.delete()
 
-        # prefetch default (biar /asupan biasa tetep ngebut)
+        # 🚀 prefetch:
+        # - default asupan tetap ngebut
         context.application.create_task(
             warm_asupan_cache(context.bot)
         )
+
+        # - keyword asupan biar next klik 🔄 instan
+        if keyword:
+            context.application.create_task(
+                warm_keyword_asupan_cache(context.bot, keyword)
+            )
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
@@ -697,9 +709,15 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # keyword tetap nempel ke message yg sama
         ASUPAN_MESSAGE_KEYWORD[msg_id] = keyword
 
-        context.application.create_task(
-            warm_asupan_cache(context.bot)
-        )
+        # 🚀 prefetch ulang biar klik berikutnya instan
+        if keyword:
+            context.application.create_task(
+                warm_keyword_asupan_cache(context.bot, keyword)
+            )
+        else:
+            context.application.create_task(
+                warm_asupan_cache(context.bot)
+            )
 
     except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
