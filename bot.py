@@ -526,7 +526,9 @@ async def warm_asupan_cache(bot):
     try:
         while len(ASUPAN_CACHE) < ASUPAN_PREFETCH_SIZE:
             try:
-                url = await fetch_asupan_tikwm()
+                # 🔥 cache cuma isi DEFAULT
+                url = await fetch_asupan_tikwm(None)
+
                 msg = await bot.send_video(
                     chat_id=ASUPAN_STARTUP_CHAT_ID,
                     video=url,
@@ -534,6 +536,9 @@ async def warm_asupan_cache(bot):
                 )
                 ASUPAN_CACHE.append({"file_id": msg.video.file_id})
                 await msg.delete()
+
+                await asyncio.sleep(1.1)  # ⛔ patuh rate limit
+
             except Exception as e:
                 log.warning(f"[ASUPAN PREFETCH] {e}")
                 break
@@ -542,13 +547,12 @@ async def warm_asupan_cache(bot):
 
 #get asupan
 async def get_asupan_fast(bot, keyword: str | None = None):
-    # 🔥 kalau ada keyword → JANGAN pakai cache
-    if keyword:
-        url = await fetch_asupan_tikwm(keyword)
-    else:
-        if ASUPAN_CACHE:
-            return ASUPAN_CACHE.pop(0)
-        url = await fetch_asupan_tikwm()
+    # 🔥 cache cuma dipakai kalau keyword == None (default)
+    if keyword is None and ASUPAN_CACHE:
+        return ASUPAN_CACHE.pop(0)
+
+    # selain default → langsung fetch (tanpa cache)
+    url = await fetch_asupan_tikwm(keyword)
 
     msg = await bot.send_video(
         chat_id=ASUPAN_STARTUP_CHAT_ID,
@@ -557,6 +561,7 @@ async def get_asupan_fast(bot, keyword: str | None = None):
     )
     file_id = msg.video.file_id
     await msg.delete()
+
     return {"file_id": file_id}
 
 #cmd asupan
