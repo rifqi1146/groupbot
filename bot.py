@@ -572,18 +572,22 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ambil keyword dari command
     keyword = " ".join(context.args).strip() if context.args else None
 
-    # simpan keyword terakhir user
+    # 🔥 LOGIC FINAL KEYWORD
     if keyword:
-    ASUPAN_USER_KEYWORD[user.id] = keyword
+        # user eksplisit ngetik keyword → simpan
+        ASUPAN_USER_KEYWORD[user.id] = keyword
     else:
-    # tanpa arg → reset ke default
-    ASUPAN_USER_KEYWORD.pop(user.id, None)
-    keyword = None
+        # user cuma /asupan → reset ke default
+        ASUPAN_USER_KEYWORD.pop(user.id, None)
+        keyword = None
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        data = await get_asupan_fast(context.bot, keyword)
+        data = await get_asupan_fast(
+            context.bot,
+            keyword
+        )
 
         await chat.send_video(
             video=data["file_id"],
