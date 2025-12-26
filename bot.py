@@ -3175,46 +3175,55 @@ def main():
     except Exception:
         logger.exception("Banner render failed")
 
-    async def post_init(app):
-         global BOT_USERNAME
+async def post_init(app):
+    global BOT_USERNAME
 
-       try:
+    # =========================
+    # AMBIL USERNAME BOT
+    # =========================
+    try:
         me = await app.bot.get_me()
         BOT_USERNAME = me.username.lower()
         logger.info(f"🤖 Bot username loaded: @{BOT_USERNAME}")
     except Exception as e:
         logger.warning(f"⚠️ Gagal ambil bot username: {e}")
 
-        try:
-            await app.bot.set_my_commands([
-                ("start", "Check bot status"),
-                ("help", "Show help menu"),
-                ("ping", "Check latency"),
-                ("stats", "System statistics"),
-                ("dl", "Download video"),
-                ("ai", "Ask Gemini"),
-                ("ask", "Ask ChatGPT"),
-                ("groq", "Ask Groq AI"),
-                ("gsearch", "Google search"),
-                ("asupan", "Asupan 😋"),
-                ("tr", "Translate text"),
-                ("speedtest", "Run speed test"),
-                ("restart", "Restart bot"),
-            ])
-        except Exception:
-            pass
+    # =========================
+    # SET COMMAND LIST
+    # =========================
+    try:
+        await app.bot.set_my_commands([
+            ("start", "Check bot status"),
+            ("help", "Show help menu"),
+            ("ping", "Check latency"),
+            ("stats", "System statistics"),
+            ("dl", "Download video"),
+            ("ai", "Ask Gemini"),
+            ("ask", "Ask ChatGPT"),
+            ("groq", "Ask Groq AI"),
+            ("gsearch", "Google search"),
+            ("asupan", "Asupan 😋"),
+            ("tr", "Translate text"),
+            ("speedtest", "Run speed test"),
+            ("restart", "Restart bot"),
+        ])
+    except Exception:
+        pass
 
-        await asyncio.sleep(5)
+    # =========================
+    # ASUPAN STARTUP
+    # =========================
+    await asyncio.sleep(5)
 
-        if not ASUPAN_STARTUP_CHAT_ID:
-            logger.warning("⚠️ ASUPAN STARTUP chat_id kosong")
-            return
+    if not ASUPAN_STARTUP_CHAT_ID:
+        logger.warning("⚠️ ASUPAN STARTUP chat_id kosong")
+        return
 
-        try:
-            await send_asupan_once(app.bot)
-            logger.info("🍜 Asupan startup sent")
-        except Exception as e:
-            logger.warning(f"⚠️ Asupan startup failed: {e}")
+    try:
+        await send_asupan_once(app.bot)
+        logger.info("🍜 Asupan startup sent")
+    except Exception as e:
+        logger.warning(f"⚠️ Asupan startup failed: {e}")
 
     app.post_init = post_init
     logger.info("🐾 Polling loop started")
