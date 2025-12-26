@@ -370,6 +370,51 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await status_msg.edit_text(report, parse_mode="HTML")
         
+#cmd owner
+def helpowner_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Close", callback_data="helpowner:close")]
+    ])
+    
+async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    msg = update.message
+
+    if not user or user.id != OWNER_ID:
+        return await msg.reply_text("❌ Owner only.")
+
+    text = (
+        "👑 <b>Owner Commands</b>\n\n"
+        "⚡ <b>System</b>\n"
+        "• <code>/speedtest</code>\n"
+        "• <code>/restart</code>\n\n"
+        "🧠 <b>NSFW Control</b>\n"
+        "• <code>/enablensfw</code>\n"
+        "• <code>/disablensfw</code>\n"
+        "• <code>/nsfwlist</code>\n\n"
+        "🍜 <b>Asupan Control</b>\n"
+        "• <code>/enableasupan</code>\n"
+        "• <code>/disableasupan</code>\n"
+        "• <code>/asupanlist</code>\n"
+    )
+
+    await msg.reply_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=helpowner_keyboard()
+    )
+    
+async def helpowner_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+
+    if q.data != "helpowner:close":
+        return
+
+    try:
+        await q.message.delete()
+    except Exception:
+        pass
+                
 #asupannnnn
 log = logging.getLogger(__name__)
 
@@ -2958,6 +3003,7 @@ _DOLLAR_CMD_MAP = {
     "start": start_cmd,
     "help": help_cmd,
     "menu": help_cmd,
+    "helpowner": helpowner_cmd,
     "ping": ping_cmd,
     "restart": restart_cmd,
     "ask": ask_cmd,
@@ -3050,6 +3096,7 @@ BOT_COMMANDS = {
     "start",
     "help",
     "menu",
+    "helpowner",
     "ask",
     "weather",
     "ping",
@@ -3240,6 +3287,7 @@ def main():
     app.add_handler(CommandHandler("setmodeai", setmodeai_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
+    app.add_handler(CommandHandler("helpowner", helpowner_cmd), group=-1)
 
     #massage handler
     app.add_handler(
@@ -3263,6 +3311,7 @@ def main():
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
+    app.add_handler(CallbackQueryHandler(helpowner_callback, pattern=r"^helpowner:"))
 
     #bannner
     try:
