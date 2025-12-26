@@ -425,6 +425,8 @@ ASUPAN_KEYWORD_CACHE = {}
 ASUPAN_USER_KEYWORD = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
+ASUPAN_DELETE_JOBS = {}  # message_id -> job
+ASUPAN_AUTO_DELETE_SEC = 300  # 5 menit
 
 # cooldown user
 ASUPAN_COOLDOWN = {}
@@ -466,6 +468,19 @@ async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_asupan_groups()
 
     await update.message.reply_text("✅ Asupan diaktifkan di grup ini.")
+    
+async def _delete_asupan_job(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.data["chat_id"]
+    message_id = job.data["message_id"]
+
+    try:
+        await context.bot.delete_message(chat_id, message_id)
+        log.info(f"[ASUPAN AUTO DELETE] {chat_id}:{message_id}")
+    except Exception:
+        pass
+
+    ASUPAN_DELETE_JOBS.pop(message_id, None)
     
 async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -679,14 +694,10 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     keyword = " ".join(context.args).strip() if context.args else None
-
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        data = await get_asupan_fast(
-            context.bot,
-            keyword
-        )
+        data = await get_asupan_fast(context.bot, keyword)
 
         sent = await chat.send_video(
             video=data["file_id"],
@@ -696,12 +707,23 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         ASUPAN_MESSAGE_KEYWORD[sent.message_id] = keyword
 
+        old_job = ASUPAN_DELETE_JOBS.pop(sent.message_id, None)
+        if old_job:
+            old_job.schedule_removal()
+
+        job = context.application.job_queue.run_once(
+            _delete_asupan_job,
+            ASUPAN_AUTO_DELETE_SEC,
+            data={
+                "chat_id": chat.id,
+                "message_id": sent.message_id,
+            },
+        )
+        ASUPAN_DELETE_JOBS[sent.message_id] = job
+
         await msg.delete()
 
-        context.application.create_task(
-            warm_asupan_cache(context.bot)
-        )
-
+        context.application.create_task(warm_asupan_cache(context.bot))
         if keyword:
             context.application.create_task(
                 warm_keyword_asupan_cache(context.bot, keyword)
@@ -723,10 +745,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user_id != owner_id:
-        await q.answer(
-            "❌ Bukan asupan lu dongo!",
-            show_alert=True
-        )
+        await q.answer("❌ Bukan asupan lu dongo!", show_alert=True)
         return
 
     now = time.time()
@@ -743,20 +762,31 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         msg_id = q.message.message_id
-
         keyword = ASUPAN_MESSAGE_KEYWORD.get(msg_id)
 
-        data = await get_asupan_fast(
-            context.bot,
-            keyword
-        )
+        old_job = ASUPAN_DELETE_JOBS.pop(msg_id, None)
+        if old_job:
+            old_job.schedule_removal()
+
+        data = await get_asupan_fast(context.bot, keyword)
 
         await q.message.edit_media(
             media=InputMediaVideo(media=data["file_id"]),
             reply_markup=asupan_keyboard(owner_id)
         )
-        
+
+        job = context.application.job_queue.run_once(
+            _delete_asupan_job,
+            ASUPAN_AUTO_DELETE_SEC,
+            data={
+                "chat_id": q.message.chat_id,
+                "message_id": msg_id,
+            },
+        )
+        ASUPAN_DELETE_JOBS[msg_id] = job
+
         ASUPAN_MESSAGE_KEYWORD[msg_id] = keyword
+
         if keyword:
             context.application.create_task(
                 warm_keyword_asupan_cache(context.bot, keyword)
