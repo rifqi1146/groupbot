@@ -427,6 +427,7 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
    
 async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    bot = context.bot
 
     if user.id != OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
@@ -434,11 +435,20 @@ async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ASUPAN_ENABLED_CHATS:
         return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
 
-    text = "<b>📋 Grup Asupan Aktif</b>\n\n"
-    for cid in ASUPAN_ENABLED_CHATS:
-        text += f"• <code>{cid}</code>\n"
+    lines = ["<b>📋 Grup Asupan Aktif</b>\n"]
 
-    await update.message.reply_text(text, parse_mode="HTML")
+    for cid in ASUPAN_ENABLED_CHATS:
+        try:
+            chat = await bot.get_chat(cid)
+            title = chat.title or chat.username or "Unknown"
+            lines.append(f"• {html.escape(title)}")
+        except Exception:
+            lines.append(f"• <code>{cid}</code>")
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML"
+    )
     
 
 #inline keyboard
@@ -521,7 +531,6 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
     kw = keyword.lower().strip()
     cache = ASUPAN_KEYWORD_CACHE.setdefault(kw, [])
 
-    # 🔒 jangan dobel fetch
     if len(cache) >= ASUPAN_PREFETCH_SIZE:
         return
 
@@ -538,7 +547,7 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
             cache.append({"file_id": msg.video.file_id})
             await msg.delete()
 
-            await asyncio.sleep(1.1)  # patuh rate limit
+            await asyncio.sleep(1.1)
 
     except Exception as e:
         log.warning(f"[ASUPAN KEYWORD PREFETCH] {kw}: {e}")
@@ -574,9 +583,6 @@ async def warm_asupan_cache(bot):
 
 #get asupan
 async def get_asupan_fast(bot, keyword: str | None = None):
-    # =========================
-    # DEFAULT ASUPAN
-    # =========================
     if keyword is None:
         if ASUPAN_CACHE:
             return ASUPAN_CACHE.pop(0)
@@ -590,17 +596,13 @@ async def get_asupan_fast(bot, keyword: str | None = None):
         file_id = msg.video.file_id
         await msg.delete()
         return {"file_id": file_id}
-
-    # =========================
-    # KEYWORD ASUPAN
-    # =========================
+        
     kw = keyword.lower().strip()
     cache = ASUPAN_KEYWORD_CACHE.get(kw)
 
     if cache:
         return cache.pop(0)
 
-    # fallback (jarang kepake kalo prefetch jalan)
     url = await fetch_asupan_tikwm(kw)
     msg = await bot.send_video(
         chat_id=ASUPAN_STARTUP_CHAT_ID,
@@ -622,7 +624,6 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🚫 Fitur asupan tidak tersedia di grup ini."
             )
 
-    # keyword dari command (kalau ada)
     keyword = " ".join(context.args).strip() if context.args else None
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
@@ -639,18 +640,14 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=asupan_keyboard(user.id)
         )
 
-        # 🔥 keyword NEMPEL KE MESSAGE
         ASUPAN_MESSAGE_KEYWORD[sent.message_id] = keyword
 
         await msg.delete()
 
-        # 🚀 prefetch:
-        # - default asupan tetap ngebut
         context.application.create_task(
             warm_asupan_cache(context.bot)
         )
 
-        # - keyword asupan biar next klik 🔄 instan
         if keyword:
             context.application.create_task(
                 warm_keyword_asupan_cache(context.bot, keyword)
@@ -693,7 +690,6 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg_id = q.message.message_id
 
-        # 🔥 keyword DIAMBIL DARI MESSAGE INI
         keyword = ASUPAN_MESSAGE_KEYWORD.get(msg_id)
 
         data = await get_asupan_fast(
@@ -705,11 +701,8 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media=InputMediaVideo(media=data["file_id"]),
             reply_markup=asupan_keyboard(owner_id)
         )
-
-        # keyword tetap nempel ke message yg sama
+        
         ASUPAN_MESSAGE_KEYWORD[msg_id] = keyword
-
-        # 🚀 prefetch ulang biar klik berikutnya instan
         if keyword:
             context.application.create_task(
                 warm_keyword_asupan_cache(context.bot, keyword)
