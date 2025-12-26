@@ -2944,6 +2944,26 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=gsearch_keyboard(search_id, page),
         disable_web_page_preview=False
     )
+    
+#log terminal
+async def log_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    if not msg:
+        return
+
+    user = msg.from_user
+    chat = msg.chat
+
+    user_tag = f"{user.first_name} ({user.id})" if user else "Unknown"
+    chat_name = chat.title if chat.title else "Private"
+    chat_type = chat.type
+
+    text = msg.text or msg.caption or "<non-text>"
+
+    logger.info(
+        f"👀 [{chat_type}] {chat_name} | {user_tag} → {text}"
+    )
+    
                
 #dollar prefix
 _DOLLAR_CMD_MAP = {
@@ -3111,6 +3131,12 @@ def main():
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
+    )
+    
+    #log
+    app.add_handler(
+        MessageHandler(filters.ALL, log_all_messages),
+          group=99
     )
 
     # ===== BANNER =====
