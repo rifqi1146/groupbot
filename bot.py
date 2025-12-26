@@ -3092,7 +3092,6 @@ def setup_logger():
 def main():
     logger.info("🐾 Initializing bot")
     
-    # build
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -3102,12 +3101,12 @@ def main():
         .pool_timeout(20)
         .build()
     )
-    
+
     app.post_shutdown = post_shutdown
-    
+    app.post_init = post_init
+
     load_asupan_groups()
 
-    # command handlers
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
@@ -3135,32 +3134,28 @@ def main():
     app.add_handler(CommandHandler("groq", groq_query, block=False), group=-1)
     app.add_handler(CommandHandler("nsfw", pollinations_generate_nsfw, block=False), group=-1)
 
-    # autodetect link
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False),
         group=-1
     )
-    
-    # inline callback
+
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dl_callback, pattern=r"^dl:"))
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))
-    
-    # dollar prefix
+
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
         group=1
     )
-    
-    #log
+
     app.add_handler(
         MessageHandler(filters.ALL, log_commands),
-          group=99
+        group=99
     )
 
-    # ===== BANNER =====
+#banner
     try:
         banner = r"""
  ／l、
@@ -3175,12 +3170,9 @@ def main():
     except Exception:
         logger.exception("Banner render failed")
 
-async def post_init(app):
+    async def post_init(app):
     global BOT_USERNAME
 
-    # =========================
-    # AMBIL USERNAME BOT
-    # =========================
     try:
         me = await app.bot.get_me()
         BOT_USERNAME = me.username.lower()
@@ -3188,9 +3180,6 @@ async def post_init(app):
     except Exception as e:
         logger.warning(f"⚠️ Gagal ambil bot username: {e}")
 
-    # =========================
-    # SET COMMAND LIST
-    # =========================
     try:
         await app.bot.set_my_commands([
             ("start", "Check bot status"),
@@ -3210,9 +3199,6 @@ async def post_init(app):
     except Exception:
         pass
 
-    # =========================
-    # ASUPAN STARTUP
-    # =========================
     await asyncio.sleep(5)
 
     if not ASUPAN_STARTUP_CHAT_ID:
@@ -3224,8 +3210,7 @@ async def post_init(app):
         logger.info("🍜 Asupan startup sent")
     except Exception as e:
         logger.warning(f"⚠️ Asupan startup failed: {e}")
-
-    app.post_init = post_init
+        
     logger.info("🐾 Polling loop started")
     print("Listening for updates…")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
