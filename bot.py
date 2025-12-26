@@ -2999,66 +2999,6 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
                    
-#dollar prefix
-_DOLLAR_CMD_MAP = {
-    "start": start_cmd,
-    "help": help_cmd,
-    "menu": help_cmd,
-    "helpowner": helpowner_cmd,
-    "ping": ping_cmd,
-    "restart": restart_cmd,
-    "ask": ask_cmd,
-    "ai": ai_cmd,
-    "groq": groq_query,
-    "setmodeai": setmodeai_cmd,
-    "weather": weather_cmd,
-    "speedtest": speedtest_cmd,
-    "ip": ip_cmd,
-    "stats": stats_cmd,
-    "tr": tr_cmd,
-    "gsearch": gsearch_cmd,
-    "dl": dl_cmd,
-    "domain": domain_cmd,
-    "whoisdomain": whoisdomain_cmd,
-    "asupan": asupan_cmd,
-    "asupanlist": asupanlist_cmd,
-    "enableasupan": enable_asupan_cmd,
-    "disableasupan": disable_asupan_cmd,
-    "nsfw": pollinations_generate_nsfw,
-    "enablensfw": enablensfw_cmd,
-    "wlc": wlc_cmd,
-    "disablensfw": disablensfw_cmd,
-    "nsfwlist": nsfwlist_cmd,
-}
-
-async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg or not msg.text:
-        return
-    txt = msg.text.strip()
-    if not txt.startswith("$"):
-        return
-    try:
-        parts = shlex.split(txt[1:].strip())
-    except Exception:
-        parts = txt[1:].strip().split()
-    if not parts:
-        return
-    cmd = parts[0].lstrip("/").lower()
-    args = parts[1:]
-    handler = _DOLLAR_CMD_MAP.get(cmd)
-    if not handler:
-        return
-    context.args = args
-    try:
-        await handler(update, context)
-    except Exception:
-        logger.exception("dollar_router: handler %s failed", cmd)
-        try:
-            await update.message.reply_text("Gagal menjalankan perintah.")
-        except Exception:
-            pass
-            
 #welcome 
 WELCOME_ENABLED_CHATS = set()
 WELCOME_FILE = "welcome_chats.json"
@@ -3275,6 +3215,66 @@ def setup_logger():
 
     return logger
     
+#dollar prefix
+_DOLLAR_CMD_MAP = {
+    "start": start_cmd,
+    "help": help_cmd,
+    "menu": help_cmd,
+    "helpowner": helpowner_cmd,
+    "ping": ping_cmd,
+    "restart": restart_cmd,
+    "ask": ask_cmd,
+    "ai": ai_cmd,
+    "groq": groq_query,
+    "setmodeai": setmodeai_cmd,
+    "weather": weather_cmd,
+    "speedtest": speedtest_cmd,
+    "ip": ip_cmd,
+    "stats": stats_cmd,
+    "tr": tr_cmd,
+    "gsearch": gsearch_cmd,
+    "dl": dl_cmd,
+    "domain": domain_cmd,
+    "whoisdomain": whoisdomain_cmd,
+    "asupan": asupan_cmd,
+    "asupanlist": asupanlist_cmd,
+    "enableasupan": enable_asupan_cmd,
+    "disableasupan": disable_asupan_cmd,
+    "nsfw": pollinations_generate_nsfw,
+    "enablensfw": enablensfw_cmd,
+    "wlc": wlc_cmd,
+    "disablensfw": disablensfw_cmd,
+    "nsfwlist": nsfwlist_cmd,
+}
+
+async def dollar_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg or not msg.text:
+        return
+    txt = msg.text.strip()
+    if not txt.startswith("$"):
+        return
+    try:
+        parts = shlex.split(txt[1:].strip())
+    except Exception:
+        parts = txt[1:].strip().split()
+    if not parts:
+        return
+    cmd = parts[0].lstrip("/").lower()
+    args = parts[1:]
+    handler = _DOLLAR_CMD_MAP.get(cmd)
+    if not handler:
+        return
+    context.args = args
+    try:
+        await handler(update, context)
+    except Exception:
+        logger.exception("dollar_router: handler %s failed", cmd)
+        try:
+            await update.message.reply_text("Gagal menjalankan perintah.")
+        except Exception:
+            pass
+            
 #post init
 async def post_init(app):
     global BOT_USERNAME
