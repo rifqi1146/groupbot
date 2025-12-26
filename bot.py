@@ -449,10 +449,9 @@ def asupan_keyboard(owner_id: int):
     ])
 
 #fetch
-async def fetch_asupan_tikwm():
-    keywords = [
+async def fetch_asupan_tikwm(keyword: str | None = None):
+    default_keywords = [
         "asupan indo",
-        "krisna",
         "tante holic",
         "trend susu beracun",
         "krisna minta susu",
@@ -489,9 +488,11 @@ async def fetch_asupan_tikwm():
         "asupan cewek"
     ]
 
+    query = keyword.strip() if keyword else random.choice(default_keywords)
+
     api_url = "https://www.tikwm.com/api/feed/search"
     payload = {
-        "keywords": random.choice(keywords),
+        "keywords": query,
         "count": 20,
         "cursor": 0,
         "region": "ID"
