@@ -3,11 +3,14 @@
 import os
 import io
 import re
+import sys
 import json
 import platform
 import statistics
 import time
 import shlex
+import socket
+import whois
 import shutil
 import asyncio
 import logging
@@ -18,23 +21,33 @@ import html
 import dns.resolver
 import pytesseract
 import uuid
+import math
+import subprocess
+import base64
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+from io import BytesIO
 from bs4 import BeautifulSoup
 from typing import List, Tuple, Optional, Tuple
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from PIL import Image
-from telegram import Update
-from telegram.ext import ContextTypes
+
+from deep_translator import (
+    GoogleTranslator,
+    MyMemoryTranslator, 
+    LibreTranslator,
+)
 
 from telegram import (
     Update,
     ChatPermissions,
     InputFile,
     InlineKeyboardButton,
+    InputMediaPhoto,
+    InputMediaVideo,
     InlineKeyboardMarkup,
 )
+
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -95,8 +108,6 @@ USER_CACHE_FILE = "users.json"
 AI_MODE_FILE = "ai_mode.json"
 
 #nsfw
-import json, os
-
 NSFW_FILE = "data/nsfw_groups.json"
 os.makedirs("data", exist_ok=True)
 
@@ -139,10 +150,6 @@ def save_ai_mode(data):
 _ai_mode = load_ai_mode()
     
 #restart
-import os, sys
-from telegram import Update
-from telegram.ext import ContextTypes
-
 OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
 
 async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,14 +162,6 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     
 #speedtest
-import os, json, time, math, asyncio, subprocess, logging
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-from telegram import Update
-from telegram.ext import ContextTypes
-
-log = logging.getLogger(__name__)
-
 IMG_W, IMG_H = 900, 520
 
 #util
@@ -282,10 +281,6 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text(f"❌ Failed: {e}")
         
 #weather
-import asyncio, time, html
-from telegram import Update
-from telegram.ext import ContextTypes
-
 WEATHER_SPIN_FRAMES = ["🌤", "⛅", "🌥", "☁️"]
 
 async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -368,19 +363,8 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await status_msg.edit_text(report, parse_mode="HTML")
         
 #asupannnnn
-import aiohttp, random, logging, asyncio, time
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Update,
-    InputMediaVideo
-)
-from telegram.ext import ContextTypes
-
-log = logging.getLogger(__name__)
-
 ASUPAN_CACHE = []          
-ASUPAN_PREFETCH_SIZE = 10
+ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_FETCHING = False
 
 # cooldown user
@@ -676,12 +660,6 @@ async def startup_tasks(app):
         log.warning(f"[ASUPAN STARTUP] {e}")
                         
 #dl config
-import asyncio, aiohttp, os, uuid, time, re, logging
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
-
-log = logging.getLogger(__name__)
-
 TMP_DIR = "downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 
@@ -696,9 +674,20 @@ DL_FORMATS = {
 DL_CACHE = {}
 
 #ux
-def progress_bar(percent: float, length: int = 10) -> str:
-    filled = int(percent / 100 * length)
-    return "█" * filled + "░" * (length - filled)
+def progress_bar(percent: float, length: int = 12) -> str:
+    """
+    Return a simple block progress bar using '▰' (filled) and '▱' (empty).
+    percent: 0..100
+    length: number of segments
+    """
+    try:
+        p = max(0.0, min(100.0, float(percent)))
+    except Exception:
+        p = 0.0
+    filled = int(round((p / 100.0) * length))
+    empty = length - filled
+    bar = "▰" * filled + "▱" * empty
+    return f"{bar} {p:.1f}%"
 
 def dl_keyboard(dl_id: str):
     return InlineKeyboardMarkup([
@@ -939,8 +928,6 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     return None
 
 #worker
-from telegram import InputMediaPhoto
-
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
@@ -1282,9 +1269,6 @@ async def openrouter_generate_image(prompt: str) -> list[str]:
 
     return images
     
-import base64
-from io import BytesIO
-
 def data_url_to_bytesio(data_url: str) -> BytesIO:
     header, encoded = data_url.split(",", 1)
     data = base64.b64decode(encoded)
@@ -1944,11 +1928,6 @@ async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 #translator
-from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
-from telegram import Update
-from telegram.ext import ContextTypes
-import html
-
 DEFAULT_LANG = "en"
 
 VALID_LANGS = {
@@ -2401,21 +2380,6 @@ def get_pretty_uptime():
     except Exception:
         return "N/A"
 
-def progress_bar(percent: float, length: int = 12) -> str:
-    """
-    Return a simple block progress bar using '▰' (filled) and '▱' (empty).
-    percent: 0..100
-    length: number of segments
-    """
-    try:
-        p = max(0.0, min(100.0, float(percent)))
-    except Exception:
-        p = 0.0
-    filled = int(round((p / 100.0) * length))
-    empty = length - filled
-    bar = "▰" * filled + "▱" * empty
-    return f"{bar} {p:.1f}%"
-
 #cmd stats
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ram = get_ram_info()
@@ -2518,13 +2482,6 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(out, parse_mode="HTML")
 
 #whois
-import socket
-import aiohttp
-import whois
-from telegram import Update
-from telegram.ext import ContextTypes
-import html
-
 def _fmt_date(d):
     if isinstance(d, list):
         return str(d[0]) if d else "Not available"
@@ -2972,8 +2929,6 @@ async def post_shutdown(app):
             logger.warning(f"Failed closing HTTP session: {e}")
             
 #emotelog
-import logging
-
 class EmojiFormatter(logging.Formatter):
     LEVEL_EMOJI = {
         logging.INFO: "➜",
