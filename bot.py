@@ -368,6 +368,7 @@ log = logging.getLogger(__name__)
 ASUPAN_CACHE = []          
 ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_USER_KEYWORD = {}
+ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
 
 # cooldown user
@@ -569,17 +570,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🚫 Fitur asupan tidak tersedia di grup ini."
             )
 
-    # ambil keyword dari command
     keyword = " ".join(context.args).strip() if context.args else None
-
-    # 🔥 LOGIC FINAL KEYWORD
-    if keyword:
-        # user eksplisit ngetik keyword → simpan
-        ASUPAN_USER_KEYWORD[user.id] = keyword
-    else:
-        # user cuma /asupan → reset ke default
-        ASUPAN_USER_KEYWORD.pop(user.id, None)
-        keyword = None
 
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
@@ -589,11 +580,14 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyword
         )
 
-        await chat.send_video(
+        sent = await chat.send_video(
             video=data["file_id"],
             reply_to_message_id=update.message.message_id,
             reply_markup=asupan_keyboard(user.id)
         )
+
+        # 🔥 simpan keyword PER MESSAGE
+        ASUPAN_MESSAGE_KEYWORD[sent.message_id] = keyword
 
         await msg.delete()
 
@@ -617,10 +611,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user_id != owner_id:
-        await q.answer(
-            "❌ Bukan asupan lu dongo!",
-            show_alert=True
-        )
+        await q.answer("❌ Bukan asupan lu dongo!", show_alert=True)
         return
 
     now = time.time()
@@ -636,8 +627,8 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     try:
-        # 🔥 ambil keyword terakhir user (kalau ada)
-        keyword = ASUPAN_USER_KEYWORD.get(user_id)
+        msg_id = q.message.message_id
+        keyword = ASUPAN_MESSAGE_KEYWORD.get(msg_id)
 
         data = await get_asupan_fast(
             context.bot,
@@ -648,6 +639,9 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media=InputMediaVideo(media=data["file_id"]),
             reply_markup=asupan_keyboard(owner_id)
         )
+
+        # keyword tetap nempel
+        ASUPAN_MESSAGE_KEYWORD[msg_id] = keyword
 
         context.application.create_task(
             warm_asupan_cache(context.bot)
