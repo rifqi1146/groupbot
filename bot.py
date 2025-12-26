@@ -3083,41 +3083,48 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = msg.text.strip()
 
-    prefix = None
-
-    if text.startswith("/"):
-        prefix = "/"
-    elif text.startswith("$"):
-        prefix = "$"
-    else:
+    is_slash = text.startswith("/")
+    is_dollar = text.startswith("$")
+    if not (is_slash or is_dollar):
         return
 
-    cmd_token = text.split()[0].lower()
+    raw = text[1:].split()[0].lower()
+    bot_cmds = set(_DOLLAR_CMD_MAP.keys())
 
-    if prefix == "/":
-        if "@" in cmd_token:
-            base, target = cmd_token.split("@", 1)
-            if target.lower() != BOT_USERNAME:
-                return
-            cmd_token = base
-        cmd_name = cmd_token[1:]
-    else:
-        cmd_name = cmd_token[1:]
-    if cmd_name not in BOT_COMMANDS:
+    if is_slash and raw not in bot_cmds:
+        return
+
+    if is_dollar and raw not in bot_cmds:
         return
 
     user = msg.from_user
-    name = user.full_name if user else "Unknown"
+    name = user.first_name if user else "Unknown"
     uid = user.id if user else "—"
 
-    chat = msg.chat
+    chat = update.effective_chat
     chat_type = chat.type.upper()
-    chat_name = chat.title or "Private"
+    chat_name = chat.title if chat.title else "Private"
 
-    logger.info(
-        f"👀 Command | {chat_type} | {chat_name} | {uid} ({name}) | {text}"
+    args = text[len(raw) + 1:].strip()
+
+    log_text = (
+        f"👀 <b>Command LOG</b>\n"
+        f"👤 <b>Nama</b> : {name}\n"
+        f"🆔 <b>ID</b> : <code>{uid}</code>\n"
+        f"🏷 <b>Chat</b> : {chat_type} | {chat_name}\n"
+        f"⌨️ <b>Command</b> : <code>{text}</code>"
     )
-    
+
+    try:
+        await context.bot.send_message(
+            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            text=log_text,
+            parse_mode="HTML",
+            disable_notification=True
+        )
+    except Exception:
+        pass
+        
 #log
 def setup_logger():
     handler = logging.StreamHandler()
