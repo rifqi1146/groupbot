@@ -1252,8 +1252,10 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         if fmt_key == "mp3":
             await bot.send_audio(
                 chat_id=chat_id,
-                audio=path,
-                filename=os.path.basename(path),
+                audio=tmp_audio,
+                title=title[:64],
+                performer=bot_name,
+                filename=f"{title[:50]}.mp3",
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
