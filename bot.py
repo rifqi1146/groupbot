@@ -1204,13 +1204,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 disable_notification=True
             )
         else:
-        
             caption = os.path.splitext(os.path.basename(path))[0]
-        
+            bot_name = (await bot.get_me()).first_name
             await bot.send_video(
                 chat_id=chat_id,
                 video=path,
-                caption=f"🎬 <b>{html.escape(caption)}</b>",
+                caption=(
+                    f"🎬 <b>{html.escape(caption)}</b>\n\n"
+                    f"🪄 <i> by {html.escape(bot_name)}</i>"
+                ),
                 parse_mode="HTML",
                 supports_streaming=True,
                 reply_to_message_id=reply_to,
@@ -1235,7 +1237,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 os.remove(path)
             except:
                 pass
-
+                
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
