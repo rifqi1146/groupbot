@@ -1132,13 +1132,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     raise RuntimeError("Static video")
 
             except Exception:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text="🖼️ Slideshow terdeteksi, mengirim album...",
-                    parse_mode="HTML"
-                )
-
                 session = await get_http_session()
                 async with session.post(
                     "https://www.tikwm.com/api/",
@@ -1147,6 +1140,41 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 ) as r:
                     data = await r.json()
 
+                if fmt_key == "mp3":
+                    music_url = (
+                        data.get("data", {}).get("music")
+                        or data.get("data", {}).get("music_info", {}).get("play")
+                    )
+
+                    if not music_url:
+                        raise RuntimeError("Audio slideshow tidak ditemukan")
+
+                    tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
+
+                    async with session.get(music_url) as r:
+                        with open(tmp_audio, "wb") as f:
+                            async for chunk in r.content.iter_chunked(64 * 1024):
+                                f.write(chunk)
+
+                    await bot.send_audio(
+                        chat_id=chat_id,
+                        audio=tmp_audio,
+                        filename=os.path.basename(tmp_audio),
+                        reply_to_message_id=reply_to,
+                        disable_notification=True
+                    )
+
+                    await bot.delete_message(chat_id, status_msg_id)
+                    os.remove(tmp_audio)
+                    return
+
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text="🖼️ Slideshow terdeteksi, mengirim album...",
+                    parse_mode="HTML"
+                )
+
                 images = data.get("data", {}).get("images") or []
                 if not images:
                     raise RuntimeError("Foto slideshow tidak ditemukan")
@@ -1154,20 +1182,19 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 CHUNK_SIZE = 10
                 chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
-                bot_me = await bot.get_me()
-                bot_name = bot_me.first_name or "Bot"
-                
+                bot_name = (await bot.get_me()).first_name or "Bot"
+
                 title = (
                     data.get("data", {}).get("title")
                     or data.get("data", {}).get("desc")
                     or "Slideshow TikTok"
                 )
-                
+
                 title = html.escape(title.strip())
 
                 caption_text = (
                     f"🖼️ <b>{title}</b>\n\n"
-                    f"🪄 <i> Powered by {html.escape(bot_name)}</i>"
+                    f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
                 )
 
                 for idx, chunk in enumerate(chunks):
@@ -1180,7 +1207,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                                 parse_mode="HTML" if idx == 0 and i == 0 else None
                             )
                         )
-                        
+
                     await bot.send_media_group(
                         chat_id=chat_id,
                         media=media,
@@ -1222,13 +1249,14 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             )
         else:
             caption = os.path.splitext(os.path.basename(path))[0]
-            bot_name = (await bot.get_me()).first_name
+            bot_name = (await bot.get_me()).first_name or "Bot"
+
             await bot.send_video(
                 chat_id=chat_id,
                 video=path,
                 caption=(
                     f"🎬 <b>{html.escape(caption)}</b>\n\n"
-                    f"🪄 <i> Powered by {html.escape(bot_name)}</i>"
+                    f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
                 ),
                 parse_mode="HTML",
                 supports_streaming=True,
