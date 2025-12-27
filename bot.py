@@ -1142,7 +1142,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 async with session.post(
                     "https://www.tikwm.com/api/",
                     data={"url": url},
-                    timeout=aiohttp.ClientTimeout(total=15)
+                    timeout=aiohttp.ClientTimeout(total=120)
                 ) as r:
                     data = await r.json()
 
