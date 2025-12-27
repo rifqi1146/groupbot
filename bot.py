@@ -1284,7 +1284,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #ask+ocr
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_THINK = "mistralai/devstral-2512:free"
+MODEL_THINK = "openai/gpt-oss-120b:free"
 OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 
 if not OPENROUTER_API_KEY:
