@@ -388,6 +388,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👑 <b>Owner Commands</b>\n\n"
         "⚡ <b>System</b>\n"
         "• <code>/speedtest</code>\n"
+        "• <code>/autodel</code>\n"
         "• <code>/wlc</code>\n"
         "• <code>/restart</code>\n\n"
         "🧠 <b>NSFW Control</b>\n"
@@ -434,6 +435,32 @@ ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
 
 #load asuoan
+AUTODEL_GROUP_FILE = "asupan_autodel.json"
+ASUPAN_AUTODEL_CHATS = set()
+
+def load_autodel_groups():
+    global ASUPAN_AUTODEL_CHATS
+    if not os.path.exists(AUTODEL_GROUP_FILE):
+        ASUPAN_AUTODEL_CHATS = set()
+        return
+    try:
+        with open(AUTODEL_GROUP_FILE, "r") as f:
+            data = json.load(f)
+            ASUPAN_AUTODEL_CHATS = set(data.get("autodel_chats", []))
+    except Exception:
+        ASUPAN_AUTODEL_CHATS = set()
+
+def save_autodel_groups():
+    with open(AUTODEL_GROUP_FILE, "w") as f:
+        json.dump(
+            {"autodel_chats": list(ASUPAN_AUTODEL_CHATS)},
+            f,
+            indent=2
+        )
+
+def is_autodel_enabled(chat_id: int) -> bool:
+    return chat_id in ASUPAN_AUTODEL_CHATS
+    
 def load_asupan_groups():
     global ASUPAN_ENABLED_CHATS
     if not os.path.exists(ASUPAN_GROUP_FILE):
@@ -495,6 +522,34 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
    
+async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Owner only.")
+
+    if chat.type == "private":
+        return await update.message.reply_text("❌ Auto delete tidak berlaku di private chat.")
+
+    if not context.args:
+        status = "ON" if is_autodel_enabled(chat.id) else "OFF"
+        return await update.message.reply_text(f"🗑️ Auto delete: {status}")
+
+    arg = context.args[0].lower()
+
+    if arg == "on":
+        ASUPAN_AUTODEL_CHATS.add(chat.id)
+        save_autodel_groups()
+        return await update.message.reply_text("✅ Auto delete diaktifkan di grup ini.")
+
+    if arg == "off":
+        ASUPAN_AUTODEL_CHATS.discard(chat.id)
+        save_autodel_groups()
+        return await update.message.reply_text("🚫 Auto delete dimatikan di grup ini.")
+
+    await update.message.reply_text("Gunakan: /autodel on | off")
+    
 async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     bot = context.bot
@@ -708,19 +763,20 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         ASUPAN_MESSAGE_KEYWORD[sent.message_id] = keyword
 
-        old_job = ASUPAN_DELETE_JOBS.pop(sent.message_id, None)
-        if old_job:
-            old_job.schedule_removal()
+        if chat.type != "private" and is_autodel_enabled(chat.id):
+            old_job = ASUPAN_DELETE_JOBS.pop(sent.message_id, None)
+            if old_job:
+                old_job.schedule_removal()
 
-        job = context.application.job_queue.run_once(
-            _delete_asupan_job,
-            ASUPAN_AUTO_DELETE_SEC,
-            data={
-                "chat_id": chat.id,
-                "message_id": sent.message_id,
-            },
-        )
-        ASUPAN_DELETE_JOBS[sent.message_id] = job
+            job = context.application.job_queue.run_once(
+                _delete_asupan_job,
+                ASUPAN_AUTO_DELETE_SEC,
+                data={
+                    "chat_id": chat.id,
+                    "message_id": sent.message_id,
+                },
+            )
+            ASUPAN_DELETE_JOBS[sent.message_id] = job
 
         await msg.delete()
 
@@ -765,9 +821,10 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg_id = q.message.message_id
         keyword = ASUPAN_MESSAGE_KEYWORD.get(msg_id)
 
-        old_job = ASUPAN_DELETE_JOBS.pop(msg_id, None)
-        if old_job:
-            old_job.schedule_removal()
+        if q.message.chat.type != "private" and is_autodel_enabled(q.message.chat_id):
+            old_job = ASUPAN_DELETE_JOBS.pop(msg_id, None)
+            if old_job:
+                old_job.schedule_removal()
 
         data = await get_asupan_fast(context.bot, keyword)
 
@@ -776,15 +833,16 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=asupan_keyboard(owner_id)
         )
 
-        job = context.application.job_queue.run_once(
-            _delete_asupan_job,
-            ASUPAN_AUTO_DELETE_SEC,
-            data={
-                "chat_id": q.message.chat_id,
-                "message_id": msg_id,
-            },
-        )
-        ASUPAN_DELETE_JOBS[msg_id] = job
+        if q.message.chat.type != "private" and is_autodel_enabled(q.message.chat_id):
+            job = context.application.job_queue.run_once(
+                _delete_asupan_job,
+                ASUPAN_AUTO_DELETE_SEC,
+                data={
+                    "chat_id": q.message.chat_id,
+                    "message_id": msg_id,
+                },
+            )
+            ASUPAN_DELETE_JOBS[msg_id] = job
 
         ASUPAN_MESSAGE_KEYWORD[msg_id] = keyword
 
@@ -3482,6 +3540,7 @@ def main():
 
     #cmd handler
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
+    app.add_handler(CommandHandler("autodel", autodel_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
     app.add_handler(CommandHandler("ask", ask_cmd, block=False), group=-1)
