@@ -1516,47 +1516,37 @@ def sanitize_ai_output(text: str) -> str:
 
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # kill HTML line breaks early
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-
-    # escape html
+    
     text = html.escape(text)
 
-    # kill markdown
     text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)
     text = re.sub(r"\*(.+?)\*", r"\1", text)
     text = re.sub(r"__(.+?)__", r"\1", text)
     text = re.sub(r"~~(.+?)~~", r"\1", text)
     text = re.sub(r"(?m)^&gt;\s*", "", text)
 
-    # headings
     text = re.sub(
         r"(?m)^#{1,6}\s*(.+)$",
         r"\n<b>\1</b>",
         text
     )
 
-    # numbered list → bullet
     text = re.sub(r"(?m)^\s*\d+\.\s+", "• ", text)
 
-    # dash list → bullet
     text = re.sub(r"(?m)^\s*-\s+", "• ", text)
 
-    # table cleanup
     text = re.sub(r"\|", " ", text)
     text = re.sub(r"(?m)^[-:\s]{3,}$", "", text)
 
-    # table-like rows → bullet
     text = re.sub(
         r"(?m)^\s*([A-Za-z0-9 _/().-]{2,})\s{2,}(.+)$",
         r"• <b>\1</b>\n  \2",
         text
     )
 
-    # normalize bullets everywhere
     text = re.sub(r"\s*•\s*", "\n• ", text)
 
-    # spacing cleanup
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
@@ -3520,7 +3510,6 @@ async def post_init(app):
             ("asupan", "Asupan 😋"),
             ("tr", "Translate text"),
             ("speedtest", "Run speed test"),
-            ("restart", "Restart bot"),
         ])
     except Exception:
         pass
