@@ -1170,15 +1170,16 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
                     bot_name = (await bot.get_me()).first_name or "Bot"
 
-                    await bot.send_audio(
-                        chat_id=chat_id,
-                        audio=tmp_audio,
-                        title=title[:64],
-                        performer=bot_name,
-                        filename=f"{title[:50]}.mp3",
-                        reply_to_message_id=reply_to,
-                        disable_notification=True,
-                    )
+                    with open(tmp_audio, "rb") as f:
+                        await bot.send_audio(
+                            chat_id=chat_id,
+                            audio=f,
+                            title=title[:64],
+                            performer=bot_name,
+                            filename=f"{title[:50]}.mp3",
+                            reply_to_message_id=reply_to,
+                            disable_notification=True,
+                        )
 
                     await bot.delete_message(chat_id, status_msg_id)
                     os.remove(tmp_audio)
@@ -1256,20 +1257,20 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         )
 
         if fmt_key == "mp3":
-        
             title = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
-            
-         with open(path, "rb") as f:
-            await bot.send_audio(
-                chat_id=chat_id,
-                audio=f,
-                title=title[:64],
-                performer=bot_name,
-                filename=f"{title[:50]}.mp3",
-                reply_to_message_id=reply_to,
-                disable_notification=True,
-            )
+
+            with open(path, "rb") as f:
+                await bot.send_audio(
+                    chat_id=chat_id,
+                    audio=f,
+                    title=title[:64],
+                    performer=bot_name,
+                    filename=f"{title[:50]}.mp3",
+                    reply_to_message_id=reply_to,
+                    disable_notification=True,
+                )
+
         else:
             caption = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
