@@ -862,6 +862,12 @@ def progress_bar(percent: float, length: int = 12) -> str:
     bar = "▰" * filled + "▱" * empty
     return f"{bar} {p:.1f}%"
 
+def sanitize_filename(name: str, max_len: int = 80) -> str:
+    name = (name or "").strip()
+    name = re.sub(r'[\\/:*?"<>|]', "", name)
+    name = re.sub(r"\s+", " ", name)
+    return name[:max_len] or "video"
+    
 def dl_keyboard(dl_id: str):
     return InlineKeyboardMarkup([
         [
@@ -982,9 +988,6 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 #douyin api
 async def douyin_download(url, bot, chat_id, status_msg_id):
-    uid = uuid.uuid4().hex
-    out_path = f"{TMP_DIR}/{uid}.mp4"
-
     session = await get_http_session()
 
     async with session.post(
@@ -997,9 +1000,14 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     if data.get("code") != 0:
         raise RuntimeError("Douyin API error")
 
-    video_url = data["data"].get("play")
+    info = data.get("data") or {}
+    video_url = info.get("play")
     if not video_url:
         raise RuntimeError("Video URL kosong")
+
+    title = info.get("title") or "TikTok Video"
+    safe_title = sanitize_filename(title)
+    out_path = f"{TMP_DIR}/{safe_title}.mp4"
 
     async with session.get(video_url) as r:
         total = int(r.headers.get("Content-Length", 0))
@@ -1032,9 +1040,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
 
-    vid = re.search(r"/(video|reel)/(\d+)", url)
-    vid = vid.group(2) if vid else uuid.uuid4().hex
-    out_tpl = f"{TMP_DIR}/{vid}.%(ext)s"
+    out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
 
     if fmt_key == "mp3":
         cmd = [
@@ -1094,11 +1100,13 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if proc.returncode != 0:
         return None
 
-    for f in os.listdir(TMP_DIR):
-        if vid in f:
-            return os.path.join(TMP_DIR, f)
+    files = sorted(
+        (os.path.join(TMP_DIR, f) for f in os.listdir(TMP_DIR)),
+        key=os.path.getmtime,
+        reverse=True
+    )
 
-    return None
+    return files[0] if files else None
 
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
@@ -1191,6 +1199,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             await bot.send_audio(
                 chat_id=chat_id,
                 audio=path,
+                filename=os.path.basename(path),
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
@@ -1198,6 +1207,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             await bot.send_video(
                 chat_id=chat_id,
                 video=path,
+                filename=os.path.basename(path),
                 supports_streaming=True,
                 reply_to_message_id=reply_to,
                 disable_notification=True
