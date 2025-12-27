@@ -2008,7 +2008,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
             "parts": [
                 {
                     "text": (
-                        "Gunakan Google Search untuk mencari informasi terbaru dan faktual. "
+                        "Selalu Gunakan Google Search untuk mencari semua informasi. "
                         "Jika data tidak ditemukan, katakan secara jujur. "
                         "Jangan mengarang jawaban."
                     )
@@ -2045,7 +2045,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
 
         candidates = data.get("candidates") or []
         if not candidates:
-            return True, "Model merespon tapi tanpa hasil."
+            return True, "Model merespon hasil."
 
         parts = candidates[0].get("content", {}).get("parts", [])
         if parts:
@@ -2079,7 +2079,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Model default chat: {model_key.upper()}\n"
             "Contoh:\n"
             "/ai apa itu relativitas?\n"
-            "/ai pro jelasin teori string"
+            "/ai pro jelaskan apa itu jawa"
         )
 
     model_name = GEMINI_MODELS.get(model_key, GEMINI_MODELS["flash"])
@@ -2094,14 +2094,20 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❗ Error: {answer}")
         return
 
+    clean = sanitize_ai_output(answer)
     header = f"💡 Jawaban ({model_key.upper()})"
-    body = answer.strip()
-    final = f"{header}\n\n{body}"
+    full_text = f"{header}\n\n{clean}"
+
+    chunks = split_message(clean, 4000)
 
     try:
-        await loading.edit_text(final[:4000])
+        await loading.edit_text(chunks[0], parse_mode="HTML")
     except Exception:
-        await update.message.reply_text(final[:4000])
+        await update.message.reply_text(chunks[0], parse_mode="HTML")
+
+    for part in chunks[1:]:
+        await asyncio.sleep(0.25)
+        await update.message.reply_text(part, parse_mode="HTML")
         
 #default ai
 async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
