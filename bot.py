@@ -880,16 +880,12 @@ def dl_keyboard(dl_id: str):
     ])
 
 #platform check
+def is_youtube(url: str) -> bool:
+    return any(x in url for x in ("youtube.com", "youtu.be", "music.youtube.com"))
+
 def is_tiktok(url: str) -> bool:
     return "tiktok.com" in url or "vt.tiktok.com" in url
 
-def is_youtube(url: str) -> bool:
-    return any(x in url for x in (
-        "youtube.com",
-        "youtu.be",
-        "music.youtube.com"
-    ))
-    
 def is_instagram(url: str) -> bool:
     return "instagram.com" in url or "instagr.am" in url
 
@@ -925,24 +921,6 @@ def is_invalid_video(path: str) -> bool:
     except Exception:
         return True
         
-async def ytdlp_get_title(url: str) -> str | None:
-    YT_DLP = shutil.which("yt-dlp")
-    if not YT_DLP:
-        return None
-
-    proc = await asyncio.create_subprocess_exec(
-        YT_DLP,
-        "--no-playlist",
-        "--print", "%(title)s",
-        url,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-
-    out, _ = await proc.communicate()
-    title = out.decode().strip()
-    return title or None
-    
 #auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -1062,34 +1040,31 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
 
-    uid = uuid.uuid4().hex
-    out_tpl = os.path.join(TMP_DIR, f"{uid}.%(ext)s")
-
-    base_cmd = [
-        YT_DLP,
-        "--no-playlist",
-        "--concurrent-fragments", "8",
-        "--merge-output-format", "mp4",
-        "--no-check-certificate",
-        "--no-warnings",
-        "--newline",
-        "--progress-template",
-        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-        "-o", out_tpl,
-        url
-    ]
+    out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
 
     if fmt_key == "mp3":
-        cmd = base_cmd + [
+        cmd = [
+            YT_DLP,
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
             "--audio-quality", "0",
+            "--newline",
+            "--progress-template",
+            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url
         ]
     else:
-        cmd = base_cmd + [
-            "-f", "bv*[height<=720]+ba/best",
-            "--remux-video", "mp4",
+        cmd = [
+            YT_DLP,
+            "-f", "mp4/best",
+            "--merge-output-format", "mp4",
+            "--newline",
+            "--progress-template",
+            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url
         ]
 
     proc = await asyncio.create_subprocess_exec(
@@ -1109,12 +1084,12 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             head = raw.split("|", 1)[0].replace("%", "")
             if head.replace(".", "", 1).isdigit():
                 pct = float(head)
-                if time.time() - last >= 1.0:
+                if time.time() - last >= 1.2:
                     await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=status_msg_id,
                         text=(
-                            "🚀 <b>Downloading...</b>\n\n"
+                            "🚀 <b>yt-dlp download...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
                         parse_mode="HTML"
@@ -1125,37 +1100,22 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if proc.returncode != 0:
         return None
 
-    for ext in ("mp4", "mkv", "webm", "mp3", "m4a"):
-        p = f"{TMP_DIR}/{uid}.{ext}"
-        if os.path.exists(p):
-            return p
+    files = sorted(
+        (os.path.join(TMP_DIR, f) for f in os.listdir(TMP_DIR)),
+        key=os.path.getmtime,
+        reverse=True
+    )
 
-    return None
+    return files[0] if files else None
 
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
 
-    async def _yt_title(url: str):
-        YT_DLP = shutil.which("yt-dlp")
-        if not YT_DLP:
-            return None
-        proc = await asyncio.create_subprocess_exec(
-            YT_DLP,
-            "--no-playlist",
-            "--print",
-            "%(title)s",
-            url,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        out, _ = await proc.communicate()
-        t = out.decode().strip()
-        return t or None
-
     try:
         if is_tiktok(raw_url):
+
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
@@ -1163,18 +1123,20 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
+
                 if is_invalid_video(path):
                     try:
                         os.remove(path)
                     except:
                         pass
                     raise RuntimeError("Static video")
+
             except Exception:
                 session = await get_http_session()
                 async with session.post(
                     "https://www.tikwm.com/api/",
                     data={"url": url},
-                    timeout=aiohttp.ClientTimeout(total=120)
+                    timeout=aiohttp.ClientTimeout(total=15)
                 ) as r:
                     data = await r.json()
 
@@ -1183,10 +1145,12 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         data.get("data", {}).get("music")
                         or data.get("data", {}).get("music_info", {}).get("play")
                     )
+
                     if not music_url:
                         raise RuntimeError("Audio slideshow tidak ditemukan")
 
                     tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
+
                     async with session.get(music_url) as r:
                         with open(tmp_audio, "wb") as f:
                             async for chunk in r.content.iter_chunked(64 * 1024):
@@ -1197,18 +1161,18 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         or data.get("data", {}).get("desc")
                         or "TikTok Audio"
                     )
+
                     bot_name = (await bot.get_me()).first_name or "Bot"
 
-                    with open(tmp_audio, "rb") as f:
-                        await bot.send_audio(
-                            chat_id=chat_id,
-                            audio=f,
-                            title=title[:64],
-                            performer=bot_name,
-                            filename=f"{title[:50]}.mp3",
-                            reply_to_message_id=reply_to,
-                            disable_notification=True,
-                        )
+                    await bot.send_audio(
+                        chat_id=chat_id,
+                        audio=tmp_audio,
+                        title=title[:64],
+                        performer=bot_name,
+                        filename=f"{title[:50]}.mp3",
+                        reply_to_message_id=reply_to,
+                        disable_notification=True
+                    )
 
                     await bot.delete_message(chat_id, status_msg_id)
                     os.remove(tmp_audio)
@@ -1229,11 +1193,13 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
                 bot_name = (await bot.get_me()).first_name or "Bot"
+
                 title = (
                     data.get("data", {}).get("title")
                     or data.get("data", {}).get("desc")
                     or "Slideshow TikTok"
                 )
+
                 title = html.escape(title.strip())
 
                 caption_text = (
@@ -1251,6 +1217,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                                 parse_mode="HTML" if idx == 0 and i == 0 else None
                             )
                         )
+
                     await bot.send_media_group(
                         chat_id=chat_id,
                         media=media,
@@ -1260,8 +1227,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 await bot.delete_message(chat_id, status_msg_id)
                 return
 
-        elif is_instagram(raw_url) or is_youtube(raw_url):
-            path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
+        elif is_instagram(raw_url):
+            path = await ytdlp_download(
+                raw_url,
+                fmt_key,
+                bot,
+                chat_id,
+                status_msg_id
+            )
+
         else:
             raise RuntimeError("Platform tidak didukung")
 
@@ -1276,20 +1250,18 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         )
 
         if fmt_key == "mp3":
-            yt_title = await _yt_title(raw_url)
-            title = yt_title or os.path.splitext(os.path.basename(path))[0]
+            title = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
 
-            with open(path, "rb") as f:
-                await bot.send_audio(
-                    chat_id=chat_id,
-                    audio=f,
-                    title=title[:64],
-                    performer=bot_name,
-                    filename=f"{title[:50]}.mp3",
-                    reply_to_message_id=reply_to,
-                    disable_notification=True,
-                )
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=path,
+                title=title[:64],
+                performer=bot_name,
+                filename=f"{title[:50]}.mp3",
+                reply_to_message_id=reply_to,
+                disable_notification=True
+            )
         else:
             caption = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
@@ -1304,7 +1276,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 parse_mode="HTML",
                 supports_streaming=True,
                 reply_to_message_id=reply_to,
-                disable_notification=True,
+                disable_notification=True
             )
 
         await bot.delete_message(chat_id, status_msg_id)
@@ -1318,6 +1290,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             )
         except:
             pass
+
     finally:
         if path and os.path.exists(path):
             try:
@@ -1331,7 +1304,9 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link TikTok / IG")
 
     url = context.args[0]
-    
+    if is_youtube(url):
+        return await update.message.reply_text("❌ YouTube tidak didukung")
+
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
         "url": url,
@@ -3492,8 +3467,8 @@ def main():
         .token(BOT_TOKEN)
         .connect_timeout(20)
         .job_queue(JobQueue())
-        .read_timeout(30)
-        .write_timeout(30)
+        .read_timeout(60)
+        .write_timeout(60)
         .pool_timeout(20)
         .build()
     )
