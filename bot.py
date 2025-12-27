@@ -499,7 +499,19 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
     save_asupan_groups()
     await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
 
+def load_asupan_groups():
+    global ASUPAN_ENABLED_CHATS
+    if not os.path.exists(ASUPAN_GROUP_FILE):
+        ASUPAN_ENABLED_CHATS = set()
+        return
 
+    try:
+        with open(ASUPAN_GROUP_FILE, "r") as f:
+            data = json.load(f)
+            ASUPAN_ENABLED_CHATS = set(data.get("enabled_chats", []))
+    except Exception:
+        ASUPAN_ENABLED_CHATS = set()
+        
 async def _delete_asupan_job(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.data["chat_id"]
