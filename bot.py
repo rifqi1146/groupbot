@@ -1259,9 +1259,11 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             title = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
 
-            await bot.send_audio(
+
+        with open(path, "rb") as f:
+            await bot.send_audio(audio=f)
                 chat_id=chat_id,
-                audio=path,
+                audio=f,
                 title=title[:64],
                 performer=bot_name,
                 filename=f"{title[:50]}.mp3",
