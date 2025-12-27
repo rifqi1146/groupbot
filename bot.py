@@ -880,9 +880,6 @@ def dl_keyboard(dl_id: str):
     ])
 
 #platform check
-def is_youtube(url: str) -> bool:
-    return any(x in url for x in ("youtube.com", "youtu.be", "music.youtube.com"))
-
 def is_tiktok(url: str) -> bool:
     return "tiktok.com" in url or "vt.tiktok.com" in url
 
@@ -1040,31 +1037,32 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
 
-    out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
+    out_tpl = f"{TMP_DIR}/%(title).80s.%(ext)s"
+
+    base_opts = [
+        YT_DLP,
+        "--no-playlist",
+        "--concurrent-fragments", "8",
+        "--merge-output-format", "mp4",
+        "--newline",
+        "--no-check-certificate",
+        "--no-warnings",
+        "--progress-template",
+        "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+        "-o", out_tpl,
+    ]
 
     if fmt_key == "mp3":
-        cmd = [
-            YT_DLP,
+        cmd = base_opts + [
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
             "--audio-quality", "0",
-            "--newline",
-            "--progress-template",
-            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "-o", out_tpl,
-            url
         ]
     else:
-        cmd = [
-            YT_DLP,
-            "-f", "mp4/best",
-            "--merge-output-format", "mp4",
-            "--newline",
-            "--progress-template",
-            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "-o", out_tpl,
-            url
+        cmd = base_opts + [
+            "-f", "bv*+ba/best",
+            "--remux-video", "mp4",
         ]
 
     proc = await asyncio.create_subprocess_exec(
@@ -1084,12 +1082,12 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             head = raw.split("|", 1)[0].replace("%", "")
             if head.replace(".", "", 1).isdigit():
                 pct = float(head)
-                if time.time() - last >= 1.2:
+                if time.time() - last >= 1.0:
                     await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=status_msg_id,
                         text=(
-                            "🚀 <b>yt-dlp download...</b>\n\n"
+                            "🚀 <b>Downloading...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
                         parse_mode="HTML"
@@ -1304,9 +1302,7 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link TikTok / IG")
 
     url = context.args[0]
-    if is_youtube(url):
-        return await update.message.reply_text("❌ YouTube tidak didukung")
-
+    
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
         "url": url,
