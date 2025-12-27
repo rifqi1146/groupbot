@@ -1211,7 +1211,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 video=path,
                 caption=(
                     f"🎬 <b>{html.escape(caption)}</b>\n\n"
-                    f"🪄 <i> by {html.escape(bot_name)}</i>"
+                    f"🪄 <i> Powered by {html.escape(bot_name)}</i>"
                 ),
                 parse_mode="HTML",
                 supports_streaming=True,
