@@ -421,30 +421,27 @@ async def helpowner_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 #asupannnnn
 log = logging.getLogger(__name__)
 
-ASUPAN_CACHE = []          
+ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
-ASUPAN_KEYWORD_CACHE = {}  
+ASUPAN_KEYWORD_CACHE = {}
 ASUPAN_USER_KEYWORD = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
-ASUPAN_DELETE_JOBS = {}  # message_id -> job
-ASUPAN_AUTO_DELETE_SEC = 300  # 5 menit
+ASUPAN_DELETE_JOBS = {}
+ASUPAN_AUTO_DELETE_SEC = 300
 
-# cooldown user
 ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
 
-#load asuoan
 AUTODEL_FILE = "autodel_groups.json"
 AUTODEL_ENABLED_CHATS = set()
-ASUPAN_AUTODEL_CHATS = set()
+
 
 def load_autodel_groups():
     global AUTODEL_ENABLED_CHATS
     if not os.path.exists(AUTODEL_FILE):
         AUTODEL_ENABLED_CHATS = set()
         return
-
     try:
         with open(AUTODEL_FILE, "r") as f:
             data = json.load(f)
@@ -465,30 +462,7 @@ def save_autodel_groups():
 def is_autodel_enabled(chat_id: int) -> bool:
     return chat_id in AUTODEL_ENABLED_CHATS
 
-def save_autodel_groups():
-    with open(AUTODEL_GROUP_FILE, "w") as f:
-        json.dump(
-            {"autodel_chats": list(ASUPAN_AUTODEL_CHATS)},
-            f,
-            indent=2
-        )
 
-def is_autodel_enabled(chat_id: int) -> bool:
-    return chat_id in ASUPAN_AUTODEL_CHATS
-    
-def load_asupan_groups():
-    global ASUPAN_ENABLED_CHATS
-    if not os.path.exists(ASUPAN_GROUP_FILE):
-        ASUPAN_ENABLED_CHATS = set()
-        return
-
-    try:
-        with open(ASUPAN_GROUP_FILE, "r") as f:
-            data = json.load(f)
-            ASUPAN_ENABLED_CHATS = set(data.get("enabled_chats", []))
-    except Exception:
-        ASUPAN_ENABLED_CHATS = set()
-        
 def save_asupan_groups():
     with open(ASUPAN_GROUP_FILE, "w") as f:
         json.dump(
@@ -497,9 +471,11 @@ def save_asupan_groups():
             indent=2
         )
 
+
 def is_asupan_enabled(chat_id: int) -> bool:
     return chat_id in ASUPAN_ENABLED_CHATS
-    
+
+
 async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -509,22 +485,9 @@ async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ASUPAN_ENABLED_CHATS.add(chat.id)
     save_asupan_groups()
-
     await update.message.reply_text("✅ Asupan diaktifkan di grup ini.")
-    
-async def _delete_asupan_job(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    chat_id = job.data["chat_id"]
-    message_id = job.data["message_id"]
 
-    try:
-        await context.bot.delete_message(chat_id, message_id)
-        log.info(f"[ASUPAN AUTO DELETE] {chat_id}:{message_id}")
-    except Exception:
-        pass
 
-    ASUPAN_DELETE_JOBS.pop(message_id, None)
-    
 async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -534,9 +497,22 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     ASUPAN_ENABLED_CHATS.discard(chat.id)
     save_asupan_groups()
-
     await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
-   
+
+
+async def _delete_asupan_job(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.data["chat_id"]
+    message_id = job.data["message_id"]
+
+    try:
+        await context.bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+    ASUPAN_DELETE_JOBS.pop(message_id, None)
+
+
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -545,9 +521,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Owner only.")
 
     if chat.type == "private":
-        return await update.message.reply_text(
-            "ℹ️ Auto delete tidak berlaku di private chat."
-        )
+        return await update.message.reply_text("ℹ️ Auto delete tidak berlaku di private chat.")
 
     if not context.args:
         return await update.message.reply_text(
@@ -579,9 +553,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if arg == "list":
         if not AUTODEL_ENABLED_CHATS:
-            return await update.message.reply_text(
-                "📭 Tidak ada grup dengan auto delete aktif."
-            )
+            return await update.message.reply_text("📭 Tidak ada grup dengan auto delete aktif.")
 
         lines = ["<b>📋 Grup Auto Delete Aktif</b>\n"]
         for cid in AUTODEL_ENABLED_CHATS:
@@ -592,10 +564,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        return await update.message.reply_text(
-            "\n".join(lines),
-            parse_mode="HTML"
-        )
+        return await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     await update.message.reply_text("❌ Argumen tidak dikenali.")
     
