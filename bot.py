@@ -435,20 +435,35 @@ ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
 
 #load asuoan
-AUTODEL_GROUP_FILE = "asupan_autodel.json"
+AUTODEL_FILE = "autodel_groups.json"
+AUTODEL_ENABLED_CHATS = set()
 ASUPAN_AUTODEL_CHATS = set()
 
 def load_autodel_groups():
-    global ASUPAN_AUTODEL_CHATS
-    if not os.path.exists(AUTODEL_GROUP_FILE):
-        ASUPAN_AUTODEL_CHATS = set()
+    global AUTODEL_ENABLED_CHATS
+    if not os.path.exists(AUTODEL_FILE):
+        AUTODEL_ENABLED_CHATS = set()
         return
+
     try:
-        with open(AUTODEL_GROUP_FILE, "r") as f:
+        with open(AUTODEL_FILE, "r") as f:
             data = json.load(f)
-            ASUPAN_AUTODEL_CHATS = set(data.get("autodel_chats", []))
+            AUTODEL_ENABLED_CHATS = set(data.get("enabled_chats", []))
     except Exception:
-        ASUPAN_AUTODEL_CHATS = set()
+        AUTODEL_ENABLED_CHATS = set()
+
+
+def save_autodel_groups():
+    with open(AUTODEL_FILE, "w") as f:
+        json.dump(
+            {"enabled_chats": list(AUTODEL_ENABLED_CHATS)},
+            f,
+            indent=2
+        )
+
+
+def is_autodel_enabled(chat_id: int) -> bool:
+    return chat_id in AUTODEL_ENABLED_CHATS
 
 def save_autodel_groups():
     with open(AUTODEL_GROUP_FILE, "w") as f:
@@ -530,25 +545,59 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Owner only.")
 
     if chat.type == "private":
-        return await update.message.reply_text("❌ Auto delete tidak berlaku di private chat.")
+        return await update.message.reply_text(
+            "ℹ️ Auto delete tidak berlaku di private chat."
+        )
 
     if not context.args:
-        status = "ON" if is_autodel_enabled(chat.id) else "OFF"
-        return await update.message.reply_text(f"🗑️ Auto delete: {status}")
+        return await update.message.reply_text(
+            "Gunakan:\n"
+            "/autodel on\n"
+            "/autodel off\n"
+            "/autodel status\n"
+            "/autodel list"
+        )
 
     arg = context.args[0].lower()
 
     if arg == "on":
-        ASUPAN_AUTODEL_CHATS.add(chat.id)
+        AUTODEL_ENABLED_CHATS.add(chat.id)
         save_autodel_groups()
         return await update.message.reply_text("✅ Auto delete diaktifkan di grup ini.")
 
     if arg == "off":
-        ASUPAN_AUTODEL_CHATS.discard(chat.id)
+        AUTODEL_ENABLED_CHATS.discard(chat.id)
         save_autodel_groups()
         return await update.message.reply_text("🚫 Auto delete dimatikan di grup ini.")
 
-    await update.message.reply_text("Gunakan: /autodel on | off")
+    if arg == "status":
+        status = "AKTIF ✅" if is_autodel_enabled(chat.id) else "NONAKTIF ❌"
+        return await update.message.reply_text(
+            f"📌 Status auto delete di grup ini: <b>{status}</b>",
+            parse_mode="HTML"
+        )
+
+    if arg == "list":
+        if not AUTODEL_ENABLED_CHATS:
+            return await update.message.reply_text(
+                "📭 Tidak ada grup dengan auto delete aktif."
+            )
+
+        lines = ["<b>📋 Grup Auto Delete Aktif</b>\n"]
+        for cid in AUTODEL_ENABLED_CHATS:
+            try:
+                c = await context.bot.get_chat(cid)
+                name = c.title or c.username or "Unknown"
+                lines.append(f"• {html.escape(name)}")
+            except Exception:
+                pass
+
+        return await update.message.reply_text(
+            "\n".join(lines),
+            parse_mode="HTML"
+        )
+
+    await update.message.reply_text("❌ Argumen tidak dikenali.")
     
 async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -3420,6 +3469,7 @@ _DOLLAR_CMD_MAP = {
     "speedtest": speedtest_cmd,
     "ip": ip_cmd,
     "stats": stats_cmd,
+    "autodel": autodel_cmd,
     "tr": tr_cmd,
     "gsearch": gsearch_cmd,
     "dl": dl_cmd,
@@ -3537,6 +3587,8 @@ def main():
     load_asupan_groups()
     
     load_welcome_chats()
+    
+    load_autodel_groups()
 
     #cmd handler
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
