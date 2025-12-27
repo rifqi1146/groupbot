@@ -1044,30 +1044,32 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
 
-    out_tpl = f"{TMP_DIR}/%(title).80s.%(ext)s"
+    uid = uuid.uuid4().hex
+    out_tpl = os.path.join(TMP_DIR, f"{uid}.%(ext)s")
 
-    base_opts = [
+    base_cmd = [
         YT_DLP,
         "--no-playlist",
         "--concurrent-fragments", "8",
         "--merge-output-format", "mp4",
-        "--newline",
         "--no-check-certificate",
         "--no-warnings",
+        "--newline",
         "--progress-template",
         "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
         "-o", out_tpl,
+        url
     ]
 
     if fmt_key == "mp3":
-        cmd = base_opts + [
+        cmd = base_cmd + [
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
             "--audio-quality", "0",
         ]
     else:
-        cmd = base_opts + [
+        cmd = base_cmd + [
             "-f", "bv*+ba/best",
             "--remux-video", "mp4",
         ]
@@ -1105,13 +1107,12 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if proc.returncode != 0:
         return None
 
-    files = sorted(
-        (os.path.join(TMP_DIR, f) for f in os.listdir(TMP_DIR)),
-        key=os.path.getmtime,
-        reverse=True
-    )
+    for ext in ("mp4", "mkv", "webm", "mp3", "m4a"):
+        p = f"{TMP_DIR}/{uid}.{ext}"
+        if os.path.exists(p):
+            return p
 
-    return files[0] if files else None
+    return None
 
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
