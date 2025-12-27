@@ -883,6 +883,13 @@ def dl_keyboard(dl_id: str):
 def is_tiktok(url: str) -> bool:
     return "tiktok.com" in url or "vt.tiktok.com" in url
 
+def is_youtube(url: str) -> bool:
+    return any(x in url for x in (
+        "youtube.com",
+        "youtu.be",
+        "music.youtube.com"
+    ))
+    
 def is_instagram(url: str) -> bool:
     return "instagram.com" in url or "instagr.am" in url
 
@@ -1225,7 +1232,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 await bot.delete_message(chat_id, status_msg_id)
                 return
 
-        elif is_instagram(raw_url):
+        elif is_instagram(raw_url) or is_youtube(raw_url):
             path = await ytdlp_download(
                 raw_url,
                 fmt_key,
