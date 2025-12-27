@@ -1154,16 +1154,33 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 CHUNK_SIZE = 10
                 chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
+                bot_me = await bot.get_me()
+                bot_name = bot_me.first_name or "Bot"
+                
+                title = (
+                    data.get("data", {}).get("title")
+                    or data.get("data", {}).get("desc")
+                    or "Slideshow TikTok"
+                )
+                
+                title = html.escape(title.strip())
+
+                caption_text = (
+                    f"🖼️ <b>{title}</b>\n\n"
+                    f"— via <i>{html.escape(bot_name)}</i>"
+                )
+
                 for idx, chunk in enumerate(chunks):
                     media = []
                     for i, img in enumerate(chunk):
                         media.append(
                             InputMediaPhoto(
                                 media=img,
-                                caption="📸 Slideshow TikTok" if idx == 0 and i == 0 else None
+                                caption=caption_text if idx == 0 and i == 0 else None,
+                                parse_mode="HTML" if idx == 0 and i == 0 else None
                             )
                         )
-
+                        
                     await bot.send_media_group(
                         chat_id=chat_id,
                         media=media,
