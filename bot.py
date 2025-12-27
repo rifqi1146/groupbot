@@ -1982,7 +1982,7 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-#gemini
+#gemini (GROUNDING ENABLED)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 GEMINI_MODELS = {
@@ -2004,8 +2004,25 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
     )
 
     payload = {
+        "system_instruction": {
+            "parts": [
+                {
+                    "text": (
+                        "Gunakan Google Search untuk mencari informasi terbaru dan faktual. "
+                        "Jika data tidak ditemukan, katakan secara jujur. "
+                        "Jangan mengarang jawaban."
+                    )
+                }
+            ]
+        },
+        "tools": [
+            {
+                "google_search": {}
+            }
+        ],
         "contents": [
             {
+                "role": "user",
                 "parts": [
                     {"text": prompt}
                 ]
@@ -2018,7 +2035,8 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
         async with session.post(
             url,
             headers={"Content-Type": "application/json"},
-            json=payload
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=60)
         ) as resp:
             if resp.status != 200:
                 return False, f"HTTP {resp.status}: {await resp.text()}"
@@ -2027,7 +2045,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
 
         candidates = data.get("candidates") or []
         if not candidates:
-            return True, "Model merespon tapi tanpa candidates."
+            return True, "Model merespon tapi tanpa hasil."
 
         parts = candidates[0].get("content", {}).get("parts", [])
         if parts:
