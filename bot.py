@@ -1167,7 +1167,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
                 caption_text = (
                     f"🖼️ <b>{title}</b>\n\n"
-                    f"— via <i>{html.escape(bot_name)}</i>"
+                    f"🪄 <i> Powered by {html.escape(bot_name)}</i>"
                 )
 
                 for idx, chunk in enumerate(chunks):
