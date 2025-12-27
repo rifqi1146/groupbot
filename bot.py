@@ -1050,7 +1050,6 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     base_cmd = [
         YT_DLP,
         "--no-playlist",
-        "--4, --force-ipv4",
         "--concurrent-fragments", "8",
         "--merge-output-format", "mp4",
         "--no-check-certificate",
@@ -1179,7 +1178,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         filename=f"{title[:50]}.mp3",
                         reply_to_message_id=reply_to,
                         disable_notification=True,
-                        timeout=300
                     )
 
                     await bot.delete_message(chat_id, status_msg_id)
@@ -1269,7 +1267,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 filename=f"{title[:50]}.mp3",
                 reply_to_message_id=reply_to,
                 disable_notification=True,
-                timeout=300                
             )
         else:
             caption = os.path.splitext(os.path.basename(path))[0]
@@ -1286,7 +1283,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 supports_streaming=True,
                 reply_to_message_id=reply_to,
                 disable_notification=True,
-                timeout=300
             )
 
         await bot.delete_message(chat_id, status_msg_id)
