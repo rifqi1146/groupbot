@@ -925,6 +925,24 @@ def is_invalid_video(path: str) -> bool:
     except Exception:
         return True
         
+async def ytdlp_get_title(url: str) -> str | None:
+    YT_DLP = shutil.which("yt-dlp")
+    if not YT_DLP:
+        return None
+
+    proc = await asyncio.create_subprocess_exec(
+        YT_DLP,
+        "--no-playlist",
+        "--print", "%(title)s",
+        url,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+    out, _ = await proc.communicate()
+    title = out.decode().strip()
+    return title or None
+    
 #auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -1119,9 +1137,25 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
 
+    async def _yt_title(url: str):
+        YT_DLP = shutil.which("yt-dlp")
+        if not YT_DLP:
+            return None
+        proc = await asyncio.create_subprocess_exec(
+            YT_DLP,
+            "--no-playlist",
+            "--print",
+            "%(title)s",
+            url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await proc.communicate()
+        t = out.decode().strip()
+        return t or None
+
     try:
         if is_tiktok(raw_url):
-
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
@@ -1129,14 +1163,12 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
-
                 if is_invalid_video(path):
                     try:
                         os.remove(path)
                     except:
                         pass
                     raise RuntimeError("Static video")
-
             except Exception:
                 session = await get_http_session()
                 async with session.post(
@@ -1151,12 +1183,10 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         data.get("data", {}).get("music")
                         or data.get("data", {}).get("music_info", {}).get("play")
                     )
-
                     if not music_url:
                         raise RuntimeError("Audio slideshow tidak ditemukan")
 
                     tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
-
                     async with session.get(music_url) as r:
                         with open(tmp_audio, "wb") as f:
                             async for chunk in r.content.iter_chunked(64 * 1024):
@@ -1167,7 +1197,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         or data.get("data", {}).get("desc")
                         or "TikTok Audio"
                     )
-
                     bot_name = (await bot.get_me()).first_name or "Bot"
 
                     with open(tmp_audio, "rb") as f:
@@ -1200,13 +1229,11 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
                 bot_name = (await bot.get_me()).first_name or "Bot"
-
                 title = (
                     data.get("data", {}).get("title")
                     or data.get("data", {}).get("desc")
                     or "Slideshow TikTok"
                 )
-
                 title = html.escape(title.strip())
 
                 caption_text = (
@@ -1224,7 +1251,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                                 parse_mode="HTML" if idx == 0 and i == 0 else None
                             )
                         )
-
                     await bot.send_media_group(
                         chat_id=chat_id,
                         media=media,
@@ -1235,14 +1261,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 return
 
         elif is_instagram(raw_url) or is_youtube(raw_url):
-            path = await ytdlp_download(
-                raw_url,
-                fmt_key,
-                bot,
-                chat_id,
-                status_msg_id
-            )
-
+            path = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id)
         else:
             raise RuntimeError("Platform tidak didukung")
 
@@ -1257,7 +1276,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         )
 
         if fmt_key == "mp3":
-            title = os.path.splitext(os.path.basename(path))[0]
+            yt_title = await _yt_title(raw_url)
+            title = yt_title or os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
 
             with open(path, "rb") as f:
@@ -1270,7 +1290,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     reply_to_message_id=reply_to,
                     disable_notification=True,
                 )
-
         else:
             caption = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
@@ -1299,7 +1318,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             )
         except:
             pass
-
     finally:
         if path and os.path.exists(path):
             try:
