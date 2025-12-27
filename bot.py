@@ -1204,10 +1204,14 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 disable_notification=True
             )
         else:
+        
+            caption = os.path.splitext(os.path.basename(path))[0]
+        
             await bot.send_video(
                 chat_id=chat_id,
                 video=path,
-                filename=os.path.basename(path),
+                caption=f"🎬 <b>{html.escape(caption)}</b>",
+                parse_mode="HTML",
                 supports_streaming=True,
                 reply_to_message_id=reply_to,
                 disable_notification=True
