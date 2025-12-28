@@ -52,6 +52,8 @@ python bot.py
 
 This project was developed using ideas and architectural references from:
 
-- Moon Userbot (GPL-3.0)
+- Moon Userbot (GPL-3.0)  
   https://github.com/The-MoonTg-project/Moon-Userbot
-  
+
+Special thanks to **Pikachu** for the inspiration behind the *asupan* feature.  
+Telegram channel: https://t.me/pikachukocak5
