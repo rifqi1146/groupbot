@@ -1,4 +1,4 @@
-#bot commands
+# Commands
 BOT_COMMANDS = {
     "start","help","menu","helpowner","ask","weather","ping",
     "enablensfw","disablensfw","nsfwlist","speedtest","ip",
