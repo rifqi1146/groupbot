@@ -1,42 +1,15 @@
 #!/usr/bin/env python3
 
 import os
-import io
-import re
 import sys
 import json
-import platform
-import statistics
 import time
 import shlex
-import socket
-import whois
 import shutil
 import asyncio
 import logging
 import aiohttp
-import random
-import urllib.parse
-import html
-import dns.resolver
-import pytesseract
 import uuid
-import math
-import subprocess
-import base64
-
-from PIL import Image, ImageDraw, ImageFont
-from io import BytesIO
-from bs4 import BeautifulSoup
-from typing import List, Tuple, Optional, Tuple
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
-
-from deep_translator import (
-    GoogleTranslator,
-    MyMemoryTranslator, 
-    LibreTranslator,
-)
 
 from handlers.ai import (
     ask_cmd,
@@ -45,7 +18,6 @@ from handlers.ai import (
     groq_query,
 )
 
-from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
 from handlers.nsfw import (
     enablensfw_cmd,
     disablensfw_cmd,
@@ -68,6 +40,7 @@ from handlers.welcome import (
     load_welcome_chats
 )
 
+from utils.http import get_http_session, close_http_session
 from handlers.tr import tr_cmd
 from handlers.restart import restart_cmd
 from handlers.gsearch import gsearch_cmd, gsearch_callback
@@ -76,6 +49,7 @@ from handlers.help import help_cmd, help_callback
 from handlers.speedtest import speedtest_cmd
 from handlers.ping import ping_cmd
 from handlers.weather import weather_cmd
+
 from handlers.dl import (
     dl_cmd,
     dl_callback,
@@ -100,16 +74,6 @@ from handlers.asupan import (
     load_asupan_groups,
     load_autodel_groups,
     startup_tasks,
-)
-
-from telegram import (
-    Update,
-    ChatPermissions,
-    InputFile,
-    InlineKeyboardButton,
-    InputMediaPhoto,
-    InputMediaVideo,
-    InlineKeyboardMarkup,
 )
 
 from telegram.ext import (
@@ -159,27 +123,6 @@ async def init_bot_username(app):
     me = await app.bot.get_me()
     BOT_USERNAME = me.username.lower()
     
-#shutdown
-HTTP_SESSION: aiohttp.ClientSession | None = None
-       
-async def get_http_session():
-    global HTTP_SESSION
-    if HTTP_SESSION is None or HTTP_SESSION.closed:
-        HTTP_SESSION = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=60)
-        )
-    return HTTP_SESSION
-  
-async def post_shutdown(app):
-    global HTTP_SESSION
-
-    if HTTP_SESSION and not HTTP_SESSION.closed:
-        try:
-            await HTTP_SESSION.close()
-            logger.info("HTTP session closed cleanly")
-        except Exception as e:
-            logger.warning(f"Failed closing HTTP session: {e}")
-            
 #emotelog
 class EmojiFormatter(logging.Formatter):
     LEVEL_EMOJI = {
@@ -354,6 +297,12 @@ async def post_init(app):
     except Exception as e:
         logger.warning(f"⚠️ Asupan startup failed: {e}")
         
+async def post_shutdown(app):
+    try:
+        await close_http_session()
+    except Exception:
+        logger.exception("Failed during post_shutdown")
+    
 #main
 def main():
     logger.info("🐾 Initializing bot")
