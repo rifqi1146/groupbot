@@ -127,7 +127,6 @@ if not BOT_TOKEN:
 
 #----@*#&#--------
 USER_CACHE_FILE = "users.json"
-AI_MODE_FILE = "ai_mode.json"
 
 #nsfw
 NSFW_FILE = "data/nsfw_groups.json"
