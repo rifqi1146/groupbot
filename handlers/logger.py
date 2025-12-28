@@ -1,9 +1,6 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-import html
-
+from bot import BOT_COMMANDS
 from utils.config import ASUPAN_STARTUP_CHAT_ID
-
+import html
 
 async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -12,8 +9,12 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = msg.text.strip()
 
-    # cuma log command
     if not (text.startswith("/") or text.startswith("$")):
+        return
+
+    cmd = text[1:].split()[0].lower()
+
+    if cmd not in BOT_COMMANDS:
         return
 
     user = msg.from_user
@@ -22,7 +23,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
     chat_type = chat.type.upper()
-    chat_name = chat.title if chat.title else "Private"
+    chat_name = chat.title or "Private"
 
     log_text = (
         f"👀 <b>Command LOG</b>\n"
@@ -41,4 +42,3 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         pass
-
