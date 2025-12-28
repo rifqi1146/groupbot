@@ -53,6 +53,7 @@ from handlers.nsfw import (
     pollinations_generate_nsfw,
 )
 
+from handlers.start import start_cmd
 from handlers.speedtest import speedtest_cmd
 from handlers.ping import ping_cmd
 from handlers.weather import weather_cmd
@@ -233,21 +234,6 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.edit_text("❌ Semua translator gagal")
     
-#-kawaiiii
-def kawaii_emo() -> str:
-    EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
-    return random.choice(EMOS)
-
-#start
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    name = (user.first_name or "").strip() or "there"
-    text = (
-        f"👋 Halo {name}!\n\n"
-        "Ketik /help buat lihat menu."
-    )
-    await update.message.reply_text(text)
-
 #menu/help
 def help_main_keyboard():
     return InlineKeyboardMarkup([
