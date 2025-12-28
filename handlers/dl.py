@@ -297,6 +297,32 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 
     return files[0] if files else None
 
+def reencode_mp3(src_path: str) -> str:
+    """
+    Force re-encode audio to clean MP3 for Telegram.
+    Return new file path.
+    """
+    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
+
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", src_path,
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-ab", "192k",
+            "-ar", "44100",
+            fixed_path
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    if not os.path.exists(fixed_path):
+        raise RuntimeError("FFmpeg re-encode failed")
+
+    return fixed_path
+    
 #worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
@@ -304,7 +330,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
     try:
         if is_tiktok(raw_url):
-
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
@@ -352,10 +377,11 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     )
 
                     bot_name = (await bot.get_me()).first_name or "Bot"
+                    fixed_audio = reencode_mp3(tmp_audio)
 
                     await bot.send_audio(
                         chat_id=chat_id,
-                        audio=tmp_audio,
+                        audio=fixed_audio,
                         title=title[:64],
                         performer=bot_name,
                         filename=f"{title[:50]}.mp3",
@@ -364,7 +390,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     )
 
                     await bot.delete_message(chat_id, status_msg_id)
+
                     os.remove(tmp_audio)
+                    os.remove(fixed_audio)
                     return
 
                 await bot.edit_message_text(
@@ -441,16 +469,20 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
         if fmt_key == "mp3":
             title = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
+            fixed_audio = reencode_mp3(path)
 
             await bot.send_audio(
                 chat_id=chat_id,
-                audio=path,
+                audio=fixed_audio,
                 title=title[:64],
                 performer=bot_name,
                 filename=f"{title[:50]}.mp3",
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
+
+            os.remove(fixed_audio)
+
         else:
             caption = os.path.splitext(os.path.basename(path))[0]
             bot_name = (await bot.get_me()).first_name or "Bot"
