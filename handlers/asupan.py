@@ -27,7 +27,7 @@ from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
 log = logging.getLogger(__name__)
 
 #asupan grup
-ASUPAN_GROUP_FILE = "asupan_groups.json"
+ASUPAN_GROUP_FILE = "data/asupan_groups.json"
 ASUPAN_ENABLED_CHATS = set()
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
@@ -39,7 +39,7 @@ ASUPAN_DELETE_JOBS = {}
 ASUPAN_AUTO_DELETE_SEC = 300
 ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
-AUTODEL_FILE = "autodel_groups.json"
+AUTODEL_FILE = "data/autodel_groups.json"
 AUTODEL_ENABLED_CHATS = set()
 
 

@@ -18,9 +18,7 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-    # flush biar log ga ilang
     sys.stdout.flush()
     sys.stderr.flush()
 
-    # restart process
     os.execv(sys.executable, [sys.executable] + sys.argv)

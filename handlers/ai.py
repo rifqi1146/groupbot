@@ -23,7 +23,7 @@ from utils.config import OWNER_ID
 from utils.storage import load_json_file, save_json_file
 from utils.text import bold, code, italic, underline, link, mono
 
-AI_MODE_FILE = "ai_mode.json"
+AI_MODE_FILE = "data/ai_mode.json"
 
 # ---- ai mode 
 def load_ai_mode():

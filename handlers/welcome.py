@@ -9,7 +9,7 @@ from utils.config import OWNER_ID
 
 #welcome 
 WELCOME_ENABLED_CHATS = set()
-WELCOME_FILE = "welcome_chats.json"
+WELCOME_FILE = "data/welcome_chats.json"
 
 def load_welcome_chats():
     global WELCOME_ENABLED_CHATS
