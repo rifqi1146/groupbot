@@ -41,3 +41,13 @@ source .env
 ```
 python bot.py
 ```
+
+
+
+## 🙏 Credits
+
+This project was developed using ideas and architectural references from:
+
+- Moon Userbot (GPL-3.0)
+  https://github.com/The-MoonTg-project/Moon-Userbot
+  
