@@ -41,6 +41,8 @@ from deep_translator import (
 from handlers.asupan import (
     asupan_cmd,
     asupan_callback,
+    ASUPAN_STARTUP_CHAT_ID, 
+    send_asupan_once,
     enable_asupan_cmd,
     disable_asupan_cmd,
     asupanlist_cmd,
