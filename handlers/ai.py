@@ -22,6 +22,8 @@ from utils.http import get_http_session
 from utils.config import OWNER_ID
 from utils.storage import load_json_file, save_json_file
 
+AI_MODE_FILE = "ai_mode.json"
+
 # ---- ai mode 
 def load_ai_mode():
     return load_json_file(AI_MODE_FILE, {})
