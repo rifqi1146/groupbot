@@ -54,6 +54,7 @@ from handlers.nsfw import (
 )
 
 from handlers.speedtest import speedtest_cmd
+from handlers.ping import ping_cmd
 from handlers.weather import weather_cmd
 from handlers.dl import (
     dl_cmd,
@@ -107,28 +108,6 @@ try:
 except Exception:
     psutil = None
 
-#html
-def bold(text: str) -> str:
-    return f"<b>{html.escape(text)}</b>"
-
-def italic(text: str) -> str:
-    return f"<i>{html.escape(text)}</i>"
-
-def underline(text: str) -> str:
-    return f"<u>{html.escape(text)}</u>"
-
-def code(text: str) -> str:
-    return f"<code>{html.escape(text)}</code>"
-
-def pre(text: str) -> str:
-    return f"<pre>{html.escape(text)}</pre>"
-
-def link(label: str, url: str) -> str:
-    return f'<a href="{html.escape(url)}">{html.escape(label)}</a>'
-
-def mono(text: str) -> str:
-    return f"<tt>{html.escape(text)}</tt>"
-
 #setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -175,20 +154,6 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
     
-#ping
-async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    start = time.perf_counter()
-
-    msg = await update.message.reply_text("🏓 Pong...")
-
-    end = time.perf_counter()
-    latency = int((end - start) * 1000)
-
-    await msg.edit_text(
-        f"⚡ <b>Pong!</b>\n⏱️ Latency: <code>{latency} ms</code>",
-        parse_mode="HTML"
-    )
-
 #translator
 DEFAULT_LANG = "en"
 
