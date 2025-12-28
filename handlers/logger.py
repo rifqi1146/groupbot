@@ -1,4 +1,4 @@
-from bot import BOT_COMMANDS
+from utils.commands import BOT_COMMANDS
 from utils.config import ASUPAN_STARTUP_CHAT_ID
 import html
 
@@ -13,7 +13,6 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     cmd = text[1:].split()[0].lower()
-
     if cmd not in BOT_COMMANDS:
         return
 
@@ -42,3 +41,4 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         pass
+
