@@ -9,9 +9,10 @@ import shutil
 import asyncio
 import logging
 import aiohttp
-from dotenv import load_dotenv
 import uuid
 
+from dotenv import load_dotenv
+from telegram import Update
 from handlers.ai import (
     ask_cmd,
     ai_cmd,
