@@ -40,6 +40,7 @@ from deep_translator import (
 
 from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
 from handlers.speedtest import speedtest_cmd
+from handlers.weather import weather_cmd
 from handlers.asupan import (
     asupan_cmd,
     asupan_callback,
@@ -176,88 +177,6 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
     
-#weather
-WEATHER_SPIN_FRAMES = ["🌤", "⛅", "🌥", "☁️"]
-
-async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg:
-        return
-
-    if not context.args:
-        return await msg.reply_text(
-            "❌ Contoh: <code>/weather jakarta</code>",
-            parse_mode="HTML"
-        )
-
-    city = " ".join(context.args).strip()
-    if not city:
-        return await msg.reply_text(
-            "❌ Contoh: <code>/weather jakarta</code>",
-            parse_mode="HTML"
-        )
-
-    status_msg = await msg.reply_text(
-        f"🌤 Mengambil cuaca untuk <b>{city.title()}</b>...",
-        parse_mode="HTML"
-    )
-
-    session = await get_http_session()
-
-    url = f"https://wttr.in/{city}?format=j1"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (TelegramBot)"
-    }
-
-    try:
-        async with session.get(
-            url,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
-            if resp.status != 200:
-                return await status_msg.edit_text(
-                    "❌ Gagal mengambil data cuaca.\n"
-                    "Server cuaca sedang sibuk, coba lagi nanti."
-                )
-            data = await resp.json()
-
-    except asyncio.TimeoutError:
-        return await status_msg.edit_text("❌ Request timeout. Coba lagi nanti.")
-    except Exception:
-        return await status_msg.edit_text("❌ Gagal menghubungi server cuaca.")
-
-    try:
-        current = data.get("current_condition", [{}])[0]
-
-        weather_desc = current.get("weatherDesc", [{"value": "N/A"}])[0]["value"]
-        temp_c = current.get("temp_C", "N/A")
-        feels = current.get("FeelsLikeC", "N/A")
-        humidity = current.get("humidity", "N/A")
-        wind = f"{current.get('windspeedKmph','N/A')} km/h ({current.get('winddir16Point','N/A')})"
-        cloud = current.get("cloudcover", "N/A")
-
-        astronomy = data.get("weather", [{}])[0].get("astronomy", [{}])[0]
-        sunrise = astronomy.get("sunrise", "N/A")
-        sunset = astronomy.get("sunset", "N/A")
-
-    except Exception:
-        return await status_msg.edit_text("❌ Error parsing data cuaca.")
-
-    report = (
-        f"🌤 <b>Weather — {city.title()}</b>\n\n"
-        f"🔎 Kondisi : {weather_desc}\n"
-        f"🌡 Suhu : {temp_c}°C (Terasa {feels}°C)\n"
-        f"💧 Kelembaban : {humidity}%\n"
-        f"💨 Angin : {wind}\n"
-        f"☁️ Awan : {cloud}%\n\n"
-        f"🌅 Sunrise : {sunrise}\n"
-        f"🌇 Sunset  : {sunset}\n\n"
-        f"🕒 Update : {time.strftime('%Y-%m-%d %H:%M:%S')}"
-    )
-
-    await status_msg.edit_text(report, parse_mode="HTML")
-        
 #cmd owner
 def helpowner_keyboard():
     return InlineKeyboardMarkup([
