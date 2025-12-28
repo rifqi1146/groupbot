@@ -21,13 +21,14 @@ from telegram import Update
 from utils.http import get_http_session
 from utils.config import OWNER_ID
 
+from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
+
 #asupannnnn
 log = logging.getLogger(__name__)
 
 #asupan grup
 ASUPAN_GROUP_FILE = "asupan_groups.json"
 ASUPAN_ENABLED_CHATS = set()
-ASUPAN_STARTUP_CHAT_ID = int(os.getenv("ASUPAN_STARTUP_CHAT_ID", "0")) or None
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_KEYWORD_CACHE = {}
