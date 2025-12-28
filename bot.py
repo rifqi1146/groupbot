@@ -62,8 +62,9 @@ from handlers.networking import (
 from handlers.start import start_cmd
 
 from handlers.welcome import (
-   welcome_handler,
-   wlc_cmd,
+    wlc_cmd,
+    welcome_handler,
+    load_welcome_chats
 )
 
 from handlers.tr import tr_cmd
