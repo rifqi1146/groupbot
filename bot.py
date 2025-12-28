@@ -55,7 +55,7 @@ from handlers.nsfw import (
 
 from handlers.start import start_cmd
 from handlers.tr import tr_cmd
-from handlers.gsearch import gsearch_cmd
+from handlers.gsearch import gsearch_cmd, gsearch_callback
 from handlers.stats import stats_cmd
 from handlers.help import help_cmd, help_callback
 from handlers.speedtest import speedtest_cmd
