@@ -1,7 +1,8 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
-import html
+
+from utils.text import bold, code, italic, underline, link, mono
 
 #translator
 DEFAULT_LANG = "en"

@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.dl import progress_bar
+from utils.text import bold, code, italic, underline, link, mono
 
 #stats
 try:
