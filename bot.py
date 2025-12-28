@@ -9,6 +9,7 @@ import shutil
 import asyncio
 import logging
 import aiohttp
+from dotenv import load_dotenv
 import uuid
 
 from handlers.ai import (
