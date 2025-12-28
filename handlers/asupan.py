@@ -224,6 +224,18 @@ def asupan_keyboard(owner_id: int):
 #fetch
 async def fetch_asupan_tikwm(keyword: str | None = None):
     default_keywords = [
+        "tobrut",
+        "pemersatubangsa",
+        "tanktopstyle",
+        "tanktop",
+        "bahancrt",
+        "cucimata",
+        "bhncrt",
+        "geolgeol",
+        "zaraxhel",
+        "verllyyaling",
+        "cewek lucu indo",
+        "asupan cewek",
         "asupan indo",
         "tante holic",
         "trend susu beracun",
@@ -232,10 +244,6 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "eunicetjoaa",
         "cewek viral",
         "nasikfc",
-        "tanktopstyle",
-        "tanktop",
-        "bahancrt",
-        "sintakarma",
         "cewek fyp",
         "cewek cantik",
         "cewek indo",
@@ -249,16 +257,7 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "cewek sunda",
         "asupan malam",
         "asupan pagi",
-        "asupan harian",
-        "tobrut",
-        "pemersatubangsa",
-        "cucimata",
-        "bhncrt",
-        "geolgeol",
-        "zaraxhel",
-        "verllyyaling",
-        "cewek lucu indo",
-        "asupan cewek"
+        "asupan harian"
     ]
 
     query = keyword.strip() if keyword else random.choice(default_keywords)
