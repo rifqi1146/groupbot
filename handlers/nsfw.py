@@ -8,7 +8,7 @@ from utils.http import get_http_session
 from utils.config import OWNER_ID
 
 from handlers.ai import _emo, _can, _extract_prompt_from_update
-from utils.text import bold, code
+from utils.text import bold, code, italic, underline, link, mono
 
 #nsfw
 NSFW_FILE = "data/nsfw_groups.json"
