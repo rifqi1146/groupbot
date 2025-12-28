@@ -24,6 +24,7 @@ from telegram.ext import (
 )
 
 # Utils 
+from utils.commands import BOT_COMMANDS
 from utils.http import get_http_session, close_http_session
 
 # Core ai
@@ -161,38 +162,6 @@ def setup_logger():
     root.addHandler(handler)
 
     return root
-
-#log 
-BOT_COMMANDS = {
-    "start",
-    "help",
-    "menu",
-    "helpowner",
-    "ask",
-    "weather",
-    "ping",
-    "enablensfw",
-    "disablensfw",
-    "nsfwlist",
-    "speedtest",
-    "ip",
-    "whoisdomain",
-    "domain",
-    "dl",
-    "stats",
-    "tr",
-    "gsearch",
-    "enableasupan",
-    "disableasupan",
-    "asupanlist",
-    "asupan",
-    "wlc",
-    "restart",
-    "ai",
-    "setmodeai",
-    "groq",
-    "nsfw",
-}
 
 # Dollar Command Router
 _DOLLAR_CMD_MAP = {
