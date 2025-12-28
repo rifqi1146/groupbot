@@ -38,6 +38,8 @@ from deep_translator import (
     LibreTranslator,
 )
 
+from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
+
 from handlers.asupan import (
     asupan_cmd,
     asupan_callback,
