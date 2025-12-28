@@ -69,6 +69,7 @@ from handlers.welcome import (
 )
 
 from handlers.tr import tr_cmd
+from handlers.restart import restart_cmd
 from handlers.gsearch import gsearch_cmd, gsearch_callback
 from handlers.stats import stats_cmd
 from handlers.help import help_cmd, help_callback
@@ -158,16 +159,6 @@ async def init_bot_username(app):
     me = await app.bot.get_me()
     BOT_USERNAME = me.username.lower()
     
-#restart
-async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if user_id != OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
-
-    await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
-    
-
 #shutdown
 HTTP_SESSION: aiohttp.ClientSession | None = None
        
