@@ -37,12 +37,14 @@ from deep_translator import (
     MyMemoryTranslator, 
     LibreTranslator,
 )
+
 from handlers.ai import (
     ask_cmd,
     ai_cmd,
     setmodeai_cmd,
     groq_query,
 )
+
 from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
 from handlers.speedtest import speedtest_cmd
 from handlers.weather import weather_cmd
@@ -52,6 +54,12 @@ from handlers.dl import (
     dlask_callback,
     auto_dl_detect,
 )
+
+from handlers.helpowner import (
+    helpowner_cmd,
+    helpowner_callback,
+)
+
 from handlers.asupan import (
     asupan_cmd,
     asupan_callback,
@@ -180,54 +188,6 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("♻️ <b>Restarting bot...</b>", parse_mode="HTML")
     
-#cmd owner
-def helpowner_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Close", callback_data="helpowner:close")]
-    ])
-    
-async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    msg = update.message
-
-    if not user or user.id != OWNER_ID:
-        return await msg.reply_text("❌ Owner only.")
-
-    text = (
-        "👑 <b>Owner Commands</b>\n\n"
-        "⚡ <b>System</b>\n"
-        "• <code>/speedtest</code>\n"
-        "• <code>/autodel</code>\n"
-        "• <code>/wlc</code>\n"
-        "• <code>/restart</code>\n\n"
-        "🧠 <b>NSFW Control</b>\n"
-        "• <code>/enablensfw</code>\n"
-        "• <code>/disablensfw</code>\n"
-        "• <code>/nsfwlist</code>\n\n"
-        "🍜 <b>Asupan Control</b>\n"
-        "• <code>/enableasupan</code>\n"
-        "• <code>/disableasupan</code>\n"
-        "• <code>/asupanlist</code>\n"
-    )
-
-    await msg.reply_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=helpowner_keyboard()
-    )
-    
-async def helpowner_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-
-    if q.data != "helpowner:close":
-        return
-
-    try:
-        await q.message.delete()
-    except Exception:
-        pass
-                
-
 #ping
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.perf_counter()
