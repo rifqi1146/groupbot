@@ -6,13 +6,21 @@ from utils.http import async_searcher
 
 
 async def get_ofox(codename: str):
-    base = "https://api.orangefox.download/v3/"
-    releases = await async_searcher(
-        f"{base}releases?codename={codename}", re_json=True
+    base = "https://api.orangefox.download"
+
+    device_resp = await async_searcher(
+        f"{base}/devices/get?codename={codename}",
+        re_json=True
     )
-    device = await async_searcher(
-        f"{base}devices/get?codename={codename}", re_json=True
+
+    release_resp = await async_searcher(
+        f"{base}/releases/get?codename={codename}",
+        re_json=True
     )
+
+    device = device_resp.get("device") if isinstance(device_resp, dict) else None
+    releases = release_resp.get("releases", []) if isinstance(release_resp, dict) else []
+
     return device, releases
 
 
@@ -36,26 +44,21 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         device, releases = await get_ofox(codename)
 
-        dev = device.get("device") or device.get("data")
-        rels = releases.get("data") or []
-
-        if not dev:
+        if not device:
             await msg.edit_text("❌ Device not found.")
             return
 
         text = (
             "🦊 <b>OrangeFox Recovery</b>\n\n"
-            f"📱 <b>Device</b>: {html.escape(str(dev.get('fullname', '—')))}\n"
+            f"📱 <b>Device</b>: {html.escape(str(device.get('fullname', '—')))}\n"
             f"🏷 <b>Codename</b>: <code>{html.escape(codename)}</code>\n"
-            f"🏭 <b>Brand</b>: {html.escape(str(dev.get('brand', '—')))}\n"
-            f"📆 <b>Android</b>: {html.escape(str(dev.get('android', '—')))}\n"
-            f"🧩 <b>Maintainer</b>: {html.escape(str(dev.get('maintainer', '—')))}\n\n"
+            f"🏭 <b>Brand</b>: {html.escape(str(device.get('brand', '—')))}\n"
+            f"📆 <b>Android</b>: {html.escape(str(device.get('android', '—')))}\n"
+            f"🧩 <b>Maintainer</b>: {html.escape(str(device.get('maintainer', '—')))}\n\n"
         )
 
-        if rels:
-            latest = rels[0]
-            url = latest.get("url")
-
+        if releases:
+            latest = releases[0]
             text += (
                 "📦 <b>Latest Release</b>\n"
                 f"• Version: <code>{html.escape(str(latest.get('version', '—')))}</code>\n"
@@ -64,6 +67,7 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"• Size: <code>{html.escape(str(latest.get('size', '—')))}</code>\n"
             )
 
+            url = latest.get("url")
             if url:
                 text += f"• Download: <a href=\"{html.escape(url, quote=True)}\">Click here</a>\n"
         else:
