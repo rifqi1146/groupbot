@@ -22,9 +22,9 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "Usage:<br>"
-            "<code>/orangefox &lt;codename&gt;</code><br>"
-            "Example:<br>"
+            "Usage:\n"
+            "<code>/orangefox &lt;codename&gt;</code>\n"
+            "Example:\n"
             "<code>/orangefox sweet</code>",
             parse_mode="HTML",
         )
@@ -44,28 +44,29 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rels = releases.get("data") or []
 
         text = (
-            "🦊 <b>OrangeFox Recovery</b><br><br>"
-            f"📱 <b>Device</b>: {html.escape(str(dev.get('fullname', '—')))}<br>"
-            f"🏷 <b>Codename</b>: <code>{html.escape(codename)}</code><br>"
-            f"🏭 <b>Brand</b>: {html.escape(str(dev.get('brand', '—')))}<br>"
-            f"📆 <b>Android</b>: {html.escape(str(dev.get('android', '—')))}<br>"
-            f"🧩 <b>Maintainer</b>: {html.escape(str(dev.get('maintainer', '—')))}<br><br>"
+            "🦊 <b>OrangeFox Recovery</b>\n\n"
+            f"📱 <b>Device</b>: {html.escape(str(dev.get('fullname', '—')))}\n"
+            f"🏷 <b>Codename</b>: <code>{html.escape(codename)}</code>\n"
+            f"🏭 <b>Brand</b>: {html.escape(str(dev.get('brand', '—')))}\n"
+            f"📆 <b>Android</b>: {html.escape(str(dev.get('android', '—')))}\n"
+            f"🧩 <b>Maintainer</b>: {html.escape(str(dev.get('maintainer', '—')))}\n\n"
         )
 
         if rels:
             latest = rels[0]
             url = latest.get("url")
+
             text += (
-                "📦 <b>Latest Release</b><br>"
-                f"• Version: <code>{html.escape(str(latest.get('version', '—')))}</code><br>"
-                f"• Build: <code>{html.escape(str(latest.get('build', '—')))}</code><br>"
-                f"• Date: <code>{html.escape(str(latest.get('date', '—')))}</code><br>"
-                f"• Size: <code>{html.escape(str(latest.get('size', '—')))}</code><br>"
+                "📦 <b>Latest Release</b>\n"
+                f"• Version: <code>{html.escape(str(latest.get('version', '—')))}</code>\n"
+                f"• Build: <code>{html.escape(str(latest.get('build', '—')))}</code>\n"
+                f"• Date: <code>{html.escape(str(latest.get('date', '—')))}</code>\n"
+                f"• Size: <code>{html.escape(str(latest.get('size', '—')))}</code>\n"
             )
 
             if url:
                 safe_url = html.escape(url, quote=True)
-                text += f'• Download: <a href="{safe_url}">Click here</a><br>'
+                text += f"• Download: <a href=\"{safe_url}\">Click here</a>\n"
         else:
             text += "⚠️ No releases found."
 
@@ -80,8 +81,7 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await msg.edit_text(
-            f"❌ Error:<br><code>{html.escape(str(e))}</code>",
+            f"❌ Error:\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
-
     
