@@ -1,28 +1,34 @@
 import html
 from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler
+from telegram.ext import ContextTypes
 
-from utils.http import async_searcher  # sesuaikan path kalau beda
+from utils.http import async_searcher
 
 
 async def get_ofox(codename: str):
     base = "https://api.orangefox.download/v3/"
     releases = await async_searcher(
-        base + f"releases?codename={codename}", re_json=True
+        f"{base}releases?codename={codename}", re_json=True
     )
     device = await async_searcher(
-        base + f"devices/get?codename={codename}", re_json=True
+        f"{base}devices/get?codename={codename}", re_json=True
     )
     return device, releases
 
 
 async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
     if not context.args:
-        return await update.message.reply_text(
-            "❌ Usage: <code>/orangefox &lt;codename&gt;</code><br>"
-            "Example: <code>/orangefox sweet</code>",
-            parse_mode="HTML"
+        await update.message.reply_text(
+            "Usage:<br>"
+            "<code>/orangefox &lt;codename&gt;</code><br>"
+            "Example:<br>"
+            "<code>/orangefox sweet</code>",
+            parse_mode="HTML",
         )
+        return
 
     codename = context.args[0].lower()
     msg = await update.message.reply_text("🦊 Fetching OrangeFox data...")
@@ -30,44 +36,52 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         device, releases = await get_ofox(codename)
 
-        if not device or "error" in device:
-            return await msg.edit_text("❌ Device not found.")
+        if not device or "data" not in device:
+            await msg.edit_text("❌ Device not found.")
+            return
 
-        dev = device.get("data", {})
-        rels = releases.get("data", [])
+        dev = device["data"]
+        rels = releases.get("data") or []
 
         text = (
             "🦊 <b>OrangeFox Recovery</b><br><br>"
-            f"📱 <b>Device</b> : {html.escape(str(dev.get('fullname', '—')))}<br>"
-            f"🏷 <b>Codename</b> : <code>{html.escape(codename)}</code><br>"
-            f"🏭 <b>Brand</b> : {html.escape(str(dev.get('brand', '—')))}<br>"
-            f"📆 <b>Android</b> : {html.escape(str(dev.get('android', '—')))}<br>"
-            f"🧩 <b>Maintainer</b> : {html.escape(str(dev.get('maintainer', '—')))}<br><br>"
+            f"📱 <b>Device</b>: {html.escape(str(dev.get('fullname', '—')))}<br>"
+            f"🏷 <b>Codename</b>: <code>{html.escape(codename)}</code><br>"
+            f"🏭 <b>Brand</b>: {html.escape(str(dev.get('brand', '—')))}<br>"
+            f"📆 <b>Android</b>: {html.escape(str(dev.get('android', '—')))}<br>"
+            f"🧩 <b>Maintainer</b>: {html.escape(str(dev.get('maintainer', '—')))}<br><br>"
         )
 
         if rels:
             latest = rels[0]
+            url = latest.get("url")
             text += (
                 "📦 <b>Latest Release</b><br>"
-                f"• Version : <code>{html.escape(str(latest.get('version', '—')))}</code><br>"
-                f"• Build : <code>{html.escape(str(latest.get('build', '—')))}</code><br>"
-                f"• Date : <code>{html.escape(str(latest.get('date', '—')))}</code><br>"
-                f"• Size : <code>{html.escape(str(latest.get('size', '—')))}</code><br>"
-                f"• Link : {html.escape(str(latest.get('url', '—')))}<br>"
+                f"• Version: <code>{html.escape(str(latest.get('version', '—')))}</code><br>"
+                f"• Build: <code>{html.escape(str(latest.get('build', '—')))}</code><br>"
+                f"• Date: <code>{html.escape(str(latest.get('date', '—')))}</code><br>"
+                f"• Size: <code>{html.escape(str(latest.get('size', '—')))}</code><br>"
             )
+
+            if url:
+                safe_url = html.escape(url, quote=True)
+                text += f'• Download: <a href="{safe_url}">Click here</a><br>'
         else:
             text += "⚠️ No releases found."
+
+        if len(text) > 4000:
+            text = text[:3990] + "..."
 
         await msg.edit_text(
             text,
             parse_mode="HTML",
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
         )
 
     except Exception as e:
         await msg.edit_text(
-            f"❌ Error: <code>{html.escape(str(e))}</code>",
-            parse_mode="HTML"
+            f"❌ Error:<br><code>{html.escape(str(e))}</code>",
+            parse_mode="HTML",
         )
 
     
