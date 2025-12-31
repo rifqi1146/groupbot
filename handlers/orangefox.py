@@ -36,11 +36,11 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         device, releases = await get_ofox(codename)
 
-        if not device or "data" not in device:
+        if not device or "device" not in device:
             await msg.edit_text("❌ Device not found.")
             return
 
-        dev = device["data"]
+        dev = device["device"]
         rels = releases.get("data") or []
 
         text = (
