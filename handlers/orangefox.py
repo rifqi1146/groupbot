@@ -8,20 +8,30 @@ from utils.http import async_searcher
 async def get_ofox(codename: str):
     base = "https://api.orangefox.download"
 
-    device_resp = await async_searcher(
-        f"{base}/devices/get?codename={codename}",
+    devices_resp = await async_searcher(
+        f"{base}/devices/",
         re_json=True
     )
 
-    release_resp = await async_searcher(
-        f"{base}/releases/get?codename={codename}",
+    releases_resp = await async_searcher(
+        f"{base}/releases/",
         re_json=True
     )
 
-    device = device_resp.get("device") if isinstance(device_resp, dict) else None
-    releases = release_resp.get("releases", []) if isinstance(release_resp, dict) else []
+    devices = devices_resp.get("devices", [])
+    releases = releases_resp.get("releases", [])
 
-    return device, releases
+    device = None
+    for d in devices:
+        if d.get("codename") == codename:
+            device = d
+            break
+
+    matched_releases = [
+        r for r in releases if r.get("codename") == codename
+    ]
+
+    return device, matched_releases
 
 
 async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
