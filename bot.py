@@ -52,6 +52,7 @@ from handlers.networking import (
 
 # Misc
 from handlers.start import start_cmd
+from handlers.orangefox import orangefox_cmd
 from handlers.logger import log_commands
 from handlers.tr import tr_cmd
 from handlers.restart import restart_cmd
@@ -309,6 +310,7 @@ def main():
 
     # ---- Commands
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
+    app.add_handler(CommandHandler("orangefox", orangefox_cmd), group=-1)
     app.add_handler(CommandHandler("autodel", autodel_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
     app.add_handler(CommandHandler("menu", help_cmd), group=-1)
