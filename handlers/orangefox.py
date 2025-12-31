@@ -36,12 +36,12 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         device, releases = await get_ofox(codename)
 
-        if not device or "device" not in device:
+        dev = device.get("device") or device.get("data")
+        rels = releases.get("data") or []
+
+        if not dev:
             await msg.edit_text("❌ Device not found.")
             return
-
-        dev = device["device"]
-        rels = releases.get("data") or []
 
         text = (
             "🦊 <b>OrangeFox Recovery</b>\n\n"
@@ -65,8 +65,7 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
             if url:
-                safe_url = html.escape(url, quote=True)
-                text += f"• Download: <a href=\"{safe_url}\">Click here</a>\n"
+                text += f"• Download: <a href=\"{html.escape(url, quote=True)}\">Click here</a>\n"
         else:
             text += "⚠️ No releases found."
 
@@ -84,4 +83,3 @@ async def orangefox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"❌ Error:\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
-    
