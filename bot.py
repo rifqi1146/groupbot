@@ -55,7 +55,7 @@ from handlers.start import start_cmd
 from handlers.orangefox import orangefox_cmd
 from handlers.logger import log_commands
 from handlers.tr import tr_cmd
-from handlers.del import reply_del_handler
+from handlers.delete import reply_del_handler
 from handlers.restart import restart_cmd
 from handlers.gsearch import gsearch_cmd, gsearch_callback
 from handlers.stats import stats_cmd
