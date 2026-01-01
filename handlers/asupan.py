@@ -439,16 +439,18 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("❌ Bukan asupan lu dongo!", show_alert=True)
         return
 
-    now = time.time()
-    last = ASUPAN_COOLDOWN.get(user_id, 0)
-    if now - last < ASUPAN_COOLDOWN_SEC:
-        await q.answer(
-            f"Tunggu {ASUPAN_COOLDOWN_SEC} detik sebelum ganti asupan lagi.",
-            show_alert=True
-        )
-        return
+    if user_id != OWNER_ID:
+        now = time.time()
+        last = ASUPAN_COOLDOWN.get(user_id, 0)
+        if now - last < ASUPAN_COOLDOWN_SEC:
+            await q.answer(
+                f"Tunggu {ASUPAN_COOLDOWN_SEC} detik sebelum ganti asupan lagi.",
+                show_alert=True
+            )
+            return
 
-    ASUPAN_COOLDOWN[user_id] = now
+        ASUPAN_COOLDOWN[user_id] = now
+        
     await q.answer()
 
     try:
