@@ -495,7 +495,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
                 ),
                 parse_mode="HTML",
-                supports_streaming=True,
+                supports_streaming=False,
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
