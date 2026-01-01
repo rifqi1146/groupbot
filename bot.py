@@ -349,7 +349,7 @@ def main():
 
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect, block=False),
-        group=-1,
+        group=1,
     )
 
     app.add_handler(
@@ -364,7 +364,7 @@ def main():
     
     app.add_handler(
         MessageHandler(filters.TEXT & filters.REPLY, reply_del_handler),
-        group=-2,
+        group=-1,
     )
 
     # ---- Callbacks
