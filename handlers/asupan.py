@@ -121,19 +121,21 @@ def load_asupan_groups():
 async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.data["chat_id"]
-    message_id = job.data["message_id"]
+    asupan_msg_id = job.data["asupan_msg_id"]
+    reply_to = job.data["reply_to"]
 
     try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="❌ tidak ada aktivitas dalam 5 menit, asupan ditutup",
+        await context.bot.delete_message(chat_id, asupan_msg_id)
+        await context.bot.send_message(
+            chat_id,
+            "❌ tidak ada aktivitas dalam 5 menit, asupan ditutup",
+            reply_to_message_id=reply_to
         )
     except Exception:
         pass
 
-    ASUPAN_DELETE_JOBS.pop(message_id, None)
-    ASUPAN_MESSAGE_KEYWORD.pop(message_id, None)
+    ASUPAN_DELETE_JOBS.pop(asupan_msg_id, None)
+    ASUPAN_MESSAGE_KEYWORD.pop(asupan_msg_id, None)
 
 
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -178,7 +180,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not AUTODEL_ENABLED_CHATS:
             return await update.message.reply_text("📭 Tidak ada grup dengan auto delete asupan aktif.")
 
-        lines = ["<b>📋 Grup Auto Delete Aktif</b>\n"]
+        lines = ["<b>📋 Grup Auto Delete Asupan Aktif</b>\n"]
         for cid in AUTODEL_ENABLED_CHATS:
             try:
                 c = await context.bot.get_chat(cid)
@@ -252,7 +254,6 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "cewek cantik indo",
         "cewek hijab",
         "fakebody",
-        "tobrut style",
     ]
 
     query = keyword.strip() if keyword else random.choice(default_keywords)
@@ -405,6 +406,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data={
                     "chat_id": chat.id,
                     "message_id": sent.message_id,
+                    "reply_to": update.message.message_id,
                 },
             )
             ASUPAN_DELETE_JOBS[sent.message_id] = job
