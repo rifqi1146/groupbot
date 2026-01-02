@@ -370,8 +370,8 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type != "private":
         if not is_asupan_enabled(chat.id):
             return await update.message.reply_text(
-                "🚫 Fitur asupan tidak tersedia di grup ini.\n\n"
-                "Pm <code>@hirohitikiyoshi</code> untuk mengaktifkan",
+                "🚫 Fitur asupan tidak tersedia di grup ini.\n"
+                "Pm <code>@hirohitokiyoshi</code> untuk mengaktifkan",
                 parse_mode="HTML"
             )
 
