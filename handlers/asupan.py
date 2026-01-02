@@ -128,7 +128,7 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.delete_message(chat_id, asupan_msg_id)
         await context.bot.send_message(
             chat_id,
-            "❌ tidak ada aktivitas dalam 5 menit, asupan ditutup",
+            "⏳ asupan expired",
             reply_to_message_id=reply_to
         )
     except Exception:
@@ -475,7 +475,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data={
                     "chat_id": q.message.chat_id,
                     "asupan_msg_id": msg_id,
-                    "reply_to": update.message.message_id,
+                    "reply_to": reply_to,
                 },
             )
             ASUPAN_DELETE_JOBS[msg_id] = job
