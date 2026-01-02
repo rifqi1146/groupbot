@@ -469,6 +469,12 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if q.message.chat.type != "private" and is_autodel_enabled(q.message.chat_id):
+            reply_to = (
+                q.message.reply_to_message.message_id
+                if q.message.reply_to_message
+                else None
+            )
+            
             job = context.application.job_queue.run_once(
                 _expire_asupan_job,
                 ASUPAN_AUTO_DELETE_SEC,
