@@ -139,7 +139,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Owner only.")
 
     if chat.type == "private":
-        return await update.message.reply_text("ℹ️ Auto delete tidak berlaku di private chat.")
+        return await update.message.reply_text("🍌 Auto delete tidak berlaku di private chat.")
 
     if not context.args:
         return await update.message.reply_text(
@@ -155,23 +155,23 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "on":
         AUTODEL_ENABLED_CHATS.add(chat.id)
         save_autodel_groups()
-        return await update.message.reply_text("✅ Auto delete diaktifkan di grup ini.")
+        return await update.message.reply_text("✅ Auto delete asupan diaktifkan di grup ini.")
 
     if arg == "off":
         AUTODEL_ENABLED_CHATS.discard(chat.id)
         save_autodel_groups()
-        return await update.message.reply_text("🚫 Auto delete dimatikan di grup ini.")
+        return await update.message.reply_text("🚫 Auto delete asupan dimatikan di grup ini.")
 
     if arg == "status":
         status = "AKTIF ✅" if is_autodel_enabled(chat.id) else "NONAKTIF ❌"
         return await update.message.reply_text(
-            f"📌 Status auto delete di grup ini: <b>{status}</b>",
+            f"📌 Status auto delete asupan di grup ini: <b>{status}</b>",
             parse_mode="HTML"
         )
 
     if arg == "list":
         if not AUTODEL_ENABLED_CHATS:
-            return await update.message.reply_text("📭 Tidak ada grup dengan auto delete aktif.")
+            return await update.message.reply_text("📭 Tidak ada grup dengan auto delete asupan aktif.")
 
         lines = ["<b>📋 Grup Auto Delete Aktif</b>\n"]
         for cid in AUTODEL_ENABLED_CHATS:
@@ -224,22 +224,17 @@ def asupan_keyboard(owner_id: int):
 #fetch
 async def fetch_asupan_tikwm(keyword: str | None = None):
     default_keywords = [
+        "tante holic",
         "tobrut",
-        "pemersatubangsa",
         "tanktopstyle",
         "tanktop",
-        "bahancrt",
-        "cucimata",
-        "bhncrt",
         "geolgeol",
         "zaraxhel",
         "verllyyaling",
         "cewek lucu indo",
         "asupan cewek",
         "asupan indo",
-        "tante holic",
         "trend susu beracun",
-        "krisna minta susu",
         "trendsusuberacun",
         "eunicetjoaa",
         "cewek viral",
@@ -253,11 +248,6 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "cewek hijab",
         "fakebody",
         "tobrut style",
-        "cewek jawa",
-        "cewek sunda",
-        "asupan malam",
-        "asupan pagi",
-        "asupan harian"
     ]
 
     query = keyword.strip() if keyword else random.choice(default_keywords)
@@ -380,7 +370,9 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type != "private":
         if not is_asupan_enabled(chat.id):
             return await update.message.reply_text(
-                "🚫 Fitur asupan tidak tersedia di grup ini."
+                "🚫 Fitur asupan tidak tersedia di grup ini.\n\n"
+                "Pm <code> @hirohitikiyoshi </code> untuk mengaktifkan",
+                parse_mode="HTML"
             )
 
     keyword = " ".join(context.args).strip() if context.args else None
