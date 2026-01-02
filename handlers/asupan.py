@@ -405,7 +405,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ASUPAN_AUTO_DELETE_SEC,
                 data={
                     "chat_id": chat.id,
-                    "message_id": sent.message_id,
+                    "asupan_msg_id": sent.message_id,
                     "reply_to": update.message.message_id,
                 },
             )
