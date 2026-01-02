@@ -118,17 +118,22 @@ def load_asupan_groups():
     except Exception:
         ASUPAN_ENABLED_CHATS = set()
         
-async def _delete_asupan_job(context: ContextTypes.DEFAULT_TYPE):
+async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.data["chat_id"]
     message_id = job.data["message_id"]
 
     try:
-        await context.bot.delete_message(chat_id, message_id)
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="❌ tidak ada aktivitas dalam 5 menit, asupan ditutup",
+        )
     except Exception:
         pass
 
     ASUPAN_DELETE_JOBS.pop(message_id, None)
+    ASUPAN_MESSAGE_KEYWORD.pop(message_id, None)
 
 
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -395,7 +400,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 old_job.schedule_removal()
 
             job = context.application.job_queue.run_once(
-                _delete_asupan_job,
+                _expire_asupan_job,
                 ASUPAN_AUTO_DELETE_SEC,
                 data={
                     "chat_id": chat.id,
@@ -463,7 +468,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if q.message.chat.type != "private" and is_autodel_enabled(q.message.chat_id):
             job = context.application.job_queue.run_once(
-                _delete_asupan_job,
+                _expire_asupan_job,
                 ASUPAN_AUTO_DELETE_SEC,
                 data={
                     "chat_id": q.message.chat_id,
