@@ -474,7 +474,8 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ASUPAN_AUTO_DELETE_SEC,
                 data={
                     "chat_id": q.message.chat_id,
-                    "message_id": msg_id,
+                    "asupan_msg_id": msg_id,
+                    "reply_to": update.message.message_id,
                 },
             )
             ASUPAN_DELETE_JOBS[msg_id] = job
