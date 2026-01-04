@@ -36,11 +36,37 @@ LANG_NAMES = {
     "fi": "Finnish",
 }
 
+LANG_FLAGS = {
+    "en": "🇬🇧",
+    "id": "🇮🇩",
+    "ja": "🇯🇵",
+    "ko": "🇰🇷",
+    "zh": "🇨🇳",
+    "fr": "🇫🇷",
+    "de": "🇩🇪",
+    "es": "🇪🇸",
+    "it": "🇮🇹",
+    "ru": "🇷🇺",
+    "ar": "🇸🇦",
+    "hi": "🇮🇳",
+    "pt": "🇵🇹",
+    "tr": "🇹🇷",
+    "vi": "🇻🇳",
+    "th": "🇹🇭",
+    "ms": "🇲🇾",
+    "nl": "🇳🇱",
+    "pl": "🇵🇱",
+    "uk": "🇺🇦",
+    "sv": "🇸🇪",
+    "fi": "🇫🇮",
+}
+
 async def trlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lines = ["🔤 <b>Supported Languages</b>\n"]
+    lines = ["🌐 <b>Supported Languages</b>\n"]
     for code in sorted(VALID_LANGS):
         name = LANG_NAMES.get(code, code.upper())
-        lines.append(f"<code>{code}</code> — {name}")
+        flag = LANG_FLAGS.get(code, "🏳️")
+        lines.append(f"{flag} <code>{code}</code> — {name}")
 
     await update.message.reply_text(
         "\n".join(lines),
@@ -68,32 +94,36 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = update.message.reply_to_message.text
         else:
             return await update.message.reply_text(
-                "<b>Translator</b>\n\n"
-                "Usage:\n"
+                "🌐 <b>Translator</b>\n\n"
+                "📌 Usage:\n"
                 "<code>/tr en hello</code>\n"
                 "<code>/tr id good morning</code>\n"
                 "<code>/tr apa kabar?</code>\n\n"
-                "Reply message:\n"
+                "↩️ Reply message:\n"
                 "<code>/tr en</code>",
                 parse_mode="HTML"
             )
 
-    msg = await update.message.reply_text("🔤 Translating...")
+    msg = await update.message.reply_text("⏳ Translating...")
 
     try:
         translated = await asyncio.to_thread(
             lambda: GoogleTranslator(source="auto", target=target).translate(text)
         )
 
+        flag = LANG_FLAGS.get(target, "🏳️")
+
         await msg.edit_text(
-            f"Translated → <b>{target.upper()}</b>\n\n"
+            f"✨ <b>Translation Result</b>\n\n"
+            f"🌍 Target: {flag} <b>{target.upper()}</b>\n\n"
             f"{html.escape(translated)}\n\n"
-            f"Engine: <code>Google</code>",
+            f"⚙️ Engine: <code>Google Translate</code>",
             parse_mode="HTML"
         )
 
     except Exception as e:
         await msg.edit_text(
-            f"❌ Translator service unavailable\n<code>{html.escape(str(e))}</code>",
+            f"❌ <b>Translator unavailable</b>\n"
+            f"<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
         )
