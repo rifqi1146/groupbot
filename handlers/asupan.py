@@ -135,6 +135,9 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
     asupan_msg_id = job.data["asupan_msg_id"]
     reply_to = job.data["reply_to"]
 
+    if ASUPAN_DELETE_JOBS.get(asupan_msg_id) is not job:
+        return
+
     try:
         await context.bot.delete_message(chat_id, asupan_msg_id)
 
@@ -142,8 +145,7 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
             chat_id,
             "⏳ <b>Asupan Closed</b>\n\n"
             "No activity detected for <b>5 minutes</b>.\n"
-            "This asupan session has been automatically closed 🍜\n\n"
-            "<i>This message will disappear in 15 seconds.</i>",
+            "This asupan session has been automatically closed 🍜\n\n",
             reply_to_message_id=reply_to,
             parse_mode="HTML"
         )
@@ -483,9 +485,10 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyword = ASUPAN_MESSAGE_KEYWORD.get(msg_id)
 
         if q.message.chat.type != "private" and is_autodel_enabled(q.message.chat_id):
-            old_job = ASUPAN_DELETE_JOBS.pop(msg_id, None)
+            old_job = ASUPAN_DELETE_JOBS.get(msg_id)
             if old_job:
                 old_job.schedule_removal()
+                ASUPAN_DELETE_JOBS.pop(msg_id, None)
 
         data = await get_asupan_fast(context.bot, keyword)
 
