@@ -19,37 +19,38 @@ def help_back_keyboard():
 
 HELP_TEXT = {
     "help:menu": (
-        "📋 <b>Help Menu</b>\n"
-        "Choose a category below ✨"
+        "📖 <b>Help Menu</b>\n"
+        "Select a category to see available commands."
     ),
 
     "help:features": (
-        "✨ <b>Features</b>\n\n"
-        "• 🏓 /ping — Check bot latency\n"
-        "• ⬇️ /dl — Download videos (TikTok / Instagram)\n"
-        "• 😋 /asupan — Random TikTok content\n"
-        "• ☁️ /weather — Weather information\n"
-        "• 🔍 /gsearch — Search something on Google\n"
-        "• 🌐 /tr — Translate text to another language\n"
+        "✨ <b>Main Features</b>\n\n"
+        "• 🏓 <code>/ping</code> — check bot response time\n"
+        "• ⬇️ <code>/dl</code> — download videos from supported platforms\n"
+        "• 🍜 <code>/asupan</code> — random TikTok content\n"
+        "• 🌤️ <code>/weather</code> — get weather information\n"
+        "• 🔎 <code>/gsearch</code> — search on Google\n"
+        "• 🌍 <code>/tr</code> — translate text between languages\n"
+        "• 📃 <code>/trlist</code> — list supported languages\n"
     ),
 
     "help:ai": (
         "🤖 <b>AI Commands</b>\n\n"
-        "• /ai — Ask AI (default mode)\n"
-        "• /ask — ChatGpt \n"
-        "• /groq — GroqAI\n"
-        "• /ai flash|pro|lite — Select AI model\n"
-        "• /setmodeai — Set default AI model\n\n"
+        "• 💬 <code>/ai</code> — chat with AI (default mode)\n"
+        "• 🧠 <code>/ask</code> — ChatGPT-style response\n"
+        "• ⚡ <code>/groq</code> — fast AI response (Groq)\n"
+        "• 🧪 <code>/ai flash | pro | lite</code> — switch AI model\n"
+        "• ⚙️ <code>/setmodeai</code> — set default AI model\n"
     ),
 
     "help:utils": (
-        "🧠 <b>Utilities</b>\n\n"
-        "• /stats — Bot system information\n"
-        "• /ip — IP address information\n"
-        "• /domain — Domain information\n"
-        "• /whoisdomain — Detailed domain\n"
-        "• ⚡ /speedtest — Run speed test\n"
-        "• ♻️ /restart — Restart bot\n"
+        "🛠️ <b>Utilities</b>\n\n"
+        "• 📊 <code>/stats</code> — bot & system statistics\n"
+        "• 🌐 <code>/ip</code> — IP address lookup\n"
+        "• 🏷️ <code>/domain</code> — domain information\n"
+        "• 🔍 <code>/whoisdomain</code> — detailed domain lookup\n"
+        "• ⚡ <code>/speedtest</code> — test server speed\n"
+        "• 🔁 <code>/restart</code> — restart the bot\n"
     ),
 }
 
