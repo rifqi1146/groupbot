@@ -118,6 +118,17 @@ def load_asupan_groups():
     except Exception:
         ASUPAN_ENABLED_CHATS = set()
         
+async def _expire_asupan_notice(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    try:
+        await context.bot.delete_message(
+            job.data["chat_id"],
+            job.data["message_id"]
+        )
+    except Exception:
+        pass
+
+
 async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.data["chat_id"]
@@ -126,11 +137,26 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await context.bot.delete_message(chat_id, asupan_msg_id)
-        await context.bot.send_message(
+
+        msg = await context.bot.send_message(
             chat_id,
-            "⏳ asupan expired",
-            reply_to_message_id=reply_to
+            "⏳ <b>Asupan Closed</b>\n\n"
+            "No activity detected for <b>5 minutes</b>.\n"
+            "This asupan session has been automatically closed 🍜\n\n"
+            "<i>This message will disappear in 15 seconds.</i>",
+            reply_to_message_id=reply_to,
+            parse_mode="HTML"
         )
+
+        context.application.job_queue.run_once(
+            _expire_asupan_notice,
+            15,
+            data={
+                "chat_id": chat_id,
+                "message_id": msg.message_id,
+            },
+        )
+
     except Exception:
         pass
 
