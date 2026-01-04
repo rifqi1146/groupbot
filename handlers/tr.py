@@ -38,14 +38,9 @@ LANG_NAMES = {
 async def trlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = ["Supported Languages:\n"]
     for code in sorted(VALID_LANGS):
-        name = LANG_NAMES.get(code, code.upper())
-        lines.append(f"{code} — {name}")
+        lines.append(f"{code} — {LANG_NAMES.get(code)}")
+    await update.message.reply_text("\n".join(lines))
 
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="HTML"
-    )
-    
 async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     target_lang = DEFAULT_LANG
@@ -66,14 +61,10 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = update.message.reply_to_message.text
         else:
             return await update.message.reply_text(
-                "<b>Translator</b>\n\n"
                 "Usage:\n"
-                "<code>/tr en hello</code>\n"
-                "<code>/tr id good morning</code>\n"
-                "<code>/tr apa kabar?</code>\n\n"
-                "Or reply message:\n"
-                "<code>/tr en</code>",
-                parse_mode="HTML"
+                "/tr en hello\n"
+                "/tr id good morning\n"
+                "/trlist"
             )
 
     msg = await update.message.reply_text("Translating...")
@@ -82,26 +73,26 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tr = GoogleTranslator(source="auto", target=target_lang)
         translated = tr.translate(text)
         detected = tr.detect(text)
-
         return await msg.edit_text(
             f"Translated → {target_lang.upper()}\n\n"
             f"{html.escape(translated)}\n\n"
-            f"Source: <code>{detected}</code>\n"
-            f"Engine: <code>Google</code>",
-            parse_mode="HTML"
+            f"Source: {detected}\n"
+            f"Engine: Google"
         )
     except Exception:
         pass
 
     try:
-        tr = MyMemoryTranslator(source="auto", target=target_lang)
+        tr = MyMemoryTranslator(
+            source="auto",
+            target=target_lang,
+            email="bot@localhost"
+        )
         translated = tr.translate(text)
-
         return await msg.edit_text(
             f"Translated → {target_lang.upper()}\n\n"
             f"{html.escape(translated)}\n\n"
-            f"Engine: <code>MyMemory</code>",
-            parse_mode="HTML"
+            f"Engine: MyMemory"
         )
     except Exception:
         pass
@@ -110,17 +101,15 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tr = LibreTranslator(
             source="auto",
             target=target_lang,
-            base_url="https://libretranslate.com"
+            base_url="https://translate.argosopentech.com"
         )
         translated = tr.translate(text)
-
         return await msg.edit_text(
             f"Translated → {target_lang.upper()}\n\n"
             f"{html.escape(translated)}\n\n"
-            f"Engine: <code>Libre</code>",
-            parse_mode="HTML"
+            f"Engine: Libre"
         )
     except Exception:
         pass
 
-    await msg.edit_text("❌ All translators failed")
+    await msg.edit_text("❌ Translator service unavailable")
