@@ -1,4 +1,5 @@
 import html
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from deep_translator import GoogleTranslator, MyMemoryTranslator, LibreTranslator
@@ -41,6 +42,22 @@ async def trlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{code} — {LANG_NAMES.get(code)}")
     await update.message.reply_text("\n".join(lines))
 
+async def _translate_google(text, target):
+    tr = GoogleTranslator(source="auto", target=target)
+    return tr.translate(text), tr.detect(text)
+
+async def _translate_mymemory(text, target):
+    tr = MyMemoryTranslator(source="auto", target=target, email="bot@localhost")
+    return tr.translate(text), "auto"
+
+async def _translate_libre(text, target):
+    tr = LibreTranslator(
+        source="auto",
+        target=target,
+        base_url="https://translate.argosopentech.com"
+    )
+    return tr.translate(text), "auto"
+
 async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     target_lang = DEFAULT_LANG
@@ -70,9 +87,9 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("Translating...")
 
     try:
-        tr = GoogleTranslator(source="auto", target=target_lang)
-        translated = tr.translate(text)
-        detected = tr.detect(text)
+        translated, detected = await asyncio.to_thread(
+            lambda: _translate_google_sync(text, target_lang)
+        )
         return await msg.edit_text(
             f"Translated → {target_lang.upper()}\n\n"
             f"{html.escape(translated)}\n\n"
@@ -83,12 +100,9 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     try:
-        tr = MyMemoryTranslator(
-            source="auto",
-            target=target_lang,
-            email="bot@localhost"
+        translated, _ = await asyncio.to_thread(
+            lambda: _translate_mymemory_sync(text, target_lang)
         )
-        translated = tr.translate(text)
         return await msg.edit_text(
             f"Translated → {target_lang.upper()}\n\n"
             f"{html.escape(translated)}\n\n"
@@ -98,12 +112,9 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     try:
-        tr = LibreTranslator(
-            source="auto",
-            target=target_lang,
-            base_url="https://translate.argosopentech.com"
+        translated, _ = await asyncio.to_thread(
+            lambda: _translate_libre_sync(text, target_lang)
         )
-        translated = tr.translate(text)
         return await msg.edit_text(
             f"Translated → {target_lang.upper()}\n\n"
             f"{html.escape(translated)}\n\n"
@@ -113,3 +124,20 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     await msg.edit_text("❌ Translator service unavailable")
+
+
+def _translate_google_sync(text, target):
+    tr = GoogleTranslator(source="auto", target=target)
+    return tr.translate(text), tr.detect(text)
+
+def _translate_mymemory_sync(text, target):
+    tr = MyMemoryTranslator(source="auto", target=target, email="bot@localhost")
+    return tr.translate(text), "auto"
+
+def _translate_libre_sync(text, target):
+    tr = LibreTranslator(
+        source="auto",
+        target=target,
+        base_url="https://translate.argosopentech.com"
+    )
+    return tr.translate(text), "auto"
