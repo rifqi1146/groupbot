@@ -11,6 +11,43 @@ VALID_LANGS = {
     "vi","th","ms","nl","pl","uk","sv","fi"
 }
 
+LANG_NAMES = {
+    "en": "English",
+    "id": "Indonesian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "ru": "Russian",
+    "ar": "Arabic",
+    "hi": "Hindi",
+    "pt": "Portuguese",
+    "tr": "Turkish",
+    "vi": "Vietnamese",
+    "th": "Thai",
+    "ms": "Malay",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "uk": "Ukrainian",
+    "sv": "Swedish",
+    "fi": "Finnish",
+}
+
+async def trlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lines = ["🔤 <b>Supported Languages</b>\n"]
+    for code in sorted(VALID_LANGS):
+        name = LANG_NAMES.get(code, code.upper())
+        lines.append(f"<code>{code}</code> — {name}")
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML"
+    )
+
+
 async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     target = DEFAULT_LANG
@@ -31,9 +68,14 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = update.message.reply_to_message.text
         else:
             return await update.message.reply_text(
+                "<b>Translator</b>\n\n"
                 "Usage:\n"
-                "/tr en hello\n"
-                "/tr id good morning"
+                "<code>/tr en hello</code>\n"
+                "<code>/tr id good morning</code>\n"
+                "<code>/tr apa kabar?</code>\n\n"
+                "Reply message:\n"
+                "<code>/tr en</code>",
+                parse_mode="HTML"
             )
 
     msg = await update.message.reply_text("🔤 Translating...")
@@ -44,11 +86,14 @@ async def tr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await msg.edit_text(
-            f"Translated → {target.upper()}\n\n"
+            f"Translated → <b>{target.upper()}</b>\n\n"
             f"{html.escape(translated)}\n\n"
-            f"Engine: Google",
+            f"Engine: <code>Google</code>",
             parse_mode="HTML"
         )
 
     except Exception as e:
-        await msg.edit_text(f"❌ Translate failed\n<code>{html.escape(str(e))}</code>", parse_mode="HTML")
+        await msg.edit_text(
+            f"❌ Translator service unavailable\n<code>{html.escape(str(e))}</code>",
+            parse_mode="HTML"
+        )
