@@ -19,20 +19,24 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("❌ Owner only.")
 
     text = (
-        "👑 <b>Owner Commands</b>\n\n"
-        "⚡ <b>System</b>\n"
-        "• <code>/speedtest</code>\n"
-        "• <code>/autodel</code>\n"
-        "• <code>/wlc</code>\n"
-        "• <code>/restart</code>\n\n"
-        "🧠 <b>NSFW Control</b>\n"
-        "• <code>/enablensfw</code>\n"
-        "• <code>/disablensfw</code>\n"
-        "• <code>/nsfwlist</code>\n\n"
-        "🍜 <b>Asupan Control</b>\n"
-        "• <code>/enableasupan</code>\n"
-        "• <code>/disableasupan</code>\n"
-        "• <code>/asupanlist</code>\n"
+        "👑 <b>Owner Commands</b>\n"
+        "<i>Administrative & system-level controls</i>\n\n"
+
+        "⚙️ <b>System Management</b>\n"
+        "• <code>/speedtest</code> — run server speed test\n"
+        "• <code>/autodel</code> — manage auto delete asupan settings\n"
+        "• <code>/wlc</code> — configure welcome message\n"
+        "• <code>/restart</code> — restart the bot\n\n"
+
+        "🔞 <b>NSFW Management</b>\n"
+        "• <code>/enablensfw</code> — enable NSFW content\n"
+        "• <code>/disablensfw</code> — disable NSFW content\n"
+        "• <code>/nsfwlist</code> — list NSFW-enabled chats\n\n"
+
+        "🍜 <b>Asupan Management</b>\n"
+        "• <code>/enableasupan</code> — enable asupan feature\n"
+        "• <code>/disableasupan</code> — disable asupan feature\n"
+        "• <code>/asupanlist</code> — list asupan-enabled chats\n"
     )
 
     await msg.reply_text(
