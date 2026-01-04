@@ -37,8 +37,8 @@ HELP_TEXT = {
     "help:ai": (
         "🤖 <b>AI Commands</b>\n\n"
         "• 💬 <code>/ai</code> — chat with AI (default mode)\n"
-        "• 🧠 <code>/ask</code> — ChatGPT-style response\n"
-        "• ⚡ <code>/groq</code> — fast AI response (Groq)\n"
+        "• 🧠 <code>/ask</code> — ChatGPT\n"
+        "• ⚡ <code>/groq</code> — Groq\n"
         "• 🧪 <code>/ai flash | pro | lite</code> — switch AI model\n"
         "• ⚙️ <code>/setmodeai</code> — set default AI model\n"
     ),
