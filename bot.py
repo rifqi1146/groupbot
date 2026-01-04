@@ -54,7 +54,7 @@ from handlers.networking import (
 from handlers.start import start_cmd
 from handlers.orangefox import orangefox_cmd
 from handlers.logger import log_commands
-from handlers.tr import tr_cmd
+from handlers.tr import tr_cmd, trlist_cmd
 from handlers.delete import reply_del_handler
 from handlers.restart import restart_cmd
 from handlers.gsearch import gsearch_cmd, gsearch_callback
@@ -328,6 +328,7 @@ def main():
     app.add_handler(CommandHandler("dl", dl_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("stats", stats_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("tr", tr_cmd, block=False), group=-1)
+    app.add_handler(CommandHandler("trlist", trlist_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("gsearch", gsearch_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("enableasupan", enable_asupan_cmd, block=False), group=-1)
     app.add_handler(CommandHandler("disableasupan", disable_asupan_cmd, block=False), group=-1)
