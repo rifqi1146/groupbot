@@ -22,14 +22,12 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.text:
         return
 
-    cmd_len = 0
-    if msg.entities:
-        for ent in msg.entities:
-            if ent.type == "bot_command":
-                cmd_len = ent.offset + ent.length
-                break
+    raw_text = msg.text
 
-    text = msg.text_html[cmd_len:].strip()
+    if raw_text.startswith("/broadcast"):
+        text = raw_text[len("/broadcast"):].lstrip()
+    else:
+        text = raw_text
 
     if not text:
         return await msg.reply_text("❌ Message is empty.")
