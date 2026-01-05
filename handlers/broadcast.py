@@ -1,7 +1,9 @@
 import json
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import RetryAfter
 from utils.config import OWNER_ID
 
 BROADCAST_FILE = "data/broadcast_chats.json"
@@ -23,11 +25,7 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     raw_text = msg.text
-
-    if raw_text.startswith("/broadcast"):
-        text = raw_text[len("/broadcast"):].lstrip()
-    else:
-        text = raw_text
+    text = raw_text[len("/broadcast"):].lstrip() if raw_text.startswith("/broadcast") else raw_text
 
     if not text:
         return await msg.reply_text("❌ Message is empty.")
@@ -38,7 +36,9 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status = await msg.reply_text("📣 Broadcasting...")
 
-    for cid in data["users"] + data["groups"]:
+    targets = data["users"] + data["groups"]
+
+    for cid in targets:
         try:
             await context.bot.send_message(
                 chat_id=cid,
@@ -47,8 +47,24 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 disable_web_page_preview=True
             )
             sent += 1
+            await asyncio.sleep(0.7)
+
+        except RetryAfter as e:
+            await asyncio.sleep(e.retry_after + 1)
+            try:
+                await context.bot.send_message(
+                    chat_id=cid,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+                sent += 1
+            except Exception:
+                failed += 1
+
         except Exception:
             failed += 1
+            await asyncio.sleep(0.7)
 
     await status.edit_text(
         "✅ <b>Broadcast finished</b>\n\n"
