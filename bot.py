@@ -371,7 +371,7 @@ def main():
         group=-1,
     )
     
-    application.add_handler(
+    app.add_handler(
         MessageHandler(filters.ALL, collect_chat),
         group=0
     )
