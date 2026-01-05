@@ -23,9 +23,15 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Usage:\n/broadcast <message>"
         )
 
-    text = " ".join(context.args)
-    data = _load()
+    raw_text = " ".join(context.args)
 
+    text = (
+        "🔔 <b>System Maintenance Announcement</b>\n\n"
+        f"{raw_text}\n\n"
+        "<i>Thank you for your patience and support.</i>"
+    )
+
+    data = _load()
     sent = 0
     failed = 0
 
@@ -33,13 +39,19 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for cid in data["users"] + data["groups"]:
         try:
-            await context.bot.send_message(cid, text)
+            await context.bot.send_message(
+                chat_id=cid,
+                text=text,
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
             sent += 1
         except Exception:
             failed += 1
 
     await status.edit_text(
-        "✅ Broadcast finished\n\n"
-        f"📨 Sent: {sent}\n"
-        f"❌ Failed: {failed}"
+        "✅ <b>Broadcast finished</b>\n\n"
+        f"📨 Sent: <b>{sent}</b>\n"
+        f"❌ Failed: <b>{failed}</b>",
+        parse_mode="HTML"
     )
