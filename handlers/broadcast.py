@@ -23,15 +23,9 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Usage:\n/broadcast <message>"
         )
 
-    raw_text = " ".join(context.args)
-
-    text = (
-        "🔔 <b>System Maintenance Announcement</b>\n\n"
-        f"{raw_text}\n\n"
-        "<i>Thank you for your patience and support.</i>"
-    )
-
+    text = " ".join(context.args)
     data = _load()
+
     sent = 0
     failed = 0
 

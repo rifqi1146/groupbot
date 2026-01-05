@@ -24,6 +24,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         "⚙️ <b>System Management</b>\n"
         "• <code>/speedtest</code> — run server speed test\n"
+        "• <code>/broadcast</code> — announcement \n"
         "• <code>/autodel</code> — manage auto delete asupan settings\n"
         "• <code>/wlc</code> — configure welcome message\n"
         "• <code>/restart</code> — restart the bot\n\n"

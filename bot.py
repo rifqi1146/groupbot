@@ -258,7 +258,6 @@ async def post_init(app):
             ("gsearch", "Google search"),
             ("asupan", "Asupan 😋"),
             ("tr", "Translate text"),
-            ("speedtest", "Run speed test"),
         ])
     except Exception:
         pass
