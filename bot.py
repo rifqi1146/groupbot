@@ -52,7 +52,7 @@ from handlers.networking import (
 
 # Misc
 from handlers.broadcast import broadcast_cmd
-from handlers.collector import collector_chat
+from handlers.collector import collect_chat
 from handlers.start import start_cmd
 from handlers.orangefox import orangefox_cmd
 from handlers.logger import log_commands
