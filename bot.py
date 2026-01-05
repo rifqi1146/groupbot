@@ -51,6 +51,8 @@ from handlers.networking import (
 )
 
 # Misc
+from handlers.broadcast import broadcast_cmd
+from habdlers.collector import collector_chat
 from handlers.start import start_cmd
 from handlers.orangefox import orangefox_cmd
 from handlers.logger import log_commands
@@ -311,6 +313,7 @@ def main():
 
     # ---- Commands
     app.add_handler(CommandHandler("start", start_cmd), group=-1)
+    app.add_handler(CommandHandler("broadcast", broadcast_cmd), group=-1)
     app.add_handler(CommandHandler("orangefox", orangefox_cmd), group=-1)
     app.add_handler(CommandHandler("autodel", autodel_cmd), group=-1)
     app.add_handler(CommandHandler("help", help_cmd), group=-1)
@@ -367,7 +370,12 @@ def main():
         MessageHandler(filters.TEXT & filters.REPLY, reply_del_handler),
         group=-1,
     )
-
+    
+    application.add_handler(
+        MessageHandler(filters.ALL, collect_chat),
+        group=0
+    )
+    
     # ---- Callbacks
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
