@@ -18,22 +18,27 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
 
-    if not update.message.text:
-        return await update.message.reply_text(
-            "Usage:\n/broadcast <message>"
-        )
+    msg = update.message
+    if not msg or not msg.text:
+        return
 
-    raw = update.message.text_html
-    text = raw.replace("/broadcast", "", 1).strip()
+    cmd_len = 0
+    if msg.entities:
+        for ent in msg.entities:
+            if ent.type == "bot_command":
+                cmd_len = ent.offset + ent.length
+                break
+
+    text = msg.text_html[cmd_len:].strip()
 
     if not text:
-        return await update.message.reply_text("❌ Message is empty.")
+        return await msg.reply_text("❌ Message is empty.")
 
     data = _load()
     sent = 0
     failed = 0
 
-    status = await update.message.reply_text("📣 Broadcasting...")
+    status = await msg.reply_text("📣 Broadcasting...")
 
     for cid in data["users"] + data["groups"]:
         try:
