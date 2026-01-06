@@ -21,7 +21,7 @@ from telegram import Update
 from utils.http import get_http_session
 from utils.config import OWNER_ID
 
-from utils.config import OWNER_ID, ASUPAN_STARTUP_CHAT_ID
+from utils.config import OWNER_ID, LOG_CHAT_ID
 
 #asupannnnn
 log = logging.getLogger(__name__)
@@ -323,7 +323,7 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
             url = await fetch_asupan_tikwm(kw)
 
             msg = await bot.send_video(
-                chat_id=ASUPAN_STARTUP_CHAT_ID,
+                chat_id=LOG_CHAT_ID,
                 video=url,
                 disable_notification=True
             )
@@ -339,7 +339,7 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
 async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
-    if ASUPAN_FETCHING or not ASUPAN_STARTUP_CHAT_ID:
+    if ASUPAN_FETCHING or not LOG_CHAT_ID:
         return
 
     ASUPAN_FETCHING = True
@@ -349,7 +349,7 @@ async def warm_asupan_cache(bot):
                 url = await fetch_asupan_tikwm(None)
 
                 msg = await bot.send_video(
-                    chat_id=ASUPAN_STARTUP_CHAT_ID,
+                    chat_id=LOG_CHAT_ID,
                     video=url,
                     disable_notification=True
                 )
@@ -372,7 +372,7 @@ async def get_asupan_fast(bot, keyword: str | None = None):
 
         url = await fetch_asupan_tikwm(None)
         msg = await bot.send_video(
-            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            chat_id=LOG_CHAT_ID,
             video=url,
             disable_notification=True
         )
@@ -388,7 +388,7 @@ async def get_asupan_fast(bot, keyword: str | None = None):
 
     url = await fetch_asupan_tikwm(kw)
     msg = await bot.send_video(
-        chat_id=ASUPAN_STARTUP_CHAT_ID,
+        chat_id=LOG_CHAT_ID,
         video=url,
         disable_notification=True
     )
@@ -530,7 +530,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
 
 async def send_asupan_once(bot):
-    if not ASUPAN_STARTUP_CHAT_ID:
+    if not LOG_CHAT_ID:
         log.warning("[ASUPAN STARTUP] Chat_id is empty")
         return
 
@@ -538,7 +538,7 @@ async def send_asupan_once(bot):
         data = await get_asupan_fast(bot)
 
         msg = await bot.send_video(
-            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            chat_id=LOG_CHAT_ID,
             video=data["file_id"],
             disable_notification=True
         )
@@ -552,7 +552,7 @@ async def send_asupan_once(bot):
 
 async def startup_tasks(app):
     await asyncio.sleep(3)
-    if not ASUPAN_STARTUP_CHAT_ID:
+    if not LOG_CHAT_ID:
         log.warning("[ASUPAN STARTUP] Chat_id is empty")
         return
 

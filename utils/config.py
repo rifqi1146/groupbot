@@ -12,11 +12,7 @@ if not BOT_TOKEN:
 OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
 
 #asupan dan log
-ASUPAN_STARTUP_CHAT_ID = (
-    int(os.getenv("ASUPAN_STARTUP_CHAT_ID"))
-    if os.getenv("ASUPAN_STARTUP_CHAT_ID")
-    else None
-)
+LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
 
 #gsearch & gemini
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
