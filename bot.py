@@ -13,24 +13,63 @@ from handlers.messages import register_messages
 from handlers.startup import startup_tasks
 
 load_dotenv()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 
-logging.basicConfig(level=logging.INFO)
+
+class EmojiFormatter(logging.Formatter):
+    EMOJI = {
+        logging.INFO: "➜",
+        logging.WARNING: "⚠️",
+        logging.ERROR: "❌",
+        logging.CRITICAL: "💥",
+    }
+
+    def format(self, record):
+        emoji = self.EMOJI.get(record.levelno, "•")
+        record.msg = f"{emoji} {record.msg}"
+        return super().format(record)
+
+
+def setup_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        EmojiFormatter("[%(asctime)s] %(message)s", "%H:%M:%S")
+    )
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(handler)
+
+
 log = logging.getLogger(__name__)
+
 
 async def post_init(app):
     await startup_tasks(app)
+    log.info("Startup tasks completed")
+
 
 async def post_shutdown(app):
     await close_http_session()
+    log.info("HTTP session closed")
+
 
 def main():
+    setup_logger()
+    log.info("Initializing bot")
+
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
         .job_queue(JobQueue())
+        .connect_timeout(20)
+        .read_timeout(60)
+        .write_timeout(60)
+        .pool_timeout(20)
         .build()
     )
 
@@ -50,9 +89,12 @@ def main():
  💖 Ready to serve!
 """
     print(banner)
+
+    log.info("Handlers registered")
     log.info("Polling started")
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
     main()
