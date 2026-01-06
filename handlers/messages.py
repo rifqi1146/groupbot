@@ -5,26 +5,33 @@ from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
 from handlers.dl import auto_dl_detect
 from handlers.bot_dollar import dollar_router
+from handlers.welcome import welcome_handler
+
 
 def register_messages(app):
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect),
-        group=1,
+        MessageHandler(filters.ALL, collect_chat),
+        group=0,
     )
 
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_handler),
         group=1,
     )
 
     app.add_handler(
         MessageHandler(filters.TEXT & filters.REPLY, reply_del_handler),
-        group=-1,
+        group=2,
     )
 
     app.add_handler(
-        MessageHandler(filters.ALL, collect_chat),
-        group=0,
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        group=3,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect),
+        group=4,
     )
 
     app.add_handler(
