@@ -77,6 +77,9 @@ async def post_init(app):
     except Exception as e:
         log.warning(f"⚠️ Failed to cache bot commands: {e}")
 
+    await startup_tasks(app)
+    log.info("🚀 Startup tasks executed")
+
 
 async def post_shutdown(app):
     await close_http_session()
@@ -104,8 +107,6 @@ def main():
     register_commands(app)
     register_messages(app)
     register_callbacks(app)
-
-    app.create_task(startup_tasks(app))
 
     banner = r"""
  ／l、
