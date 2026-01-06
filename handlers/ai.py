@@ -18,8 +18,23 @@ from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from utils.config import (
+    OWNER_ID,
+    OPENROUTER_API_KEY,
+    OPENROUTER_URL,
+    MODEL_THINK,
+    OPENROUTER_IMAGE_MODEL,
+    GROQ_MEMORY,
+    COOLDOWN,
+    GROQ_TIMEOUT,
+    GROQ_MODEL,
+    GROQ_BASE,
+    GROQ_KEY,
+    GEMINI_MODELS,
+    GEMINI_API_KEY,
+)
+  
 from utils.http import get_http_session
-from utils.config import OWNER_ID
 from utils.storage import load_json_file, save_json_file
 from utils.text import bold, code, italic, underline, link, mono
 
@@ -32,15 +47,6 @@ def save_ai_mode(data):
     save_json_file(AI_MODE_FILE, data)
 _ai_mode = load_ai_mode()
     
-#ask+ocr
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_THINK = "openai/gpt-oss-120b:free"
-OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
-
-if not OPENROUTER_API_KEY:
-    raise RuntimeError("OPENROUTER_API_KEY not set")
-
 #split
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
@@ -394,13 +400,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
 #groq
-GROQ_KEY = os.getenv("GROQ_API_KEY")
-GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "30"))
-COOLDOWN = int(os.getenv("GROQ_COOLDOWN", "2"))
-GROQ_MEMORY = {}
-
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 def _emo(): return random.choice(_EMOS)
 
@@ -710,14 +709,6 @@ async def groq_query(update, context):
         await status_msg.edit_text(f"{em} ❌ Error: {e}")
 
 #gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-GEMINI_MODELS = {
-    "flash": "gemini-2.5-flash",
-    "pro": "gemini-2.5-pro",
-    "lite": "gemini-2.0-flash-lite-001",
-}
-
 async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
     if not GEMINI_API_KEY:
         return False, "API key Gemini belum diset."

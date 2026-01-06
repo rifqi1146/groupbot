@@ -13,10 +13,9 @@ from telegram.ext import ContextTypes
 
 from utils.http import get_http_session
 from utils.text import bold, code, italic, underline, link, mono
+from utils.config import GOOGLE_CSE_ID, GOOGLE_CSE_ID
 
 #google search 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 GSEARCH_CACHE = {}
 MAX_GSEARCH_CACHE = 50         
 GSEARCH_CACHE_TTL = 300      
