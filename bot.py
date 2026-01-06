@@ -11,6 +11,7 @@ from handlers.callbacks import register_callbacks
 from handlers.messages import register_messages
 from handlers.startup import startup_tasks
 from utils.config import BOT_TOKEN
+BOT_USERNAME = None
 
 class EmojiFormatter(logging.Formatter):
     EMOJI = {
@@ -42,8 +43,39 @@ log = logging.getLogger(__name__)
 
 
 async def post_init(app):
-    await startup_tasks(app)
-    log.info("Startup tasks completed")
+    global BOT_USERNAME
+
+    try:
+        me = await app.bot.get_me()
+        BOT_USERNAME = me.username.lower()
+        log.info(f"🤖 Bot username loaded: @{BOT_USERNAME}")
+    except Exception as e:
+        log.warning(f"⚠️ Failed to get bot username: {e}")
+
+    try:
+        await app.bot.set_my_commands([
+            ("start", "Check bot status"),
+            ("help", "Show help menu"),
+            ("ping", "Check latency"),
+            ("stats", "System statistics"),
+            ("dl", "Download video"),
+            ("ai", "Ask AI"),
+            ("ask", "Ask ChatGPT"),
+            ("groq", "Ask Groq AI"),
+            ("gsearch", "Google search"),
+            ("asupan", "Asupan 😋"),
+            ("tr", "Translate text"),
+        ])
+        log.info("📜 Bot commands set")
+    except Exception as e:
+        log.warning(f"⚠️ Failed to set bot commands: {e}")
+
+    try:
+        cmds = await app.bot.get_my_commands()
+        app.bot_data["commands"] = cmds
+        log.info("🧠 Cached bot commands: " + ", ".join(c.command for c in cmds))
+    except Exception as e:
+        log.warning(f"⚠️ Failed to cache bot commands: {e}")
 
 
 async def post_shutdown(app):
