@@ -63,4 +63,3 @@ def register_commands(app):
 
     for name, handler in handlers:
         app.add_handler(CommandHandler(name, handler), group=-1)
-        
