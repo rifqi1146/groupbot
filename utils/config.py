@@ -3,16 +3,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-#bot token
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN not set")
- 
-#bot owner id
-OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
 
-#asupan dan log
-LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
+def require_int_env(name: str) -> int:
+    value = require_env(name)
+    try:
+        return int(value)
+    except ValueError:
+        raise RuntimeError(f"Environment variable {name} must be an integer")
+
+#bot token
+BOT_TOKEN = require_env("BOT_TOKEN")
+
+#owner id
+OWNER_ID = require_int_env("BOT_OWNER_ID")
+
+#logchat id
+LOG_CHAT_ID = require_int_env("LOG_CHAT_ID")
 
 #gsearch & gemini
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
