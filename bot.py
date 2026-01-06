@@ -105,6 +105,8 @@ def main():
     register_messages(app)
     register_callbacks(app)
 
+    app.create_task(startup_tasks(app))
+
     banner = r"""
  ／l、
 （ﾟ､ ｡ ７   < Nya~ Master! Bot waking up…
@@ -119,7 +121,3 @@ def main():
     log.info("Polling started")
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
