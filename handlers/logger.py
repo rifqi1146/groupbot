@@ -16,7 +16,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (text.startswith("/") or text.startswith("$")):
         return
 
-    cmd = text[1:].split()[0].lower()
+    cmd = text[1:].split()[0].split("@")[0].lower()
     if cmd not in BOT_COMMANDS:
         return
 
