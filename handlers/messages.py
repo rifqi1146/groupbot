@@ -4,7 +4,7 @@ from handlers.logger import log_commands
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
 from handlers.dl import auto_dl_detect
-from bot_dollar import dollar_router
+from handlers.bot_dollar import dollar_router
 
 def register_messages(app):
     app.add_handler(
