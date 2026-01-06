@@ -36,7 +36,7 @@ GEMINI_MODEL=gemini-2.5-flash
 GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}
 GROQ_API_KEY=
 BOT_OWNER_ID=
-ASUPAN_STARTUP_CHAT_ID=
+LOG_CHAT_ID=
 OPENROUTER_API_KEY=
 ```
 ```
