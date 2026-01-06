@@ -12,7 +12,7 @@ from handlers.messages import register_messages
 from handlers.startup import startup_tasks
 from utils.config import BOT_TOKEN
 
-class EmojiFormatter(logging.Form*atter):
+class EmojiFormatter(logging.Formatter):
     EMOJI = {
         logging.INFO: "➜",
         logging.WARNING: "⚠️",
