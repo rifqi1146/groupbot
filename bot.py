@@ -2,7 +2,6 @@
 
 import os
 import logging
-from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, JobQueue
 
@@ -11,15 +10,9 @@ from handlers.commands import register_commands
 from handlers.callbacks import register_callbacks
 from handlers.messages import register_messages
 from handlers.startup import startup_tasks
+from utils.config import BOT_TOKEN
 
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN not set")
-
-
-class EmojiFormatter(logging.Formatter):
+class EmojiFormatter(logging.Form*atter):
     EMOJI = {
         logging.INFO: "➜",
         logging.WARNING: "⚠️",
