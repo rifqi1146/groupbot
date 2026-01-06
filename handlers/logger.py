@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import html
 
-from utils.config import ASUPAN_STARTUP_CHAT_ID
+from utils.config import LOG_CHAT_ID
 from utils.commands import BOT_COMMANDS
 
 
@@ -38,7 +38,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await context.bot.send_message(
-            chat_id=ASUPAN_STARTUP_CHAT_ID,
+            chat_id=LOG_CHAT_ID,
             text=log_text,
             parse_mode="HTML",
             disable_notification=True
