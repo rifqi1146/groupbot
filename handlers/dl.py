@@ -37,11 +37,6 @@ DL_CACHE = {}
 
 #ux
 def progress_bar(percent: float, length: int = 12) -> str:
-    """
-    Return a simple block progress bar using '▰' (filled) and '▱' (empty).
-    percent: 0..100
-    length: number of segments
-    """
     try:
         p = max(0.0, min(100.0, float(percent)))
     except Exception:

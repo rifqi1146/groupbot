@@ -12,14 +12,14 @@ def require_env(name: str, cast=str):
     except Exception:
         raise RuntimeError(f"Environment variable {name} must be {cast.__name__}")
 
-#bot token
+#Bot token
 BOT_TOKEN = require_env("BOT_TOKEN")
 
 #owner id
-OWNER_ID = require_env("BOT_OWNER_ID")
+OWNER_ID = require_env("BOT_OWNER_ID", int)
 
-#logchat id
-LOG_CHAT_ID = require_env("LOG_CHAT_ID")
+#log & asupan startup
+LOG_CHAT_ID = require_env("LOG_CHAT_ID", int)
 
 #gsearch & gemini
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
