@@ -38,13 +38,12 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users.append(ent.user)
 
     if len(users) < 2:
-        members = []
-        async for m in chat.get_administrators():
-            members.append(m.user)
-
+        admins = await context.bot.get_chat_administrators(chat.id)
+        members = [m.user for m in admins if m.user]
+    
         if len(members) < 2:
             return await msg.reply_text("❌ Belum cukup orang buat di-ship.")
-
+    
         users = random.sample(members, 2)
 
     u1, u2 = users[:2]
