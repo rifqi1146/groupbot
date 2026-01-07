@@ -150,7 +150,7 @@ def get_pretty_uptime():
     except Exception:
         return "N/A"
 
-#cmd stats
+# cmd stats
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ram = get_ram_info()
     storage = get_storage_info()
@@ -208,19 +208,19 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     lines = []
-    lines.append("<b>📈 System Stats</b>")
-    lines.append("")
+    lines.append("<b>📈 System Stats</b>\n")
 
     lines.append("<b>⚙️ CPU</b>")
     lines.append(f"  Cores : {cpu_cores}")
     lines.append(f"  Load  : {cpu_load:.1f}%")
     lines.append(f"  Freq  : {cpu_freq}")
-    lines.append(f"  {progress_bar(cpu_load)}")
-    lines.append("")
+    lines.append(f"  {progress_bar(cpu_load)}\n")
 
     if ram:
         lines.append("<b>🧠 RAM</b>")
-        lines.append(f"  {humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])} ({ram['percent']:.1f}%)")
+        lines.append(
+            f"  {humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])} ({ram['percent']:.1f}%)"
+        )
         lines.append(f"  {progress_bar(ram['percent'])}")
         if swap_line:
             lines.append(swap_line)
@@ -233,10 +233,10 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         v = storage["/"]
         pct = (v["used"] / v["total"] * 100) if v["total"] else 0.0
         lines.append("<b>💾 Disk (/)</b>")
-        lines.append(f"  {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])} ({pct:.1f}%)")
-        lines.append(f"  {progress_bar(pct)}")
-
-    lines.append("")
+        lines.append(
+            f"  {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])} ({pct:.1f}%)"
+        )
+        lines.append(f"  {progress_bar(pct)}\n")
 
     lines.append("<b>🖥️ System</b>")
     lines.append(f"  OS     : {html.escape(os_name)}")
@@ -249,5 +249,10 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     out = "\n".join(lines)
 
-    await update.message.reply_text(out, parse_mode="HTML")
+    sent = await update.message.reply_text(out, parse_mode="HTML")
 
+    await asyncio.sleep(10)
+    try:
+        await sent.delete()
+    except Exception:
+        pass
