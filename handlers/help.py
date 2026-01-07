@@ -32,7 +32,7 @@ HELP_TEXT = {
         "• 🔎 <code>/gsearch</code> — Search on Google\n"
         "• 🌍 <code>/tr</code> — Translate text between languages\n"
         "• 📃 <code>/trlist</code> — List supported languages\n"
-        "• 💝 <code>/ship</code> — Choose couple
+        "• 💝 <code>/ship</code> — Choose couple\n"
     ),
 
     "help:ai": (
