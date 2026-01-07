@@ -33,6 +33,7 @@ HELP_TEXT = {
         "• 🌍 <code>/tr</code> — Translate text between languages\n"
         "• 📃 <code>/trlist</code> — List supported languages\n"
         "• 💝 <code>/ship</code> — Choose couple\n"
+        "• 🧭 <code>/reminder</code> — Schedule reminder\n"
     ),
 
     "help:ai": (
