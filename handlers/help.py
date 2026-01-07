@@ -25,30 +25,31 @@ HELP_TEXT = {
 
     "help:features": (
         "✨ <b>Main Features</b>\n\n"
-        "• 🏓 <code>/ping</code> — check bot response time\n"
-        "• ⬇️ <code>/dl</code> — download videos from supported platforms\n"
-        "• 🍜 <code>/asupan</code> — random TikTok content\n"
-        "• 🌤️ <code>/weather</code> — get weather information\n"
-        "• 🔎 <code>/gsearch</code> — search on Google\n"
-        "• 🌍 <code>/tr</code> — translate text between languages\n"
-        "• 📃 <code>/trlist</code> — list supported languages\n"
+        "• 🏓 <code>/ping</code> — Check bot response time\n"
+        "• ⬇️ <code>/dl</code> — Download videos from supported platforms\n"
+        "• 🍜 <code>/asupan</code> — Random TikTok content\n"
+        "• 🌤️ <code>/weather</code> — Get weather information\n"
+        "• 🔎 <code>/gsearch</code> — Search on Google\n"
+        "• 🌍 <code>/tr</code> — Translate text between languages\n"
+        "• 📃 <code>/trlist</code> — List supported languages\n"
+        "• 💝 <code>/ship</code> — Choose couple
     ),
 
     "help:ai": (
         "🤖 <b>AI Commands</b>\n\n"
-        "• 💬 <code>/ai</code> — chat with AI (default mode)\n"
+        "• 💬 <code>/ai</code> — Chat with AI (default mode)\n"
         "• 🧠 <code>/ask</code> — ChatGPT\n"
         "• ⚡ <code>/groq</code> — Groq\n"
-        "• 🧪 <code>/ai flash | pro | lite</code> — switch AI model\n"
-        "• ⚙️ <code>/setmodeai</code> — set default AI model\n"
+        "• 🧪 <code>/ai flash | pro | lite</code> — Switch AI model\n"
+        "• ⚙️ <code>/setmodeai</code> — Set default AI model\n"
     ),
 
     "help:utils": (
         "🛠️ <b>Utilities</b>\n\n"
-        "• 📊 <code>/stats</code> — bot & system statistics\n"
+        "• 📊 <code>/stats</code> — Bot & system statistics\n"
         "• 🌐 <code>/ip</code> — IP address lookup\n"
-        "• 🏷️ <code>/domain</code> — domain information\n"
-        "• 🔍 <code>/whoisdomain</code> — detailed domain lookup\n"
+        "• 🏷️ <code>/domain</code> — Domain information\n"
+        "• 🔍 <code>/whoisdomain</code> — Detailed domain lookup\n"
     ),
 }
 
