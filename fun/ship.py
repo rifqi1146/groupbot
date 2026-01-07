@@ -1,6 +1,10 @@
+import os
+import json
 import random
 from telegram import Update
 from telegram.ext import ContextTypes
+
+DATA_FILE = "data/users.json"
 
 SHIP_MESSAGES = [
     "🥰 Kalian keliatan nyaman satu sama lain",
@@ -24,30 +28,68 @@ SHIP_ENDING = [
     "Enjoy the moment 🫶",
 ]
 
-def tag(user):
-    return f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+def tag(u):
+    return f'<a href="tg://user?id={u["id"]}">{u["name"]}</a>'
+
+def load_users():
+    if not os.path.exists(DATA_FILE):
+        return {}
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_users(data):
+    os.makedirs("data", exist_ok=True)
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def add_user(chat_id, user):
+    if not user or user.is_bot:
+        return
+    data = load_users()
+    cid = str(chat_id)
+    data.setdefault(cid, {})
+    data[cid][str(user.id)] = {
+        "id": user.id,
+        "name": user.first_name,
+    }
+    save_users(data)
 
 async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
 
+    if not msg or not chat:
+        return
+
+    add_user(chat.id, msg.from_user)
+
     users = []
 
     if msg.reply_to_message and msg.reply_to_message.from_user:
-        users.append(msg.reply_to_message.from_user)
+        add_user(chat.id, msg.reply_to_message.from_user)
+        users.append({
+            "id": msg.reply_to_message.from_user.id,
+            "name": msg.reply_to_message.from_user.first_name,
+        })
 
     for ent in msg.entities or []:
         if ent.type == "text_mention" and ent.user:
-            users.append(ent.user)
+            add_user(chat.id, ent.user)
+            users.append({
+                "id": ent.user.id,
+                "name": ent.user.first_name,
+            })
+
+    data = load_users().get(str(chat.id), {})
+    pool = list(data.values())
 
     if len(users) < 2:
-        admins = await context.bot.get_chat_administrators(chat.id)
-        members = [m.user for m in admins if m.user]
-
-        if len(members) < 2:
+        if len(pool) < 2:
             return await msg.reply_text("❌ Belum cukup orang buat di-ship.")
-
-        users = random.sample(members, 2)
+        users = random.sample(pool, 2)
 
     u1, u2 = users[:2]
 
@@ -64,4 +106,8 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<i>{ending}</i>"
     )
 
-    await msg.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+    await msg.reply_text(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
