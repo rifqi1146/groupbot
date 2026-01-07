@@ -49,8 +49,6 @@ HELP_TEXT = {
         "• 🌐 <code>/ip</code> — IP address lookup\n"
         "• 🏷️ <code>/domain</code> — domain information\n"
         "• 🔍 <code>/whoisdomain</code> — detailed domain lookup\n"
-        "• ⚡ <code>/speedtest</code> — test server speed\n"
-        "• 🔁 <code>/restart</code> — restart the bot\n"
     ),
 }
 
