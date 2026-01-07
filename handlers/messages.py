@@ -6,6 +6,7 @@ from handlers.delete import reply_del_handler
 from handlers.dl import auto_dl_detect
 from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
+from utils.user_collector import user_collector
 
 
 def register_messages(app):
@@ -37,4 +38,9 @@ def register_messages(app):
     app.add_handler(
         MessageHandler(filters.ALL, log_commands),
         group=99,
+    )
+    
+    app.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
+        group=99
     )
