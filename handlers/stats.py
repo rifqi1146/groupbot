@@ -2,6 +2,7 @@ import os
 import time
 import html
 import shutil
+import asyncio
 import platform
 from telegram import Update
 from telegram.ext import ContextTypes
