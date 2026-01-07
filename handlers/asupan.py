@@ -19,7 +19,6 @@ from telegram.ext import (
 from telegram import Update
 
 from utils.http import get_http_session
-from utils.config import OWNER_ID
 
 from utils.config import OWNER_ID, LOG_CHAT_ID
 
@@ -32,7 +31,6 @@ ASUPAN_ENABLED_CHATS = set()
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_KEYWORD_CACHE = {}
-ASUPAN_USER_KEYWORD = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
 ASUPAN_DELETE_JOBS = {}
@@ -549,15 +547,3 @@ async def send_asupan_once(bot):
 
     except Exception as e:
         log.warning(f"[ASUPAN STARTUP] Failed: {e}")
-
-async def startup_tasks(app):
-    await asyncio.sleep(3)
-    if not LOG_CHAT_ID:
-        log.warning("[ASUPAN STARTUP] Chat_id is empty")
-        return
-
-    try:
-        await send_asupan_once(app.bot)
-    except Exception as e:
-        log.warning(f"[ASUPAN STARTUP] {e}")
-
