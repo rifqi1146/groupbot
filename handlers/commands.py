@@ -36,7 +36,7 @@ COMMAND_HANDLERS = [
     ("ip", ip_cmd, True),
     ("whoisdomain", whoisdomain_cmd, True),
     ("domain", domain_cmd, True),
-    ("stats", stats_cmd, True),
+    ("stats", stats_cmd, False),
     ("tr", tr_cmd, True),
     ("trlist", trlist_cmd, True),
     ("helpowner", helpowner_cmd, True),
