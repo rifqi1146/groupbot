@@ -24,6 +24,9 @@ SHIP_ENDING = [
     "Enjoy the moment 🫶",
 ]
 
+def tag(user):
+    return f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+
 async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
@@ -40,10 +43,10 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(users) < 2:
         admins = await context.bot.get_chat_administrators(chat.id)
         members = [m.user for m in admins if m.user]
-    
+
         if len(members) < 2:
             return await msg.reply_text("❌ Belum cukup orang buat di-ship.")
-    
+
         users = random.sample(members, 2)
 
     u1, u2 = users[:2]
@@ -54,11 +57,11 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         f"💖 <b>SHIP RESULT</b>\n\n"
-        f"👤 {u1.first_name}\n"
-        f"👤 {u2.first_name}\n\n"
+        f"👤 {tag(u1)}\n"
+        f"👤 {tag(u2)}\n\n"
         f"❤️ <b>Love Meter:</b> <code>{percent}%</code>\n\n"
         f"{msg_text}\n"
         f"<i>{ending}</i>"
     )
 
-    await msg.reply_text(text, parse_mode="HTML")
+    await msg.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
