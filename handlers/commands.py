@@ -16,6 +16,7 @@ from handlers.weather import weather_cmd
 from handlers.dl import dl_cmd
 from handlers.helpowner import helpowner_cmd
 from handlers.welcome import wlc_cmd
+from fun.ship import ship_cmd
 from handlers.asupan import (
     asupan_cmd,
     enable_asupan_cmd,
@@ -26,6 +27,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("ship", ship_cmd, True),
     ("broadcast", broadcast_cmd, False),
     ("autodel", autodel_cmd, True),
     ("help", help_cmd, True),
