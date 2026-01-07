@@ -3,27 +3,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def require_env(name: str) -> str:
+def require_env(name: str, cast=str):
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
-
-def require_int_env(name: str) -> int:
-    value = require_env(name)
     try:
-        return int(value)
-    except ValueError:
-        raise RuntimeError(f"Environment variable {name} must be an integer")
+        return cast(value)
+    except Exception:
+        raise RuntimeError(f"Environment variable {name} must be {cast.__name__}")
 
 #bot token
 BOT_TOKEN = require_env("BOT_TOKEN")
 
 #owner id
-OWNER_ID = require_int_env("BOT_OWNER_ID")
+OWNER_ID = require_env("BOT_OWNER_ID")
 
 #logchat id
-LOG_CHAT_ID = require_int_env("LOG_CHAT_ID")
+LOG_CHAT_ID = require_env("LOG_CHAT_ID")
 
 #gsearch & gemini
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
