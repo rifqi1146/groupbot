@@ -1,10 +1,6 @@
 import re
 from datetime import datetime, timedelta
-from telegram import (
-    Update,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
 WIB_OFFSET = 7
@@ -36,20 +32,31 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
 
 async def reminder_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    job = context.application.job_queue.get_jobs_by_name(q.data)
 
-    if not job:
-        return await q.answer("❌ Reminder udah ga ada", show_alert=True)
+    jobs = context.application.job_queue.get_jobs_by_name(q.data)
 
-    job = job[0]
+    if not jobs:
+        await q.answer("🕒 Reminder sudah tidak aktif", show_alert=True)
+        try:
+            await q.message.edit_text("🕒 Reminder sudah tidak aktif")
+        except Exception:
+            pass
+        return
+
+    job = jobs[0]
     owner_id = job.data["user_id"]
 
     if q.from_user.id != owner_id:
-        return await q.answer("❌ Ini bukan reminder lu", show_alert=True)
+        await q.answer("❌ Bukan reminder lu tolol", show_alert=True)
+        return
+
+    await q.answer("🗑️ Reminder dibatalkan")
 
     job.schedule_removal()
-    await q.message.edit_text("🗑️ Reminder dibatalin")
-    await q.answer("✅ Reminder cancelled")
+    try:
+        await q.message.edit_text("🗑️ Reminder dibatalkan")
+    except Exception:
+        pass
 
 async def reminder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -80,7 +87,7 @@ async def reminder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<i>Waktu: {time_str} WIB</i>"
     )
 
-    job = context.application.job_queue.run_once(
+    context.application.job_queue.run_once(
         reminder_job,
         when=delay,
         name=job_name,
