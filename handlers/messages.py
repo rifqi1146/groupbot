@@ -42,5 +42,5 @@ def register_messages(app):
     
     app.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
-        group=99
+        group=-2
     )
