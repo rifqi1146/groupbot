@@ -57,6 +57,7 @@ async def post_init(app):
             ("start", "Check bot status"),
             ("help", "Show help menu"),
             ("ping", "Check latency"),
+            ("ship", "Choose couple"),
             ("stats", "System statistics"),
             ("dl", "Download video"),
             ("ai", "Ask AI"),
