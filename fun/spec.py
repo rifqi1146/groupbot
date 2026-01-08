@@ -7,6 +7,28 @@ import html
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 
+def normalize_infobox(text: str) -> list[str]:
+    lines = []
+    buf = ""
+
+    for raw in text.split("\n"):
+        raw = raw.strip()
+
+        if not raw:
+            continue
+
+        if raw.startswith("|"):
+            if buf:
+                lines.append(buf)
+            buf = raw
+        else:
+            buf += " " + raw
+
+    if buf:
+        lines.append(buf)
+
+    return lines
+    
 def sanitize_telegram_html(text: str) -> str:
     text = html.escape(text)
 
@@ -41,11 +63,14 @@ def clean_wikitext(text: str) -> str:
 
     text = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
 
-    text = re.sub(r"^\s*\|\s*", "", text)
+    text = re.sub(r"'''+", "", text)
 
     text = re.sub(r"\[\[(?:[^|\]]*\|)?([^\]]+)\]\]", r"\1", text)
 
-    text = re.sub(r"\{\{convert\|([^}]+)\}\}", r"\1", text, flags=re.I)
+    text = re.sub(r"\{\{Start Date And Age\|[^|}]*\|(\d{4})\|(\d{2})\|(\d{2})\}\}",
+                  r"\3-\2-\1", text, flags=re.I)
+
+    text = re.sub(r"\{\{Val\|(\d+)\|[^}]+\}\}", r"\1", text, flags=re.I)
 
     text = re.sub(
         r"\{\{ubl\|([^}]+)\}\}",
@@ -53,6 +78,8 @@ def clean_wikitext(text: str) -> str:
         text,
         flags=re.I
     )
+
+    text = re.sub(r"\{\{convert\|([^}]+)\}\}", r"\1", text, flags=re.I)
 
     text = re.sub(r"\{\{[^}]+\}\}", "", text)
 
@@ -122,14 +149,15 @@ async def wiki_specs(title: str):
     if not infobox:
         return None
 
+    raw_lines = normalize_infobox(infobox)
     lines = []
-
-    for raw in infobox.split("\n"):
+    
+    for raw in raw_lines:
         if "=" not in raw:
             continue
     
         key, val = raw.split("=", 1)
-        key = key.strip().replace("_", " ").title()
+        key = key.replace("|", "").strip().title()
         val = clean_wikitext(val)
     
         if not val:
@@ -140,7 +168,7 @@ async def wiki_specs(title: str):
     if not lines:
         return None
 
-    return sanitize_telegram_html("\n\n".join(lines))
+    return "\n\n".join(lines)
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
