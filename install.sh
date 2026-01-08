@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-
 set -e
 
 echo "== GroupBot Installer =="
 echo
 
 if [[ $EUID -ne 0 ]]; then
-  echo "❌ Please run as root (sudo ./install.sh)"
+  echo "❌ Please run as root:"
+  echo "sudo bash install.sh"
   exit 1
 fi
 
@@ -19,16 +19,34 @@ apt install -y \
   git \
   ffmpeg \
   tesseract-ocr \
-  curl
+  curl \
+  build-essential \
+  libjpeg-dev \
+  zlib1g-dev
 
 echo
-echo "[2/5] Installing Speedtest (Ookla)..."
+echo "[2/5] Installing Speedtest (Ookla CLI)..."
 
 if ! command -v speedtest >/dev/null 2>&1; then
-  curl -L https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz \
-  | tar zx
+  ARCH=$(uname -m)
+
+  case "$ARCH" in
+    x86_64)
+      SPEEDTEST_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz"
+      ;;
+    aarch64|arm64)
+      SPEEDTEST_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz"
+      ;;
+    *)
+      echo "❌ Unsupported architecture: $ARCH"
+      exit 1
+      ;;
+  esac
+
+  curl -L "$SPEEDTEST_URL" | tar zx
   mv speedtest /usr/bin/speedtest
   chmod +x /usr/bin/speedtest
+
   echo "✔ Speedtest installed"
 else
   echo "✔ Speedtest already installed"
@@ -56,8 +74,9 @@ echo
 echo "Next steps:"
 echo "1. Copy .env.example to .env"
 echo "2. nano .env"
-echo "2. Fill your BOT_TOKEN and API keys"
-echo "3. Run:"
+echo "3. Fill BOT_TOKEN and API keys"
+echo "4. Run:"
+echo "   source venv/bin/activate"
 echo "   python bot.py"
 echo
 echo "Happy 🚀"
