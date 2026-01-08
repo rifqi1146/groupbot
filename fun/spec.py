@@ -1,131 +1,96 @@
-import urllib.parse
-from bs4 import BeautifulSoup
+import re
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from utils.http import get_http_session
 
-BASE = "https://www.gsmarena.com/"
+WIKI_API = "https://en.wikipedia.org/w/api.php"
 
 
-async def gsmarena_search(query: str):
+async def wiki_search(query: str):
     session = await get_http_session()
+    params = {
+        "action": "query",
+        "list": "search",
+        "srsearch": query,
+        "format": "json"
+    }
 
-    def build_url(q: str):
-        q = urllib.parse.quote_plus(q)
-        return f"{BASE}results.php3?sQuickSearch=yes&sName={q}"
+    async with session.get(WIKI_API, params=params) as r:
+        data = await r.json()
 
-    tried = []
-    candidates = [query]
+    results = []
+    for item in data.get("query", {}).get("search", []):
+        title = item["title"]
+        results.append(title)
+        if len(results) >= 5:
+            break
 
-    if query.lower().startswith("samsung ") and "galaxy" not in query.lower():
-        candidates.append(query.replace("samsung", "samsung galaxy", 1))
-
-    if query.lower().startswith("redmi "):
-        candidates.append("xiaomi " + query)
-
-    for q in candidates:
-        if q in tried:
-            continue
-        tried.append(q)
-
-        async with session.get(build_url(q), allow_redirects=True) as r:
-            html = await r.text()
-            final_url = str(r.url)
-
-        soup = BeautifulSoup(html, "lxml")
-
-        if soup.find("div", id="specs-list"):
-            title = soup.find("h1", class_="specs-phone-name-title")
-            if title:
-                return [(title.get_text(" ", strip=True), final_url)]
-
-        results = []
-        for li in soup.select("li"):
-            a = li.find("a", href=True)
-            strong = li.find("strong")
-            if not a or not strong:
-                continue
-
-            name = strong.get_text(" ", strip=True)
-            link = a["href"]
-            if not link.endswith(".php"):
-                continue
-
-            results.append((name, BASE + link))
-
-            if len(results) >= 8:
-                break
-
-        if results:
-            return results
-
-    return []
+    return results
 
 
-async def gsmarena_specs(url: str):
+async def wiki_specs(title: str):
     session = await get_http_session()
+    params = {
+        "action": "parse",
+        "page": title.replace(" ", "_"),
+        "prop": "wikitext",
+        "format": "json"
+    }
 
-    async with session.get(url) as r:
-        html = await r.text()
+    async with session.get(WIKI_API, params=params) as r:
+        data = await r.json()
 
-    soup = BeautifulSoup(html, "lxml")
-    specs_root = soup.find("div", id="specs-list")
-    if not specs_root:
+    text = data.get("parse", {}).get("wikitext", {}).get("*")
+    if not text:
         return None
 
-    data = []
+    infobox = re.search(r"\{\{Infobox mobile phone(.*?)\n\}\}", text, re.S)
+    if not infobox:
+        return None
 
-    for table in specs_root.find_all("table"):
-        category = None
-        for row in table.find_all("tr"):
-            th = row.find("th")
-            if th:
-                category = th.get_text(" ", strip=True)
-                data.append(f"\n<b>📌 {category}</b>")
-                continue
+    block = infobox.group(1)
+    lines = []
 
-            ttl = row.find("td", class_="ttl")
-            nfo = row.find("td", class_="nfo")
-            if not ttl or not nfo:
-                continue
+    for line in block.split("\n"):
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip().replace("_", " ").title()
+        v = re.sub(r"\[\[|\]\]", "", v).strip()
+        if v:
+            lines.append(f"• <b>{k}</b>: {v}")
 
-            key = ttl.get_text(" ", strip=True)
-            val = nfo.get_text(" ", strip=True)
-            data.append(f"• <b>{key}</b>: {val}")
-
-    return "\n".join(data)
+    return "\n".join(lines)
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
 
     if not context.args:
-        return await msg.reply_text("❌ Contoh:\n/spec redmi note 9")
+        return await msg.reply_text("❌ Contoh:\n/spec samsung s23 fe")
 
     query = " ".join(context.args)
-    results = await gsmarena_search(query)
+    results = await wiki_search(query)
 
     if not results:
         return await msg.reply_text("❌ Device ga ketemu")
 
     if len(results) == 1:
-        text = await gsmarena_specs(results[0][1])
+        text = await wiki_specs(results[0])
         if not text:
             return await msg.reply_text("❌ Gagal ambil spesifikasi")
 
-        for i in range(0, len(text), 3900):
-            await msg.reply_text(
-                text[i:i + 3900],
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        return
+        return await msg.reply_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
 
-    context.user_data["spec_results"] = results
+    context.user_data["spec_titles"] = results
 
     keyboard = [
-        [InlineKeyboardButton(name, callback_data=f"spec:{i}")]
-        for i, (name, _) in enumerate(results)
+        [InlineKeyboardButton(title, callback_data=f"spec:{i}")]
+        for i, title in enumerate(results)
     ]
 
     await msg.reply_text(
@@ -141,23 +106,22 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not q.data.startswith("spec:"):
         return
 
-    results = context.user_data.get("spec_results")
+    titles = context.user_data.get("spec_titles")
     idx = int(q.data.split(":", 1)[1])
 
-    if not results or idx >= len(results):
+    if not titles or idx >= len(titles):
         return await q.message.delete()
 
-    url = results[idx][1]
-    text = await gsmarena_specs(url)
+    title = titles[idx]
+    text = await wiki_specs(title)
 
     await q.message.delete()
 
     if not text:
         return await q.message.chat.send_message("❌ Gagal ambil spesifikasi")
 
-    for i in range(0, len(text), 3900):
-        await q.message.chat.send_message(
-            text[i:i + 3900],
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+    await q.message.chat.send_message(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
