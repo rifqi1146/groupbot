@@ -1,46 +1,41 @@
 import urllib.parse
 from bs4 import BeautifulSoup
-from telegram import (
-    Update,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton
-)
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from utils.http import get_http_session
 
 BASE = "https://www.gsmarena.com/"
 
-# ================= SEARCH =================
 
 async def gsmarena_search(query: str):
     session = await get_http_session()
-
     q = urllib.parse.quote_plus(query)
     url = f"{BASE}results.php3?sQuickSearch=yes&sName={q}"
 
-    async with session.get(url) as r:
+    async with session.get(url, allow_redirects=True) as r:
         html = await r.text()
+        final_url = str(r.url)
 
     soup = BeautifulSoup(html, "lxml")
-    results = []
 
+    if soup.find("div", id="specs-list"):
+        title = soup.find("h1", class_="specs-phone-name-title")
+        if title:
+            return [(title.get_text(strip=True), final_url)]
+
+    results = []
     for li in soup.select("div.makers li"):
         a = li.find("a")
         if not a:
             continue
-
         name = a.get_text(" ", strip=True)
         link = BASE + a["href"]
-
         results.append((name, link))
-
         if len(results) >= 8:
             break
 
     return results
 
-
-# ================= SPECS =================
 
 async def gsmarena_specs(url: str):
     session = await get_http_session()
@@ -76,8 +71,6 @@ async def gsmarena_specs(url: str):
     return "\n".join(data)
 
 
-# ================= COMMAND =================
-
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
 
@@ -90,6 +83,19 @@ async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not results:
         return await msg.reply_text("❌ Device ga ketemu")
 
+    if len(results) == 1:
+        text = await gsmarena_specs(results[0][1])
+        if not text:
+            return await msg.reply_text("❌ Gagal ambil spesifikasi")
+
+        for i in range(0, len(text), 3900):
+            await msg.reply_text(
+                text[i:i+3900],
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+        return
+
     keyboard = [
         [InlineKeyboardButton(name, callback_data=f"spec|{url}")]
         for name, url in results
@@ -101,8 +107,6 @@ async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ================= CALLBACK =================
-
 async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -113,14 +117,14 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = q.data.split("|", 1)[1]
     text = await gsmarena_specs(url)
 
-    if not text:
-        return await q.message.edit_text("❌ Gagal ambil spesifikasi")
+    await q.message.delete()
 
-    # split telegram limit
+    if not text:
+        return await q.message.chat.send_message("❌ Gagal ambil spesifikasi")
+
     for i in range(0, len(text), 3900):
-        await q.message.reply_text(
+        await q.message.chat.send_message(
             text[i:i+3900],
             parse_mode="HTML",
             disable_web_page_preview=True
         )
-        
