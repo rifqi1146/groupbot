@@ -140,13 +140,11 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     title = titles[idx]
     text = await wiki_specs(title)
-        if not text:
-         return await q.message.chat.send_message("❌ Spesifikasi belum tersedia")
 
     await q.message.delete()
 
     if not text:
-        return await q.message.chat.send_message("❌ Gagal ambil spesifikasi")
+        return await q.message.chat.send_message("❌ Spesifikasi belum tersedia")
 
     await q.message.chat.send_message(
         text,
