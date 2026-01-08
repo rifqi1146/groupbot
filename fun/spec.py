@@ -5,7 +5,11 @@ from utils.http import get_http_session
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 
-
+def clean_html(text: str) -> str:
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = re.sub(r"<(?!/?(b|i|u|s|code|pre|a)\b).*?>", "", text)
+    return text
+    
 async def wiki_search(query: str):
     session = await get_http_session()
     params = {
@@ -82,7 +86,7 @@ async def wiki_specs(title: str):
         if v:
             lines.append(f"• <b>{k}</b>: {v}")
 
-    return "\n".join(lines)
+    return clean_html("\n".join(lines))
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,6 +140,8 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     title = titles[idx]
     text = await wiki_specs(title)
+        if not text:
+         return await q.message.chat.send_message("❌ Spesifikasi belum tersedia")
 
     await q.message.delete()
 
