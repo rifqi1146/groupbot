@@ -4,8 +4,14 @@
 
 gatau bg mau nulis apa
 
+## 🚀 Quick Install (Recommended)
 
-### Installation
+```
+git clone https://github.com/rifqi1146/groupbot.git
+cd groupbot
+sudo bash install.sh
+```
+## 🛠 Manual Installation
 ```
 apt install -y \
     python3 \
@@ -23,7 +29,7 @@ sudo mv speedtest /usr/bin/speedtest
 sudo chmod +x /usr/bin/speedtest
 ```
 
-### Clone repository
+### 📜 Clone repository
 ```
 git clone https://github.com/rifqi1146/groupbot.git
 ```
@@ -42,6 +48,8 @@ pip install --upgrade pip
 ```
 pip install -r requirements.txt
 ```
+## ⚙️ Environment Setup
+
 ```
 nano .env
 ```
