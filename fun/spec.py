@@ -13,7 +13,7 @@ BASE = "https://www.gsmarena.com/"
 # ================= SEARCH =================
 
 async def gsmarena_search(query: str):
-    session = get_http_session()
+    session = await get_http_session()
 
     q = urllib.parse.quote_plus(query)
     url = f"{BASE}results.php3?sQuickSearch=yes&sName={q}"
@@ -43,7 +43,7 @@ async def gsmarena_search(query: str):
 # ================= SPECS =================
 
 async def gsmarena_specs(url: str):
-    session = get_http_session()
+    session = await get_http_session()
 
     async with session.get(url) as r:
         html = await r.text()
