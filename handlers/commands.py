@@ -31,7 +31,7 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("ship", ship_cmd, True),
-    ("spec", spec_cmd, True),
+    ("spec", spec_cmd, False),
     ("reminder", reminder_cmd, False),
     ("broadcast", broadcast_cmd, False),
     ("autodel", autodel_cmd, True),
