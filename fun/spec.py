@@ -6,7 +6,7 @@ from telegram import (
     InlineKeyboardButton
 )
 from telegram.ext import ContextTypes
-from utils.config import get_http_session
+from utils.http import get_http_session
 
 BASE = "https://www.gsmarena.com/"
 
