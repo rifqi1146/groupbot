@@ -127,7 +127,7 @@ async def wiki_specs(title: str):
         if key in IMPORTANT_KEYS and val:
             lines.append(f"• <b>{IMPORTANT_KEYS[key]}</b>: {val}")
 
-    return "\n".join(lines) if lines else None
+    return "\n".join(lines)
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
