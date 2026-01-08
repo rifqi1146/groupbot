@@ -2,9 +2,22 @@ import re
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from utils.http import get_http_session
+import html
+
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 
+def sanitize_telegram_html(text: str) -> str:
+    text = html.escape(text)
+
+    text = text.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
+    text = text.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
+    text = text.replace("&lt;u&gt;", "<u>").replace("&lt;/u&gt;", "</u>")
+    text = text.replace("&lt;s&gt;", "<s>").replace("&lt;/s&gt;", "</s>")
+    text = text.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+    text = text.replace("&lt;pre&gt;", "<pre>").replace("&lt;/pre&gt;", "</pre>")
+
+    return text
 
 def extract_infobox(wikitext: str) -> str | None:
     start = wikitext.find("{{Infobox mobile phone")
@@ -68,6 +81,7 @@ async def wiki_search(query: str):
 
 async def wiki_specs(title: str):
     session = await get_http_session()
+
     params = {
         "action": "parse",
         "page": title.replace(" ", "_"),
@@ -107,7 +121,10 @@ async def wiki_specs(title: str):
         if val:
             lines.append(f"• <b>{key}</b>: {val}")
 
-    return "\n".join(lines) if lines else None
+    if not lines:
+        return None
+
+    return sanitize_telegram_html("\n".join(lines))
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
