@@ -23,16 +23,31 @@ def is_owner(user_id: int) -> bool:
 def run_speedtest():
     p = subprocess.run(
         [
-    "/usr/bin/speedtest",
-    "--accept-license",
-    "--accept-gdpr",
-    "-f", "json"
-],
-        capture_output=True, text=True
+            "speedtest",
+            "--accept-license",
+            "--accept-gdpr",
+            "-f", "json"
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
     )
+
     if p.returncode != 0:
-        raise RuntimeError("Speedtest failed")
-    return json.loads(p.stdout)
+        raise RuntimeError(f"Speedtest failed: {p.stderr.strip()}")
+
+    out = p.stdout.strip()
+
+    start = out.find("{")
+    end = out.rfind("}") + 1
+
+    if start == -1 or end == -1:
+        raise RuntimeError("Invalid speedtest output (no JSON found)")
+
+    try:
+        return json.loads(out[start:end])
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"JSON parse error: {e}")
 
 def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
     start = 135
