@@ -9,35 +9,57 @@ BASE = "https://www.gsmarena.com/"
 
 async def gsmarena_search(query: str):
     session = await get_http_session()
-    q = urllib.parse.quote_plus(query)
-    url = f"{BASE}results.php3?sQuickSearch=yes&sName={q}"
 
-    async with session.get(url, allow_redirects=True) as r:
-        html = await r.text()
-        final_url = str(r.url)
+    def build_url(q: str):
+        q = urllib.parse.quote_plus(q)
+        return f"{BASE}results.php3?sQuickSearch=yes&sName={q}"
 
-    soup = BeautifulSoup(html, "lxml")
+    tried = []
+    candidates = [query]
 
-    if soup.find("div", id="specs-list"):
-        title = soup.find("h1", class_="specs-phone-name-title")
-        if title:
-            return [(title.get_text(" ", strip=True), final_url)]
+    if query.lower().startswith("samsung ") and "galaxy" not in query.lower():
+        candidates.append(query.replace("samsung", "samsung galaxy", 1))
 
-    results = []
-    for li in soup.select("div.makers ul li"):
-        a = li.find("a", href=True)
-        strong = li.find("strong")
-        if not a or not strong:
+    if query.lower().startswith("redmi "):
+        candidates.append("xiaomi " + query)
+
+    for q in candidates:
+        if q in tried:
             continue
+        tried.append(q)
 
-        name = strong.get_text(" ", strip=True)
-        link = BASE + a["href"]
-        results.append((name, link))
+        async with session.get(build_url(q), allow_redirects=True) as r:
+            html = await r.text()
+            final_url = str(r.url)
 
-        if len(results) >= 8:
-            break
+        soup = BeautifulSoup(html, "lxml")
 
-    return results
+        if soup.find("div", id="specs-list"):
+            title = soup.find("h1", class_="specs-phone-name-title")
+            if title:
+                return [(title.get_text(" ", strip=True), final_url)]
+
+        results = []
+        for li in soup.select("li"):
+            a = li.find("a", href=True)
+            strong = li.find("strong")
+            if not a or not strong:
+                continue
+
+            name = strong.get_text(" ", strip=True)
+            link = a["href"]
+            if not link.endswith(".php"):
+                continue
+
+            results.append((name, BASE + link))
+
+            if len(results) >= 8:
+                break
+
+        if results:
+            return results
+
+    return []
 
 
 async def gsmarena_specs(url: str):
