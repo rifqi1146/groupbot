@@ -39,6 +39,7 @@ async def wiki_search(query: str):
 
 async def wiki_specs(title: str):
     session = await get_http_session()
+
     params = {
         "action": "parse",
         "page": title.replace(" ", "_"),
@@ -46,8 +47,18 @@ async def wiki_specs(title: str):
         "format": "json"
     }
 
-    async with session.get(WIKI_API, params=params) as r:
-        data = await r.json()
+    headers = {
+        "User-Agent": "GroupBot/1.0 (https://t.me/yourbot)"
+    }
+
+    async with session.get(WIKI_API, params=params, headers=headers) as r:
+        if r.status != 200:
+            return None
+
+        try:
+            data = await r.json()
+        except Exception:
+            return None
 
     text = data.get("parse", {}).get("wikitext", {}).get("*")
     if not text:
@@ -63,9 +74,11 @@ async def wiki_specs(title: str):
     for line in block.split("\n"):
         if "=" not in line:
             continue
+
         k, v = line.split("=", 1)
         k = k.strip().replace("_", " ").title()
         v = re.sub(r"\[\[|\]\]", "", v).strip()
+
         if v:
             lines.append(f"• <b>{k}</b>: {v}")
 
