@@ -18,32 +18,19 @@ async def gsmarena_search(query: str):
 
     soup = BeautifulSoup(html, "lxml")
 
-    specs = soup.find("div", id="specs-list")
-    if specs:
+    if soup.find("div", id="specs-list"):
         title = soup.find("h1", class_="specs-phone-name-title")
         if title:
             return [(title.get_text(strip=True), final_url)]
 
     results = []
-
-    for li in soup.select("li"):
-        a = li.find("a", href=True)
-        strong = li.find("strong")
-        if not a or not strong:
+    for li in soup.select("div.makers li"):
+        a = li.find("a")
+        if not a:
             continue
-
-        name = strong.get_text(" ", strip=True)
-        href = a["href"]
-
-        if not href.endswith(".php"):
-            continue
-
-        if "/" in href:
-            continue
-
-        link = BASE + href
+        name = a.get_text(" ", strip=True)
+        link = BASE + a["href"]
         results.append((name, link))
-
         if len(results) >= 8:
             break
 
