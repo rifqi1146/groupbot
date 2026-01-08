@@ -96,9 +96,11 @@ async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    context.user_data["spec_results"] = results
+
     keyboard = [
-        [InlineKeyboardButton(name, callback_data=f"spec|{url}")]
-        for name, url in results
+        [InlineKeyboardButton(name, callback_data=f"spec|{i}")]
+        for i, (name, _) in enumerate(results)
     ]
 
     await msg.reply_text(
@@ -114,7 +116,13 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not q.data.startswith("spec|"):
         return
 
-    url = q.data.split("|", 1)[1]
+    idx = int(q.data.split("|", 1)[1])
+    results = context.user_data.get("spec_results")
+
+    if not results or idx >= len(results):
+        return await q.message.delete()
+
+    url = results[idx][1]
     text = await gsmarena_specs(url)
 
     await q.message.delete()
