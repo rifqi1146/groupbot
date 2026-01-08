@@ -21,16 +21,19 @@ async def gsmarena_search(query: str):
     if soup.find("div", id="specs-list"):
         title = soup.find("h1", class_="specs-phone-name-title")
         if title:
-            return [(title.get_text(strip=True), final_url)]
+            return [(title.get_text(" ", strip=True), final_url)]
 
     results = []
-    for li in soup.select("div.makers li"):
-        a = li.find("a")
-        if not a:
+    for li in soup.select("div.makers ul li"):
+        a = li.find("a", href=True)
+        strong = li.find("strong")
+        if not a or not strong:
             continue
-        name = a.get_text(" ", strip=True)
+
+        name = strong.get_text(" ", strip=True)
         link = BASE + a["href"]
         results.append((name, link))
+
         if len(results) >= 8:
             break
 
@@ -55,7 +58,7 @@ async def gsmarena_specs(url: str):
         for row in table.find_all("tr"):
             th = row.find("th")
             if th:
-                category = th.get_text(strip=True)
+                category = th.get_text(" ", strip=True)
                 data.append(f"\n<b>📌 {category}</b>")
                 continue
 
@@ -90,7 +93,7 @@ async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for i in range(0, len(text), 3900):
             await msg.reply_text(
-                text[i:i+3900],
+                text[i:i + 3900],
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
@@ -99,7 +102,7 @@ async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["spec_results"] = results
 
     keyboard = [
-        [InlineKeyboardButton(name, callback_data=f"spec|{i}")]
+        [InlineKeyboardButton(name, callback_data=f"spec:{i}")]
         for i, (name, _) in enumerate(results)
     ]
 
@@ -113,11 +116,11 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    if not q.data.startswith("spec|"):
+    if not q.data.startswith("spec:"):
         return
 
-    idx = int(q.data.split("|", 1)[1])
     results = context.user_data.get("spec_results")
+    idx = int(q.data.split(":", 1)[1])
 
     if not results or idx >= len(results):
         return await q.message.delete()
@@ -132,7 +135,7 @@ async def spec_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for i in range(0, len(text), 3900):
         await q.message.chat.send_message(
-            text[i:i+3900],
+            text[i:i + 3900],
             parse_mode="HTML",
             disable_web_page_preview=True
         )
