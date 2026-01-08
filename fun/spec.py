@@ -5,10 +5,38 @@ from utils.http import get_http_session
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 
-def clean_html(text: str) -> str:
+def extract_infobox(wikitext: str) -> str | None:
+    start = wikitext.find("{{Infobox mobile phone")
+    if start == -1:
+        return None
+
+    depth = 0
+    for i in range(start, len(wikitext)):
+        if wikitext[i:i+2] == "{{":
+            depth += 1
+        elif wikitext[i:i+2] == "}}":
+            depth -= 1
+            if depth == 0:
+                return wikitext[start:i+2]
+
+    return None
+    
+def clean_wikitext(text: str) -> str:
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
-    text = re.sub(r"<(?!/?(b|i|u|s|code|pre|a)\b).*?>", "", text)
-    return text
+
+    text = re.sub(r"\[\[(?:[^|\]]*\|)?([^\]]+)\]\]", r"\1", text)
+
+    text = re.sub(r"\{\{convert\|([^}]+)\}\}", r"\1", text)
+
+    text = re.sub(
+        r"\{\{ubl\|([^}]+)\}\}",
+        lambda m: ", ".join(x.strip() for x in m.group(1).split("|")),
+        text
+    )
+
+    text = re.sub(r"\{\{[^}]+\}\}", "", text)
+
+    return text.strip()
     
 async def wiki_search(query: str):
     session = await get_http_session()
@@ -52,41 +80,54 @@ async def wiki_specs(title: str):
     }
 
     headers = {
-        "User-Agent": "GroupBot/1.0 (https://t.me/yourbot)"
+        "User-Agent": "GroupBot/1.0"
     }
 
     async with session.get(WIKI_API, params=params, headers=headers) as r:
         if r.status != 200:
             return None
-
         try:
             data = await r.json()
         except Exception:
             return None
 
-    text = data.get("parse", {}).get("wikitext", {}).get("*")
-    if not text:
+    wikitext = data.get("parse", {}).get("wikitext", {}).get("*")
+    if not wikitext:
         return None
 
-    infobox = re.search(r"\{\{Infobox mobile phone(.*?)\n\}\}", text, re.S)
+    infobox = extract_infobox(wikitext)
     if not infobox:
         return None
 
-    block = infobox.group(1)
+    IMPORTANT_KEYS = {
+        "networks": "Network",
+        "released": "Release",
+        "display": "Display",
+        "soc": "Chipset",
+        "cpu": "CPU",
+        "gpu": "GPU",
+        "memory": "RAM",
+        "storage": "Storage",
+        "battery": "Battery",
+        "charging": "Charging",
+        "rear_camera": "Rear Camera",
+        "front_camera": "Front Camera"
+    }
+
     lines = []
 
-    for line in block.split("\n"):
-        if "=" not in line:
+    for raw in infobox.split("\n"):
+        if "=" not in raw:
             continue
 
-        k, v = line.split("=", 1)
-        k = k.strip().replace("_", " ").title()
-        v = re.sub(r"\[\[|\]\]", "", v).strip()
+        key, val = raw.split("=", 1)
+        key = key.strip().lower()
+        val = clean_wikitext(val)
 
-        if v:
-            lines.append(f"• <b>{k}</b>: {v}")
+        if key in IMPORTANT_KEYS and val:
+            lines.append(f"• <b>{IMPORTANT_KEYS[key]}</b>: {val}")
 
-    return clean_html("\n".join(lines))
+    return "\n".join(lines) if lines else None
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
