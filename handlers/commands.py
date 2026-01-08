@@ -18,7 +18,7 @@ from handlers.helpowner import helpowner_cmd
 from handlers.welcome import wlc_cmd
 from fun.ship import ship_cmd
 from fun.reminder import reminder_cmd
-from fun.spec import spec_cmd
+
 
 from handlers.asupan import (
     asupan_cmd,
@@ -31,7 +31,6 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("ship", ship_cmd, True),
-    ("spec", spec_cmd, False),
     ("reminder", reminder_cmd, False),
     ("broadcast", broadcast_cmd, False),
     ("autodel", autodel_cmd, True),
