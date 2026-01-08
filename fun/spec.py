@@ -38,14 +38,27 @@ def extract_infobox(wikitext: str) -> str | None:
 
 def clean_wikitext(text: str) -> str:
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+    text = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+
+    text = re.sub(r"^\s*\|\s*", "", text)
+
     text = re.sub(r"\[\[(?:[^|\]]*\|)?([^\]]+)\]\]", r"\1", text)
-    text = re.sub(r"\{\{convert\|([^}]+)\}\}", r"\1", text)
+
+    text = re.sub(r"\{\{convert\|([^}]+)\}\}", r"\1", text, flags=re.I)
+
     text = re.sub(
         r"\{\{ubl\|([^}]+)\}\}",
         lambda m: ", ".join(x.strip() for x in m.group(1).split("|")),
-        text
+        text,
+        flags=re.I
     )
+
     text = re.sub(r"\{\{[^}]+\}\}", "", text)
+
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
     return text.strip()
 
 
@@ -110,21 +123,24 @@ async def wiki_specs(title: str):
         return None
 
     lines = []
+
     for raw in infobox.split("\n"):
         if "=" not in raw:
             continue
-
+    
         key, val = raw.split("=", 1)
         key = key.strip().replace("_", " ").title()
         val = clean_wikitext(val)
-
-        if val:
-            lines.append(f"• <b>{key}</b>: {val}")
+    
+        if not val:
+            continue
+    
+        lines.append(f"<b>{key}</b>\n{val}")
 
     if not lines:
         return None
 
-    return sanitize_telegram_html("\n".join(lines))
+    return sanitize_telegram_html("\n\n".join(lines))
 
 
 async def spec_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
