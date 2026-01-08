@@ -16,4 +16,4 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(helpowner_callback, pattern=r"^helpowner:"))
     app.add_handler(CallbackQueryHandler(reminder_cancel_cb, pattern=r"^reminder:"))
-    app.add_handler(CallbackQueryHandler(spec_cb, pattern="^spec\\|"))
+    app.add_handler(CallbackQueryHandler(spec_cb, pattern=r"^spec:"))
