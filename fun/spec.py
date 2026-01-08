@@ -15,13 +15,22 @@ async def wiki_search(query: str):
         "format": "json"
     }
 
-    async with session.get(WIKI_API, params=params) as r:
-        data = await r.json()
+    headers = {
+        "User-Agent": "GroupBot/1.0 (https://t.me/yourbot)"
+    }
+
+    async with session.get(WIKI_API, params=params, headers=headers) as r:
+        if r.status != 200:
+            return []
+
+        try:
+            data = await r.json()
+        except Exception:
+            return []
 
     results = []
     for item in data.get("query", {}).get("search", []):
-        title = item["title"]
-        results.append(title)
+        results.append(item["title"])
         if len(results) >= 5:
             break
 
