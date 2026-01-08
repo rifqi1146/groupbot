@@ -6,9 +6,25 @@ gatau bg mau nulis apa
 
 
 ### Installation
+```
+apt install -y \
+    python3 \
+    python3-venv \
+    python3-pip \
+    git \
+    ffmpeg \
+    tesseract-ocr
+```
+```
+curl -L https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz \
+| tar zx
+
+sudo mv speedtest /usr/bin/speedtest
+sudo chmod +x /usr/bin/speedtest
+```
 
 ### Clone repository
-```bash
+```
 git clone https://github.com/rifqi1146/groupbot.git
 ```
 ```
