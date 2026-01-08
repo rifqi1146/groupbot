@@ -25,7 +25,7 @@ apt install -y \
   zlib1g-dev
 
 echo
-echo "[2/5] Installing Speedtest (Ookla CLI)..."
+echo "[2/5] Installing Speedtest Ookla..."
 
 if ! command -v speedtest >/dev/null 2>&1; then
   ARCH=$(uname -m)
@@ -72,10 +72,9 @@ echo
 echo "[5/5] Done!"
 echo
 echo "Next steps:"
-echo "1. Copy .env.example to .env"
-echo "2. nano .env"
-echo "3. Fill BOT_TOKEN and API keys"
-echo "4. Run:"
+echo "1. nano .env"
+echo "2. Fill BOT_TOKEN and API keys"
+echo "3. Run:"
 echo "   source venv/bin/activate"
 echo "   python bot.py"
 echo
