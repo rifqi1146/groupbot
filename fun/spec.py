@@ -5,6 +5,7 @@ from utils.http import get_http_session
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 
+
 def extract_infobox(wikitext: str) -> str | None:
     start = wikitext.find("{{Infobox mobile phone")
     if start == -1:
@@ -12,15 +13,55 @@ def extract_infobox(wikitext: str) -> str | None:
 
     depth = 0
     for i in range(start, len(wikitext)):
-        if wikitext[i:i+2] == "{{":
+        if wikitext[i:i + 2] == "{{":
             depth += 1
-        elif wikitext[i:i+2] == "}}":
+        elif wikitext[i:i + 2] == "}}":
             depth -= 1
             if depth == 0:
-                return wikitext[start:i+2]
+                return wikitext[start:i + 2]
 
     return None
-    
+
+
+def normalize_key(key: str) -> str | None:
+    key = key.strip().lower()
+
+    aliases = {
+        "network": "networks",
+        "networks": "networks",
+
+        "released": "released",
+        "available": "released",
+
+        "display": "display",
+
+        "soc": "soc",
+        "chipset": "soc",
+
+        "cpu": "cpu",
+        "gpu": "gpu",
+
+        "ram": "memory",
+        "memory": "memory",
+
+        "storage": "storage",
+
+        "battery": "battery",
+        "charging": "charging",
+
+        "rear_camera": "rear_camera",
+        "main_camera": "rear_camera",
+        "camera": "rear_camera",
+
+        "front_camera": "front_camera",
+        "selfie_camera": "front_camera",
+
+        "os": "os",
+    }
+
+    return aliases.get(key)
+
+
 def clean_wikitext(text: str) -> str:
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
@@ -34,10 +75,11 @@ def clean_wikitext(text: str) -> str:
         text
     )
 
-    text = re.sub(r"\{\{[^}]+\}\}", "", text)
+    text = re.sub(r"\{\{[^|}]+\}\}", "", text)
 
     return text.strip()
-    
+
+
 async def wiki_search(query: str):
     session = await get_http_session()
     params = {
@@ -71,7 +113,6 @@ async def wiki_search(query: str):
 
 async def wiki_specs(title: str):
     session = await get_http_session()
-
     params = {
         "action": "parse",
         "page": title.replace(" ", "_"),
@@ -99,7 +140,7 @@ async def wiki_specs(title: str):
     if not infobox:
         return None
 
-    IMPORTANT_KEYS = {
+    LABELS = {
         "networks": "Network",
         "released": "Release",
         "display": "Display",
@@ -111,21 +152,35 @@ async def wiki_specs(title: str):
         "battery": "Battery",
         "charging": "Charging",
         "rear_camera": "Rear Camera",
-        "front_camera": "Front Camera"
+        "front_camera": "Front Camera",
+        "os": "OS",
     }
 
-    lines = []
+    collected = {}
 
     for raw in infobox.split("\n"):
         if "=" not in raw:
             continue
 
-        key, val = raw.split("=", 1)
-        key = key.strip().lower()
-        val = clean_wikitext(val)
+        raw_key, val = raw.split("=", 1)
+        key = normalize_key(raw_key)
+        if not key:
+            continue
 
-        if key in IMPORTANT_KEYS and val:
-            lines.append(f"• <b>{IMPORTANT_KEYS[key]}</b>: {val}")
+        val = clean_wikitext(val)
+        if not val:
+            continue
+
+        if key not in collected:
+            collected[key] = val
+
+    if not collected:
+        return "ℹ️ Data terbatas."
+
+    lines = []
+    for key, label in LABELS.items():
+        if key in collected:
+            lines.append(f"• <b>{label}</b>: {collected[key]}")
 
     return "\n".join(lines)
 
