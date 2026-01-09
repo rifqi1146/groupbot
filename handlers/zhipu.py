@@ -176,10 +176,10 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not final_prompt:
         return await status.edit_text(
-            "<b>❓ Zhipu AI</b>\n\n"
+            "<b>❓ GLM AI</b>\n\n"
             "Contoh:\n"
-            "<code>/zhipu jelasin relativitas</code>\n"
-            "<i>atau reply pesan / foto lalu ketik /zhipu</i>",
+            "<code>/glm jelasin relativitas</code>\n"
+            "<i>atau reply pesan / foto lalu ketik /glm</i>",
             parse_mode="HTML"
         )
 
