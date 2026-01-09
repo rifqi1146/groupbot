@@ -19,12 +19,12 @@ from utils.config import (
 )
 
 ZHIPU_MAX_TOKENS = 2048
-ZHIPU_TEMPERATURE = 0.95
-ZHIPU_TOP_P = 0.9
+ZHIPU_TEMPERATURE = 0.85
+ZHIPU_TOP_P = 0.8
 
 
 SYSTEM_PROMPT = (
-    "Jawab SELALU menggunakan Bahasa Indonesia yang santai fun, dan friendly, "
+    "Jawab selalu menggunakan Bahasa Indonesia yang santai fun, dan friendly, "
     "jelas ala gen z tapi tetap mudah dipahami tapi tetep asik, pake emote yg banyak juga gapapa. "
     "Jangan gunakan Bahasa Inggris kecuali diminta. "
     "Jawab langsung ke intinya. "
