@@ -62,10 +62,12 @@ GROQ_API_KEY=
 BOT_OWNER_ID=
 LOG_CHAT_ID=
 OPENROUTER_API_KEY=
+ZHIPU_API_KEY=
 ```
 ```
 source .env
 ```
+### 💨 Run Bot
 ```
 python bot.py
 ```
