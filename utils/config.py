@@ -49,4 +49,4 @@ GROQ_MEMORY = {}
 #zhipu glm model
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-ZHIPU_MODEL = "glm-4"
+ZHIPU_MODEL = "glm-4.6v-flash"
