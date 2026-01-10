@@ -24,6 +24,7 @@ from utils.config import (
     ZHIPU_API_KEY,
 )
 
+_ZHIPU_ACTIVE_USERS = {}
 ZHIPU_MAX_TOKENS = 2048
 ZHIPU_TEMPERATURE = 0.95
 ZHIPU_TOP_P = 0.95
@@ -86,12 +87,27 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = msg.from_user.id
     prompt = ""
+    is_command = False
 
-    if context.args:
-        prompt = " ".join(context.args).strip()
+    if context.args is not None:
+        is_command = True
+        if context.args:
+            prompt = " ".join(context.args).strip()
+        else:
+            _ZHIPU_ACTIVE_USERS.pop(user_id, None)
+            return await msg.reply_text(
+                "<b>🤖 GLM AI</b>\n\n"
+                "Contoh:\n"
+                "<code>/glm jelasin relativitas</code>\n"
+                "<i>atau reply gambar (text only) dan ketik /glm </i>",
+                parse_mode="HTML"
+            )
+
     elif msg.reply_to_message:
         rm = msg.reply_to_message
         if not rm.from_user or not rm.from_user.is_bot:
+            return
+        if not _ZHIPU_ACTIVE_USERS.get(user_id):
             return
         if msg.text:
             prompt = msg.text.strip()
@@ -109,6 +125,7 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo = msg.reply_to_message.photo[-1]
         ocr_text = await extract_text_from_photo(context.bot, photo.file_id)
         if not ocr_text:
+            _ZHIPU_ACTIVE_USERS.pop(user_id, None)
             return await status.edit_text(
                 "❌ <b>Teks di gambar tidak terbaca</b>",
                 parse_mode="HTML"
@@ -135,12 +152,15 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean)
 
+        _ZHIPU_ACTIVE_USERS[user_id] = True
+
         await status.edit_text(chunks[0], parse_mode="HTML")
         for ch in chunks[1:]:
             await asyncio.sleep(0.25)
             await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
+        _ZHIPU_ACTIVE_USERS.pop(user_id, None)
         await status.edit_text(
             f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
