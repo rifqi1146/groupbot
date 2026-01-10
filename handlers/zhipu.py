@@ -40,65 +40,24 @@ SYSTEM_PROMPT = (
 _USER_MEMORY: Dict[int, List[dict]] = {}
 
 
-async def zhipu_chat(user_id: int, prompt: str) -> str:
-    if not ZHIPU_API_KEY:
-        raise RuntimeError("ZHIPU_API_KEY belum diset")
-
-    history = _USER_MEMORY.get(user_id, [])
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
-    messages.append({"role": "user", "content": prompt})
-
-    payload = {
-        "model": ZHIPU_MODEL,
-        "messages": messages,
-        "max_tokens": ZHIPU_MAX_TOKENS,
-        "temperature": ZHIPU_TEMPERATURE,
-        "top_p": ZHIPU_TOP_P,
-    }
-
-    headers = {
-        "Authorization": f"Bearer {ZHIPU_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    session = await get_http_session()
-    async with session.post(
-        ZHIPU_URL,
-        headers=headers,
-        json=payload,
-        timeout=aiohttp.ClientTimeout(total=60),
-    ) as resp:
-        if resp.status != 200:
-            raise RuntimeError(await resp.text())
-        data = await resp.json()
-
-    answer = data["choices"][0]["message"]["content"].strip()
-
-    history.append({"role": "user", "content": prompt})
-    history.append({"role": "assistant", "content": answer})
-    _USER_MEMORY[user_id] = history[-ZHIPU_MEMORY_LIMIT:]
-
-    return answer
-
-
 async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
-    if not msg:
+    if not msg or not msg.from_user:
         return
 
     user_id = msg.from_user.id
     prompt = ""
-    is_followup = False
 
     if context.args:
         prompt = " ".join(context.args).strip()
     elif msg.reply_to_message:
-        if msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot:
-            is_followup = True
-            if msg.text:
-                prompt = msg.text.strip()
-            elif msg.caption:
-                prompt = msg.caption.strip()
+        rm = msg.reply_to_message
+        if not rm.from_user or not rm.from_user.is_bot:
+            return
+        if msg.text:
+            prompt = msg.text.strip()
+        elif msg.caption:
+            prompt = msg.caption.strip()
 
     if not prompt:
         return
@@ -110,7 +69,6 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
         photo = msg.reply_to_message.photo[-1]
         ocr_text = await extract_text_from_photo(context.bot, photo.file_id)
-
         if not ocr_text:
             return await status.edit_text(
                 "❌ <b>Teks di gambar tidak terbaca</b>",

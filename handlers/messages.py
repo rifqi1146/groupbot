@@ -44,3 +44,8 @@ def register_messages(app):
         MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
         group=-2
     )
+    
+    app.add_handler(
+        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, zhipu_cmd),
+        group=-1
+    )
