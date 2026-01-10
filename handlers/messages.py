@@ -7,7 +7,7 @@ from handlers.dl import auto_dl_detect
 from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
-
+from handlers.zhipu import zhipu_cmd
 
 def register_messages(app):
     app.add_handler(
