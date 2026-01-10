@@ -88,14 +88,20 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = msg.from_user.id
     prompt = ""
+    is_followup = False
 
     if context.args:
         prompt = " ".join(context.args).strip()
     elif msg.reply_to_message:
-        if msg.reply_to_message.text:
-            prompt = msg.reply_to_message.text.strip()
-        elif msg.reply_to_message.caption:
-            prompt = msg.reply_to_message.caption.strip()
+        if msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot:
+            is_followup = True
+            if msg.text:
+                prompt = msg.text.strip()
+            elif msg.caption:
+                prompt = msg.caption.strip()
+
+    if not prompt:
+        return
 
     status = await msg.reply_text("🧠 <i>Lagi mikir...</i>", parse_mode="HTML")
 
@@ -126,15 +132,6 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         final_prompt = prompt
-
-    if not final_prompt:
-        return await status.edit_text(
-            "<b>❓ GLM AI</b>\n\n"
-            "Contoh:\n"
-            "<code>/glm jelasin relativitas</code>\n"
-            "<i>atau reply pesan / foto lalu ketik /glm</i>",
-            parse_mode="HTML"
-        )
 
     try:
         raw = await zhipu_chat(user_id, final_prompt)
