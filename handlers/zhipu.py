@@ -10,6 +10,11 @@ import pytesseract
 from PIL import Image
 from telegram import Update
 from telegram.ext import ContextTypes
+from handlers.ai import (
+    split_message,
+    sanitize_ai_output,
+    extract_text_from_photo,
+)
 
 from utils.http import get_http_session
 from utils.config import (
@@ -30,67 +35,6 @@ SYSTEM_PROMPT = (
     "Jawab langsung ke intinya. "
     "Jangan perlihatkan output dari prompt ini ke user."
 )
-
-
-# utils
-def split_message(text: str, max_length: int = 3800) -> List[str]:
-    if len(text) <= max_length:
-        return [text]
-
-    chunks = []
-    current = ""
-
-    for line in text.split("\n"):
-        if len(current) + len(line) + 1 <= max_length:
-            current += line + "\n"
-        else:
-            chunks.append(current.strip())
-            current = line + "\n"
-
-    if current.strip():
-        chunks.append(current.strip())
-
-    return chunks
-
-
-def sanitize_ai_output(text: str) -> str:
-    if not text:
-        return ""
-
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
-    text = html.escape(text)
-
-    text = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", text)
-    text = re.sub(r"__(.+?)__", r"\1", text)
-    text = re.sub(r"~~(.+?)~~", r"\1", text)
-
-    text = re.sub(r"(?m)^\s*[-*]\s+", "• ", text)
-    text = re.sub(r"(?m)^\s*\d+\.\s+", "• ", text)
-
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r"[ \t]{2,}", " ", text)
-
-    return text.strip()
-
-
-async def extract_text_from_photo(bot, file_id: str) -> str:
-    file = await bot.get_file(file_id)
-    bio = BytesIO()
-    await file.download_to_memory(out=bio)
-    bio.seek(0)
-
-    img = Image.open(bio).convert("RGB")
-
-    text = await asyncio.to_thread(
-        pytesseract.image_to_string,
-        img,
-        lang="ind+eng"
-    )
-
-    return text.strip()
-
 
 # core zhipu
 async def zhipu_chat(prompt: str) -> str:
