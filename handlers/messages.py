@@ -8,7 +8,6 @@ from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
 from handlers.zhipu import zhipu_cmd
-from handlers.groq import groq_query 
 
 def register_messages(app):
     app.add_handler(
@@ -48,6 +47,6 @@ def register_messages(app):
     
     app.add_handler(
         MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, zhipu_cmd),
-        group=-2
+        group=-1
     )
     
