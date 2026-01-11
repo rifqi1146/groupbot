@@ -1,3 +1,12 @@
+import re
+import html
+import asyncio
+from io import BytesIO
+from typing import List
+
+import pytesseract
+from PIL import Image
+
 #split
 def split_message(text: str, max_length: int = 4000) -> List[str]:
     """
