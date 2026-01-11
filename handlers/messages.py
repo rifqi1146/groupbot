@@ -8,6 +8,7 @@ from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
 from handlers.zhipu import zhipu_cmd
+from fun.quiz import quiz_answer
 
 def register_messages(app):
     app.add_handler(
@@ -50,3 +51,7 @@ def register_messages(app):
         group=-1
     )
     
+    app.add_handler(
+        MessageHandler(filters.TEXT & filters.REPLY & ~filters.COMMAND, quiz_answer),
+        group=-1
+    )
