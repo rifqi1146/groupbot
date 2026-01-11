@@ -53,5 +53,5 @@ def register_messages(app):
     
     app.add_handler(
         MessageHandler(filters.TEXT & filters.REPLY & ~filters.COMMAND, quiz_answer),
-        group=-1
+        group=100
     )
