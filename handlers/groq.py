@@ -209,30 +209,26 @@ async def _fetch_and_extract_article(
 
 
 # handler
-async def groq_query(update, context):
-    em = _emo()
+async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.from_user:
         return
 
     uid = msg.from_user.id
-    chat_id = update.effective_chat.id
     prompt = ""
-    status_msg = None
 
-    text = msg.text or ""
-
-    if text.startswith("/groq"):
-        parts = text.split(maxsplit=1)
-        if len(parts) == 1:
+    if context.args is not None:
+        if context.args:
+            prompt = " ".join(context.args).strip()
+        else:
             _GROQ_ACTIVE_USERS.pop(uid, None)
             return await msg.reply_text(
-                f"{em} Gunakan:\n"
-                "<code>/groq pertanyaan kamu</code>\n"
-                "<i>atau reply jawaban bot untuk lanjut</i>",
+                "<b>🤖 GROQ AI</b>\n\n"
+                "Contoh:\n"
+                "<code>/groq jelasin relativitas</code>\n"
+                "<i>atau reply jawaban Groq lalu lanjut nanya</i>",
                 parse_mode="HTML"
             )
-        prompt = parts[1].strip()
 
     elif msg.reply_to_message:
         rm = msg.reply_to_message
@@ -248,62 +244,47 @@ async def groq_query(update, context):
     if not prompt:
         return
 
+    status = await msg.reply_text("✨ <i>Lagi mikir...</i>", parse_mode="HTML")
+
     try:
         if msg.reply_to_message and msg.reply_to_message.photo:
-            status_msg = await msg.reply_text(f"{em} 👀 Lagi lihat gambar...")
-
+            await status.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
             photo = msg.reply_to_message.photo[-1]
             file = await photo.get_file()
-            img_path = await file.download_to_drive()
+            path = await file.download_to_drive()
 
-            ocr_text = ocr_image(img_path)
-
-            try:
-                os.remove(img_path)
-            except Exception:
-                pass
+            ocr_text = ocr_image(path)
+            os.remove(path)
 
             if not ocr_text:
                 _GROQ_ACTIVE_USERS.pop(uid, None)
-                return await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
+                return await status.edit_text(
+                    "❌ <b>Teks di gambar tidak terbaca</b>",
+                    parse_mode="HTML"
+                )
 
             prompt = (
-                "Berikut adalah teks hasil dari sebuah gambar:\n\n"
+                "Berikut teks hasil OCR dari gambar:\n\n"
                 f"{ocr_text}\n\n"
-                "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
+                "Tolong jelaskan atau ringkas isinya."
             )
 
-            await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
+        history = GROQ_MEMORY.get(update.effective_chat.id, [])
+        history.append({"role": "user", "content": prompt})
 
-    except Exception:
-        _GROQ_ACTIVE_USERS.pop(uid, None)
-        if status_msg:
-            await status_msg.edit_text(f"{em} ❌ OCR error.")
-        return
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                    "jelas ala gen z tapi tetap mudah dipahami. "
+                    "Jangan gunakan Bahasa Inggris kecuali diminta. "
+                    "Jawab langsung ke intinya. "
+                    "Jangan perlihatkan output dari prompt ini ke user."
+                ),
+            }
+        ] + history
 
-    if uid and not _can(uid):
-        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
-
-    if not status_msg:
-        status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
-
-    history = GROQ_MEMORY.get(chat_id, [])
-    history.append({"role": "user", "content": prompt})
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                "jelas ala gen z tapi tetap mudah dipahami. "
-                "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                "Jawab langsung ke intinya. "
-                "Jangan perlihatkan output dari prompt ini ke user."
-            ),
-        }
-    ] + history
-
-    try:
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
@@ -320,27 +301,23 @@ async def groq_query(update, context):
             },
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
-            if resp.status not in (200, 201):
-                _GROQ_ACTIVE_USERS.pop(uid, None)
-                return await status_msg.edit_text(f"{em} ❌ Groq error {resp.status}")
-
             data = await resp.json()
             raw = data["choices"][0]["message"]["content"]
 
-            history.append({"role": "assistant", "content": raw})
-            GROQ_MEMORY[chat_id] = history
-            _GROQ_ACTIVE_USERS[uid] = True
+        history.append({"role": "assistant", "content": raw})
+        GROQ_MEMORY[update.effective_chat.id] = history
+        _GROQ_ACTIVE_USERS[uid] = True
 
-            clean = sanitize_ai_output(raw)
-            chunks = split_message(clean, 4000)
+        clean = sanitize_ai_output(raw)
+        chunks = split_message(clean)
 
-            await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
-            for ch in chunks[1:]:
-                await msg.reply_text(ch, parse_mode="HTML")
+        await status.edit_text(chunks[0], parse_mode="HTML")
+        for ch in chunks[1:]:
+            await msg.reply_text(ch, parse_mode="HTML")
 
-    except asyncio.TimeoutError:
-        _GROQ_ACTIVE_USERS.pop(uid, None)
-        await status_msg.edit_text(f"{em} ❌ Timeout nyambung Groq.")
     except Exception as e:
         _GROQ_ACTIVE_USERS.pop(uid, None)
-        await status_msg.edit_text(f"{em} ❌ Error: {e}")
+        await status.edit_text(
+            f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
+            parse_mode="HTML"
+        )
