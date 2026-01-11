@@ -51,7 +51,3 @@ def register_messages(app):
         group=-2
     )
     
-    app.add_handler(
-        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, groq_query),
-        group=-3
-    )

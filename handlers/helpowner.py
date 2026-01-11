@@ -29,11 +29,6 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/wlc</code> — configure welcome message\n"
         "• <code>/restart</code> — restart the bot\n\n"
 
-        "🔞 <b>NSFW Management</b>\n"
-        "• <code>/enablensfw</code> — enable NSFW content\n"
-        "• <code>/disablensfw</code> — disable NSFW content\n"
-        "• <code>/nsfwlist</code> — list NSFW-enabled chats\n\n"
-
         "🍜 <b>Asupan Management</b>\n"
         "• <code>/enableasupan</code> — enable asupan feature\n"
         "• <code>/disableasupan</code> — disable asupan feature\n"

@@ -33,8 +33,6 @@ from utils.config import (
     GROQ_KEY,
 )
 
-_GROQ_ACTIVE_USERS = {}
-
 from utils.http import get_http_session
 
 #groq
@@ -209,82 +207,104 @@ async def _fetch_and_extract_article(
 
 
 # handler
-async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def groq_query(update, context):
+    em = _emo()
     msg = update.message
-    if not msg or not msg.from_user:
+    if not msg:
         return
 
-    uid = msg.from_user.id
-    prompt = ""
-
-    if context.args is not None:
-        if context.args:
-            prompt = " ".join(context.args).strip()
-        else:
-            _GROQ_ACTIVE_USERS.pop(uid, None)
-            return await msg.reply_text(
-                "<b>🤖 GROQ AI</b>\n\n"
-                "Contoh:\n"
-                "<code>/groq jelasin relativitas</code>\n"
-                "<i>atau reply jawaban Groq lalu lanjut nanya</i>",
-                parse_mode="HTML"
-            )
-
-    elif msg.reply_to_message:
-        rm = msg.reply_to_message
-        if not rm.from_user or not rm.from_user.is_bot:
-            return
-        if not _GROQ_ACTIVE_USERS.get(uid):
-            return
-        if msg.text:
-            prompt = msg.text.strip()
-        elif msg.caption:
-            prompt = msg.caption.strip()
-
-    if not prompt:
-        return
-
-    status = await msg.reply_text("✨ <i>Lagi mikir...</i>", parse_mode="HTML")
+    chat_id = update.effective_chat.id
+    prompt = _extract_prompt_from_update(update, context)
+    status_msg = None
 
     try:
         if msg.reply_to_message and msg.reply_to_message.photo:
-            await status.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
+            status_msg = await msg.reply_text(f"{em} 👀 Lagi lihat gambar...")
+
             photo = msg.reply_to_message.photo[-1]
             file = await photo.get_file()
-            path = await file.download_to_drive()
+            img_path = await file.download_to_drive()
 
-            ocr_text = ocr_image(path)
-            os.remove(path)
+            ocr_text = ocr_image(img_path)
+
+            try:
+                os.remove(img_path)
+            except Exception:
+                pass
 
             if not ocr_text:
-                _GROQ_ACTIVE_USERS.pop(uid, None)
-                return await status.edit_text(
-                    "❌ <b>Teks di gambar tidak terbaca</b>",
-                    parse_mode="HTML"
-                )
+                await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
+                return
 
             prompt = (
-                "Berikut teks hasil OCR dari gambar:\n\n"
+                "Berikut adalah teks hasil dari sebuah gambar:\n\n"
                 f"{ocr_text}\n\n"
-                "Tolong jelaskan atau ringkas isinya."
+                "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
             )
 
-        history = GROQ_MEMORY.get(update.effective_chat.id, [])
-        history.append({"role": "user", "content": prompt})
+            await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                    "jelas ala gen z tapi tetap mudah dipahami. "
-                    "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                    "Jawab langsung ke intinya. "
-                    "Jangan perlihatkan output dari prompt ini ke user."
-                ),
-            }
-        ] + history
+    except Exception:
+        logger.exception("OCR failed")
+        if status_msg:
+            await status_msg.edit_text(f"{em} ❌ OCR error.")
+        return
 
+    if not prompt:
+        await msg.reply_text(
+            f"{em} Gunakan:\n"
+            "$groq <pertanyaan>\n"
+            "atau reply pesan bot / gambar lalu ketik $groq"
+        )
+        return
+
+    uid = msg.from_user.id if msg.from_user else 0
+    if uid and not _can(uid):
+        await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
+        return
+
+    if not status_msg:
+        status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
+
+    prompt = prompt.strip()
+    if not prompt:
+        await status_msg.edit_text(f"{em} ❌ Prompt kosong.")
+        return
+
+    urls = _find_urls(prompt)
+    if urls:
+        first_url = urls[0]
+        if first_url.startswith("http"):
+            await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
+            title, text = await _fetch_and_extract_article(first_url)
+            if text:
+                prompt = (
+                    f"Artikel sumber: {first_url}\n\n"
+                    f"{text}\n\n"
+                    "Ringkas dengan bullet point + kesimpulan singkat."
+                )
+
+    history = GROQ_MEMORY.get(chat_id, [])
+
+    if not (msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot):
+        history = []
+
+    history.append({"role": "user", "content": prompt})
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                "jelas ala gen z tapi tetap mudah dipahami. "
+                "Jangan gunakan Bahasa Inggris kecuali diminta. "
+                "Jawab langsung ke intinya. "
+                "Jangan perlihatkan output dari prompt ini ke user."
+            ),
+        }
+    ] + history
+
+    try:
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
@@ -301,23 +321,25 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             },
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
+            if resp.status not in (200, 201):
+                await status_msg.edit_text(f"{em} ❌ Groq error {resp.status}")
+                return
+
             data = await resp.json()
             raw = data["choices"][0]["message"]["content"]
 
-        history.append({"role": "assistant", "content": raw})
-        GROQ_MEMORY[update.effective_chat.id] = history
-        _GROQ_ACTIVE_USERS[uid] = True
+            history.append({"role": "assistant", "content": raw})
+            GROQ_MEMORY[chat_id] = history
 
-        clean = sanitize_ai_output(raw)
-        chunks = split_message(clean)
+            clean = sanitize_ai_output(raw)
+            chunks = split_message(clean, 4000)
 
-        await status.edit_text(chunks[0], parse_mode="HTML")
-        for ch in chunks[1:]:
-            await msg.reply_text(ch, parse_mode="HTML")
+            await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
+            for ch in chunks[1:]:
+                await msg.reply_text(ch, parse_mode="HTML")
 
+    except asyncio.TimeoutError:
+        await status_msg.edit_text(f"{em} ❌ Timeout nyambung Groq.")
     except Exception as e:
-        _GROQ_ACTIVE_USERS.pop(uid, None)
-        await status.edit_text(
-            f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
-            parse_mode="HTML"
-        )
+        logger.exception("groq_query failed")
+        await status_msg.edit_text(f"{em} ❌ Error: {e}")
