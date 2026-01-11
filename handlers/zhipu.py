@@ -128,10 +128,8 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = msg.from_user.id
     prompt = ""
-    is_command = False
 
     if context.args is not None:
-        is_command = True
         if context.args:
             prompt = " ".join(context.args).strip()
         else:
@@ -140,15 +138,16 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<b>🤖 GLM AI</b>\n\n"
                 "Contoh:\n"
                 "<code>/glm jelasin relativitas</code>\n"
-                "<i>atau reply gambar (text only) dan ketik /glm </i>",
+                "<i>atau reply jawaban GLM untuk lanjut</i>",
                 parse_mode="HTML"
             )
 
     elif msg.reply_to_message:
         rm = msg.reply_to_message
-        if not rm.from_user or not rm.from_user.is_bot:
+        last_mid = _ZHIPU_ACTIVE_USERS.get(user_id)
+        if not last_mid:
             return
-        if not _ZHIPU_ACTIVE_USERS.get(user_id):
+        if rm.message_id != last_mid:
             return
         if msg.text:
             prompt = msg.text.strip()
@@ -193,7 +192,7 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean)
 
-        _ZHIPU_ACTIVE_USERS[user_id] = True
+        _ZHIPU_ACTIVE_USERS[user_id] = status.message_id
 
         await status.edit_text(chunks[0], parse_mode="HTML")
         for ch in chunks[1:]:
