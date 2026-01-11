@@ -108,7 +108,16 @@ async def _end_quiz(msg, quiz):
 
     text = "🏆 <b>HASIL QUIZ</b>\n\n"
     for i, (uid, score) in enumerate(ranking, 1):
-        text += f"{i}. <a href='tg://user?id={uid}'>User</a> — <b>{score}</b> poin\n"
+        try:
+            member = await msg.chat.get_member(uid)
+            name = html.escape(member.user.full_name)
+        except Exception:
+            name = "User"
+
+        text += (
+            f"{i}. <a href='tg://user?id={uid}'>{name}</a>"
+            f" — <b>{score}</b> poin\n"
+        )
 
     await msg.reply_text(text, parse_mode="HTML")
 
@@ -162,8 +171,16 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         quiz["answered"].add(uid)
 
-        if ans == quiz["data"]["answer"]:
-            quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
+        correct = quiz["data"]["answer"]
+
+    if ans == correct:
+        quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
+        await msg.reply_text("✅ <b>Benar!</b>", parse_mode="HTML")
+    else:
+        await msg.reply_text(
+            f"❌ <b>Salah.</b> Jawaban benar: <b>{correct}</b>",
+            parse_mode="HTML"
+        )
 
     if quiz["current"] >= QUIZ_TOTAL - 1:
         _ACTIVE_QUIZ.pop(chat_id, None)
