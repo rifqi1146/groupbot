@@ -16,18 +16,26 @@ from utils.config import (
 )
 
 QUIZ_TIMEOUT = 30
+QUIZ_TOTAL = 10
 
 _ACTIVE_QUIZ = {}
 
 _EMOS = ["🧠", "🎯", "🔥", "✨", "📚"]
-def _emo(): 
+def _emo():
     return random.choice(_EMOS)
 
 
 async def _generate_question() -> dict:
     prompt = (
-        "Buatkan 1 soal pilihan ganda pengetahuan umum "
-        "Bahasa Indonesia.\n\n"
+        "Buatkan 1 soal pilihan ganda tingkat umum.\n"
+        "Topik ACAK dari:\n"
+        "- Pengetahuan umum\n"
+        "- Ilmu pengetahuan alam\n"
+        "- Ilmu pengetahuan sosial\n"
+        "- Teknologi / coding\n"
+        "- Sejarah\n"
+        "- Politik\n\n"
+        "Gunakan Bahasa Indonesia.\n\n"
         "Format WAJIB JSON:\n"
         "{\n"
         '  "question": "...",\n'
@@ -45,17 +53,11 @@ async def _generate_question() -> dict:
     payload = {
         "model": GROQ_MODEL,
         "messages": [
-            {
-                "role": "system",
-                "content": "Kamu adalah pembuat soal quiz Bahasa Indonesia."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "system", "content": "Kamu adalah pembuat soal quiz profesional."},
+            {"role": "user", "content": prompt},
         ],
-        "temperature": 0.8,
-        "max_tokens": 512
+        "temperature": 0.85,
+        "max_tokens": 512,
     }
 
     session = await get_http_session()
@@ -79,19 +81,36 @@ async def _generate_question() -> dict:
 
 async def _send_question(msg, quiz):
     q = quiz["data"]
+    no = quiz["current"] + 1
+
     text = (
-        f"{_emo()} <b>QUIZ</b>\n\n"
+        f"{_emo()} <b>QUIZ {no}/{QUIZ_TOTAL}</b>\n\n"
         f"<b>{html.escape(q['question'])}</b>\n\n"
         f"A. {html.escape(q['options']['A'])}\n"
         f"B. {html.escape(q['options']['B'])}\n"
         f"C. {html.escape(q['options']['C'])}\n"
         f"D. {html.escape(q['options']['D'])}\n\n"
-        f"<i>Reply A / B / C / D</i>"
+        f"<i>Reply A / B / C / D (30 detik)</i>"
     )
 
     sent = await msg.reply_text(text, parse_mode="HTML")
     quiz["message_id"] = sent.message_id
     quiz["start"] = time.time()
+    quiz["answered"] = set()
+
+
+async def _end_quiz(msg, quiz):
+    scores = quiz["scores"]
+    if not scores:
+        return await msg.reply_text("😴 Quiz selesai. Tidak ada yang menjawab.")
+
+    ranking = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+    text = "🏆 <b>HASIL QUIZ</b>\n\n"
+    for i, (uid, score) in enumerate(ranking, 1):
+        text += f"{i}. <a href='tg://user?id={uid}'>User</a> — <b>{score}</b> poin\n"
+
+    await msg.reply_text(text, parse_mode="HTML")
 
 
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,10 +120,16 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
 
+    if chat_id in _ACTIVE_QUIZ:
+        return await msg.reply_text("⚠️ Quiz masih berjalan!")
+
     quiz = {
+        "current": 0,
+        "scores": {},
         "data": await _generate_question(),
+        "message_id": None,
         "start": time.time(),
-        "message_id": None
+        "answered": set(),
     }
 
     _ACTIVE_QUIZ[chat_id] = quiz
@@ -121,32 +146,33 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not quiz:
         return
 
-    if msg.reply_to_message.message_id != quiz.get("message_id"):
+    if msg.reply_to_message.message_id != quiz["message_id"]:
         return
 
     if time.time() - quiz["start"] > QUIZ_TIMEOUT:
-        _ACTIVE_QUIZ.pop(chat_id, None)
-        return await msg.reply_text("⏰ Waktu habis! Soal dilewati.")
-
-    ans = msg.text.strip().upper()
-    if ans not in ("A", "B", "C", "D"):
-        return
-
-    correct = quiz["data"]["answer"]
-
-    if ans == correct:
-        await msg.reply_text("✅ <b>Benar!</b>", parse_mode="HTML")
+        quiz["current"] += 1
     else:
-        await msg.reply_text(
-            f"❌ Salah. Jawaban benar: <b>{correct}</b>",
-            parse_mode="HTML"
-        )
+        ans = msg.text.strip().upper()
+        if ans not in ("A", "B", "C", "D"):
+            return
 
+        uid = msg.from_user.id
+        if uid in quiz["answered"]:
+            return
+
+        quiz["answered"].add(uid)
+
+        if ans == quiz["data"]["answer"]:
+            quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
+
+    if quiz["current"] >= QUIZ_TOTAL - 1:
+        _ACTIVE_QUIZ.pop(chat_id, None)
+        return await _end_quiz(msg, quiz)
+
+    quiz["current"] += 1
     try:
         quiz["data"] = await _generate_question()
-        quiz["start"] = time.time()
         await _send_question(msg, quiz)
     except Exception:
         _ACTIVE_QUIZ.pop(chat_id, None)
-        await msg.reply_text("❌ Gagal lanjut soal.")
-        
+        await msg.reply_text("❌ Quiz dihentikan (error generate soal).")
