@@ -1,6 +1,5 @@
 from telegram.ext import CommandHandler
 
-from handlers.ai import ask_cmd, ai_cmd, setmodeai_cmd, groq_query
 from handlers.nsfw import enablensfw_cmd, disablensfw_cmd, nsfwlist_cmd, pollinations_generate_nsfw
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd
 from handlers.broadcast import broadcast_cmd
@@ -19,6 +18,9 @@ from handlers.welcome import wlc_cmd
 from fun.ship import ship_cmd
 from fun.reminder import reminder_cmd
 from handlers.zhipu import zhipu_cmd, zhipuimg_cmd
+from handlers.gemini import ai_cmd, setmodeai_cmd
+from handlers.groq import groq_query
+from handlers.openrouter import ask_cmd
 
 
 from handlers.asupan import (

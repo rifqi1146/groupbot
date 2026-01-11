@@ -11,7 +11,7 @@ from PIL import Image
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from handlers.ai import (
+from utils.ai_utils import (
     split_message,
     sanitize_ai_output,
     extract_text_from_photo,
