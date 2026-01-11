@@ -220,10 +220,11 @@ async def groq_query(update, context):
     prompt = ""
     status_msg = None
 
-    if context.args is not None:
-        if context.args:
-            prompt = " ".join(context.args).strip()
-        else:
+    text = msg.text or ""
+
+    if text.startswith("/groq"):
+        parts = text.split(maxsplit=1)
+        if len(parts) == 1:
             _GROQ_ACTIVE_USERS.pop(uid, None)
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
@@ -231,6 +232,7 @@ async def groq_query(update, context):
                 "<i>atau reply jawaban bot untuk lanjut</i>",
                 parse_mode="HTML"
             )
+        prompt = parts[1].strip()
 
     elif msg.reply_to_message:
         rm = msg.reply_to_message
@@ -263,8 +265,7 @@ async def groq_query(update, context):
 
             if not ocr_text:
                 _GROQ_ACTIVE_USERS.pop(uid, None)
-                await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
-                return
+                return await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
 
             prompt = (
                 "Berikut adalah teks hasil dari sebuah gambar:\n\n"
@@ -275,9 +276,9 @@ async def groq_query(update, context):
             await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
 
     except Exception:
+        _GROQ_ACTIVE_USERS.pop(uid, None)
         if status_msg:
             await status_msg.edit_text(f"{em} ❌ OCR error.")
-        _GROQ_ACTIVE_USERS.pop(uid, None)
         return
 
     if uid and not _can(uid):
@@ -285,19 +286,6 @@ async def groq_query(update, context):
 
     if not status_msg:
         status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
-
-    urls = _find_urls(prompt)
-    if urls:
-        first_url = urls[0]
-        if first_url.startswith("http"):
-            await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
-            title, text = await _fetch_and_extract_article(first_url)
-            if text:
-                prompt = (
-                    f"Artikel sumber: {first_url}\n\n"
-                    f"{text}\n\n"
-                    "Ringkas dengan bullet point + kesimpulan singkat."
-                )
 
     history = GROQ_MEMORY.get(chat_id, [])
     history.append({"role": "user", "content": prompt})
