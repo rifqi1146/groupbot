@@ -132,7 +132,12 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args is not None:
         if context.args:
             prompt = " ".join(context.args).strip()
+
+            _USER_MEMORY.pop(user_id, None)
+            _ZHIPU_ACTIVE_USERS.pop(user_id, None)
+
         else:
+            _USER_MEMORY.pop(user_id, None)
             _ZHIPU_ACTIVE_USERS.pop(user_id, None)
             return await msg.reply_text(
                 "<b>🤖 GLM AI</b>\n\n"
@@ -143,11 +148,10 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif msg.reply_to_message:
-        rm = msg.reply_to_message
         last_mid = _ZHIPU_ACTIVE_USERS.get(user_id)
         if not last_mid:
             return
-        if rm.message_id != last_mid:
+        if msg.reply_to_message.message_id != last_mid:
             return
         if msg.text:
             prompt = msg.text.strip()
@@ -200,6 +204,7 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
+        _USER_MEMORY.pop(user_id, None)
         _ZHIPU_ACTIVE_USERS.pop(user_id, None)
         await status.edit_text(
             f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
