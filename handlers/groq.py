@@ -33,6 +33,8 @@ from utils.config import (
     GROQ_KEY,
 )
 
+_GROQ_ACTIVE_USERS = {}
+
 from utils.http import get_http_session
 
 #groq
@@ -210,12 +212,39 @@ async def _fetch_and_extract_article(
 async def groq_query(update, context):
     em = _emo()
     msg = update.message
-    if not msg:
+    if not msg or not msg.from_user:
         return
 
+    uid = msg.from_user.id
     chat_id = update.effective_chat.id
-    prompt = _extract_prompt_from_update(update, context)
+    prompt = ""
     status_msg = None
+
+    if context.args is not None:
+        if context.args:
+            prompt = " ".join(context.args).strip()
+        else:
+            _GROQ_ACTIVE_USERS.pop(uid, None)
+            return await msg.reply_text(
+                f"{em} Gunakan:\n"
+                "<code>/groq pertanyaan kamu</code>\n"
+                "<i>atau reply jawaban bot untuk lanjut</i>",
+                parse_mode="HTML"
+            )
+
+    elif msg.reply_to_message:
+        rm = msg.reply_to_message
+        if not rm.from_user or not rm.from_user.is_bot:
+            return
+        if not _GROQ_ACTIVE_USERS.get(uid):
+            return
+        if msg.text:
+            prompt = msg.text.strip()
+        elif msg.caption:
+            prompt = msg.caption.strip()
+
+    if not prompt:
+        return
 
     try:
         if msg.reply_to_message and msg.reply_to_message.photo:
@@ -233,6 +262,7 @@ async def groq_query(update, context):
                 pass
 
             if not ocr_text:
+                _GROQ_ACTIVE_USERS.pop(uid, None)
                 await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
                 return
 
@@ -245,31 +275,16 @@ async def groq_query(update, context):
             await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
 
     except Exception:
-        logger.exception("OCR failed")
         if status_msg:
             await status_msg.edit_text(f"{em} ❌ OCR error.")
+        _GROQ_ACTIVE_USERS.pop(uid, None)
         return
 
-    if not prompt:
-        await msg.reply_text(
-            f"{em} Gunakan:\n"
-            "$groq <pertanyaan>\n"
-            "atau reply pesan bot / gambar lalu ketik $groq"
-        )
-        return
-
-    uid = msg.from_user.id if msg.from_user else 0
     if uid and not _can(uid):
-        await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
-        return
+        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
 
     if not status_msg:
         status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
-
-    prompt = prompt.strip()
-    if not prompt:
-        await status_msg.edit_text(f"{em} ❌ Prompt kosong.")
-        return
 
     urls = _find_urls(prompt)
     if urls:
@@ -285,10 +300,6 @@ async def groq_query(update, context):
                 )
 
     history = GROQ_MEMORY.get(chat_id, [])
-
-    if not (msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot):
-        history = []
-
     history.append({"role": "user", "content": prompt})
 
     messages = [
@@ -322,14 +333,15 @@ async def groq_query(update, context):
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
             if resp.status not in (200, 201):
-                await status_msg.edit_text(f"{em} ❌ Groq error {resp.status}")
-                return
+                _GROQ_ACTIVE_USERS.pop(uid, None)
+                return await status_msg.edit_text(f"{em} ❌ Groq error {resp.status}")
 
             data = await resp.json()
             raw = data["choices"][0]["message"]["content"]
 
             history.append({"role": "assistant", "content": raw})
             GROQ_MEMORY[chat_id] = history
+            _GROQ_ACTIVE_USERS[uid] = True
 
             clean = sanitize_ai_output(raw)
             chunks = split_message(clean, 4000)
@@ -339,7 +351,8 @@ async def groq_query(update, context):
                 await msg.reply_text(ch, parse_mode="HTML")
 
     except asyncio.TimeoutError:
+        _GROQ_ACTIVE_USERS.pop(uid, None)
         await status_msg.edit_text(f"{em} ❌ Timeout nyambung Groq.")
     except Exception as e:
-        logger.exception("groq_query failed")
+        _GROQ_ACTIVE_USERS.pop(uid, None)
         await status_msg.edit_text(f"{em} ❌ Error: {e}")

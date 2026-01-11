@@ -42,10 +42,15 @@ def register_messages(app):
     
     app.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
-        group=-2
+        group=-1
     )
     
     app.add_handler(
         MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, zhipu_cmd),
+        group=-1
+    )
+    
+    app.add_handler(
+        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, groq_query),
         group=-1
     )
