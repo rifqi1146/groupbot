@@ -24,15 +24,31 @@ _EMOS = ["🧠", "🎯", "🔥", "✨", "📚"]
 def _emo():
     return random.choice(_EMOS)
 
+# variasi gaya soal
+_QUESTION_STYLES = [
+    "definisi konsep",
+    "sebab dan akibat",
+    "logika sederhana",
+    "kasus singkat",
+    "fakta unik",
+    "perbandingan",
+    "tebakan ilmiah ringan",
+]
+
 
 async def _generate_question() -> dict:
+    seed = random.randint(100000, 999999)
+    style = random.choice(_QUESTION_STYLES)
+
     prompt = (
+        f"[SEED:{seed}]\n"
+        f"Gaya soal: {style}\n\n"
         "Buatkan 1 soal pilihan ganda tingkat umum.\n"
         "Topik ACAK dari:\n"
         "- Pengetahuan umum\n"
-        "- Ilmu pengetahuan alam\n"
         "- Ilmu pengetahuan sosial\n"
         "- Teknologi / coding\n"
+        "- Ilmu pengetahuan alam\n"
         "- Sejarah\n"
         "- Politik\n\n"
         "Gunakan Bahasa Indonesia.\n\n"
@@ -47,6 +63,7 @@ async def _generate_question() -> dict:
         "  },\n"
         '  "answer": "A"\n'
         "}\n\n"
+        "JANGAN mengulang soal atau jawaban yang pernah muncul sebelumnya.\n"
         "Jangan beri teks lain selain JSON."
     )
 
@@ -56,7 +73,7 @@ async def _generate_question() -> dict:
             {"role": "system", "content": "Kamu adalah pembuat soal quiz profesional."},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.85,
+        "temperature": 0.95,
         "max_tokens": 512,
     }
 
@@ -158,8 +175,10 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.reply_to_message.message_id != quiz["message_id"]:
         return
 
+    # timeout
     if time.time() - quiz["start"] > QUIZ_TIMEOUT:
         quiz["current"] += 1
+        await msg.reply_text("⏰ Waktu habis!")
     else:
         ans = msg.text.strip().upper()
         if ans not in ("A", "B", "C", "D"):
@@ -170,17 +189,16 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         quiz["answered"].add(uid)
-
         correct = quiz["data"]["answer"]
 
-    if ans == correct:
-        quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
-        await msg.reply_text("✅ <b>Benar!</b>", parse_mode="HTML")
-    else:
-        await msg.reply_text(
-            f"❌ <b>Salah.</b> Jawaban benar: <b>{correct}</b>",
-            parse_mode="HTML"
-        )
+        if ans == correct:
+            quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
+            await msg.reply_text("✅ <b>Benar!</b>", parse_mode="HTML")
+        else:
+            await msg.reply_text(
+                f"❌ <b>Salah.</b> Jawaban benar: <b>{correct}</b>",
+                parse_mode="HTML"
+            )
 
     if quiz["current"] >= QUIZ_TOTAL - 1:
         _ACTIVE_QUIZ.pop(chat_id, None)

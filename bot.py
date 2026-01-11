@@ -56,6 +56,7 @@ async def post_init(app):
         await app.bot.set_my_commands([
             ("start", "Check bot status"),
             ("help", "Show help menu"),
+            ("quiz", "random soal"),
             ("ping", "Check latency"),
             ("ship", "Choose couple"),
             ("stats", "System statistics"),
