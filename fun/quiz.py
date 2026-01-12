@@ -51,7 +51,7 @@ async def _generate_question_bank() -> list:
         "- Sejarah\n"
         "- Politik\n\n"
         "Gunakan Bahasa Indonesia.\n\n"
-        "Format WAJIB JSON ARRAY:\n"
+        "Format WAJIB JSON:\n"
         "[\n"
         "  {\n"
         '    "question": "...",\n'
@@ -65,7 +65,6 @@ async def _generate_question_bank() -> list:
         "  }\n"
         "]\n\n"
         "Jawaban random A/B/C/D.\n"
-        "Jangan ulangi soal di dalam array.\n"
         "Jangan beri teks lain selain JSON."
     )
 
@@ -76,7 +75,7 @@ async def _generate_question_bank() -> list:
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.85,
-        "max_tokens": 1024,
+        "max_tokens": 2048,
     }
 
     session = await get_http_session()
