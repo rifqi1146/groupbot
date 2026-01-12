@@ -17,6 +17,7 @@ from utils.config import (
 
 QUIZ_TIMEOUT = 30
 QUIZ_TOTAL = 10
+QUIZ_MEMORY_LIMIT = 10
 
 _ACTIVE_QUIZ = {}
 
@@ -24,7 +25,6 @@ _EMOS = ["🧠", "🎯", "🔥", "✨", "📚"]
 def _emo():
     return random.choice(_EMOS)
 
-# variasi gaya soal
 _QUESTION_STYLES = [
     "definisi konsep",
     "sebab dan akibat",
@@ -36,64 +36,73 @@ _QUESTION_STYLES = [
 ]
 
 
-async def _generate_question() -> dict:
-    seed = random.randint(100000, 999999)
-    style = random.choice(_QUESTION_STYLES)
+async def _generate_question(used_questions: set) -> dict:
+    for _ in range(3):
+        seed = random.randint(100000, 999999)
+        style = random.choice(_QUESTION_STYLES)
 
-    prompt = (
-        f"[SEED:{seed}]\n"
-        f"Gaya soal: {style}\n\n"
-        "Buatkan 1 soal pilihan ganda tingkat umum.\n"
-        "Topik ACAK dari:\n"
-        "- Pengetahuan umum\n"
-        "- Ilmu pengetahuan sosial\n"
-        "- Teknologi / coding\n"
-        "- Ilmu pengetahuan alam\n"
-        "- Sejarah\n"
-        "- Politik\n\n"
-        "Gunakan Bahasa Indonesia.\n\n"
-        "Format WAJIB JSON:\n"
-        "{\n"
-        '  "question": "...",\n'
-        '  "options": {\n'
-        '    "A": "...",\n'
-        '    "B": "...",\n'
-        '    "C": "...",\n'
-        '    "D": "..."\n'
-        "  },\n"
-        '  "answer": "A"\n'
-        "}\n\n"
-        "JANGAN mengulang soal atau jawaban yang pernah muncul sebelumnya.\n"
-        "Jangan beri teks lain selain JSON."
-    )
+        prompt = (
+            f"[SEED:{seed}]\n"
+            f"Gaya soal: {style}\n\n"
+            "Buatkan 1 soal pilihan ganda tingkat umum.\n"
+            "Topik ACAK dari:\n"
+            "- Pengetahuan umum\n"
+            "- Ilmu pengetahuan sosial\n"
+            "- Teknologi / coding\n"
+            "- Ilmu pengetahuan alam\n"
+            "- Sejarah\n"
+            "- Politik\n\n"
+            "Gunakan Bahasa Indonesia.\n\n"
+            "Format WAJIB JSON:\n"
+            "{\n"
+            '  "question": "...",\n'
+            '  "options": {\n'
+            '    "A": "...",\n'
+            '    "B": "...",\n'
+            '    "C": "...",\n'
+            '    "D": "..."\n'
+            "  },\n"
+            '  "answer": "A"\n'
+            "}\n\n"
+            "Jangan ulangi soal yang mirip atau sama."
+        )
 
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content": "Kamu adalah pembuat soal quiz profesional."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.95,
-        "max_tokens": 512,
-    }
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": "Kamu adalah pembuat soal quiz profesional."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.95,
+            "max_tokens": 512,
+        }
 
-    session = await get_http_session()
-    async with session.post(
-        f"{GROQ_BASE}/chat/completions",
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {GROQ_KEY}",
-            "Content-Type": "application/json",
-        },
-        timeout=aiohttp.ClientTimeout(total=20),
-    ) as resp:
-        if resp.status != 200:
-            raise RuntimeError("Gagal generate soal")
+        session = await get_http_session()
+        async with session.post(
+            f"{GROQ_BASE}/chat/completions",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {GROQ_KEY}",
+                "Content-Type": "application/json",
+            },
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            if resp.status != 200:
+                continue
 
-        data = await resp.json()
+            data = await resp.json()
 
-    raw = data["choices"][0]["message"]["content"]
-    return json.loads(raw)
+        raw = data["choices"][0]["message"]["content"].strip()
+        q = json.loads(raw)
+
+        key = q["question"].lower()
+        if key not in used_questions:
+            used_questions.add(key)
+            if len(used_questions) > QUIZ_MEMORY_LIMIT:
+                used_questions.pop()
+            return q
+
+    raise RuntimeError("Soal duplikat terus")
 
 
 async def _send_question(msg, quiz):
@@ -149,13 +158,17 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in _ACTIVE_QUIZ:
         return await msg.reply_text("⚠️ Quiz masih berjalan!")
 
+    used_questions = set()
+    data = await _generate_question(used_questions)
+
     quiz = {
         "current": 0,
         "scores": {},
-        "data": await _generate_question(),
+        "data": data,
         "message_id": None,
         "start": time.time(),
         "answered": set(),
+        "memory": used_questions,
     }
 
     _ACTIVE_QUIZ[chat_id] = quiz
@@ -175,7 +188,6 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.reply_to_message.message_id != quiz["message_id"]:
         return
 
-    # timeout
     if time.time() - quiz["start"] > QUIZ_TIMEOUT:
         quiz["current"] += 1
         await msg.reply_text("⏰ Waktu habis!")
@@ -206,7 +218,7 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     quiz["current"] += 1
     try:
-        quiz["data"] = await _generate_question()
+        quiz["data"] = await _generate_question(quiz["memory"])
         await _send_question(msg, quiz)
     except Exception:
         _ACTIVE_QUIZ.pop(chat_id, None)
