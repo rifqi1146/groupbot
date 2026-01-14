@@ -74,8 +74,8 @@ async def _generate_question_bank() -> list:
             {"role": "system", "content": "Kamu adalah pembuat soal quiz profesional."},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.85,
-        "max_tokens": 2048,
+        "temperature": 0.95,
+        "max_tokens": 1024,
     }
 
     session = await get_http_session()
