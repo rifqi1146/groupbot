@@ -4,7 +4,6 @@ import asyncio
 import html
 import random
 import aiohttp
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -43,10 +42,10 @@ async def _generate_question_bank() -> list:
         f"[SEED:{seed}]\n"
         f"Gaya soal: {style}\n\n"
         "Buatkan 10 soal pilihan ganda tingkat umum.\n"
-        "Topik ACAK dari:\n"
+        "Topik acak dari:\n"
         "- Pengetahuan umum\n"
         "- Ilmu pengetahuan sosial\n"
-        "- Teknologi / coding\n"
+        "- Teknologi\n"
         "- Ilmu pengetahuan alam\n"
         "- Sejarah\n"
         "- Politik\n\n"
@@ -75,7 +74,7 @@ async def _generate_question_bank() -> list:
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.95,
-        "max_tokens": 1024,
+        "max_tokens": 2048,
     }
 
     session = await get_http_session()
