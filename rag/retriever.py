@@ -1,12 +1,17 @@
 from rag.loader import load_local_contexts
 
-async def retrieve_context(query: str) -> list[str]:
-    local_contexts = load_local_contexts()
+LOCAL_CONTEXTS = load_local_contexts()
 
+async def retrieve_context(query: str, limit: int = 4) -> list[str]:
     results = []
 
-    for ctx in local_contexts:
-        if query.lower() in ctx.lower():
+    q = query.lower()
+
+    for ctx in LOCAL_CONTEXTS:
+        if q in ctx.lower():
             results.append(ctx)
 
-    return results[:5]
+        if len(results) >= limit:
+            break
+
+    return results
