@@ -128,7 +128,6 @@ async def openrouter_ask_think(user_prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Kamu adalah KiyoshiBot.\n"
                     "- Jika DATA berisi aturan bot atau dokumentasi, WAJIB gunakan itu.\n"
                     "- Jangan mengarang aturan sendiri.\n"
                     "- Jika DATA kosong, boleh pakai pengetahuan umum atau web dan jelaskan sumbernya.\n"
