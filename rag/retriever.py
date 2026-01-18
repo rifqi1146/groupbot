@@ -1,17 +1,26 @@
-from rag.loader import load_local_contexts
+from typing import List
 
-LOCAL_CONTEXTS = load_local_contexts()
+async def retrieve_context(
+    query: str,
+    documents: List[str],
+    top_k: int = 3,
+) -> List[str]:
+    """
+    Ambil konteks paling relevan dari dokumen lokal
+    """
 
-async def retrieve_context(query: str, limit: int = 4) -> list[str]:
-    results = []
+    query_l = query.lower()
+    scored = []
 
-    q = query.lower()
+    for doc in documents:
+        score = 0
+        for word in query_l.split():
+            if word in doc.lower():
+                score += 1
 
-    for ctx in LOCAL_CONTEXTS:
-        if q in ctx.lower():
-            results.append(ctx)
+        if score > 0:
+            scored.append((score, doc))
 
-        if len(results) >= limit:
-            break
+    scored.sort(reverse=True, key=lambda x: x[0])
 
-    return results
+    return [doc for _, doc in scored[:top_k]]

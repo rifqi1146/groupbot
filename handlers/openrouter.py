@@ -96,7 +96,8 @@ async def openrouter_ask_think(user_prompt: str) -> str:
     # ambil konteks dari dokumen lokal
     contexts = await retrieve_context(
         user_prompt,
-        LOCAL_CONTEXTS
+        LOCAL_CONTEXTS,
+        top_k=3
     )
 
     # 2. fallback ke google search kalau lokal kosong
