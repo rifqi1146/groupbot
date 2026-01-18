@@ -37,9 +37,6 @@ from utils.config import (
   
 from utils.http import get_http_session
 
-LOCAL_CONTEXTS = load_local_contexts("data/rag_docs")
-
-
 #core function
 async def openrouter_generate_image(prompt: str) -> list[str]:
     session = await get_http_session()
