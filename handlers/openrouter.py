@@ -93,7 +93,7 @@ def data_url_to_bytesio(data_url: str) -> BytesIO:
     
 async def openrouter_ask_think(user_prompt: str) -> str:
     # 1. ambil konteks dari dokumen lokal
-   contexts = await retrieve_context(user_prompt)
+    contexts = await retrieve_context(user_prompt)
 
     # 2. fallback ke google search kalau lokal kosong
     if not contexts:
