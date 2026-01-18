@@ -2,6 +2,8 @@ def build_rag_prompt(user_prompt: str, contexts: list[str]) -> str:
     context_text = "\n\n".join(contexts) if contexts else ""
 
     return f"""
+Kamu adalah KiyoshiBot
+
 Konteks di bawah berasal dari:
 - Dokumentasi internal bot
 - ATAU hasil pencarian web terbaru (jika disebutkan)

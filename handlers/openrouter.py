@@ -90,22 +90,25 @@ def data_url_to_bytesio(data_url: str) -> BytesIO:
     return bio
     
 async def openrouter_ask_think(user_prompt: str) -> str:
-    # 1. ambil konteks lokal
-    contexts = await retrieve_context(user_prompt)
+    # 1. ambil konteks dari dokumen lokal
+    contexts = await retrieve_context(
+        user_prompt,
+        LOCAL_CONTEXTS
+    )
 
-    # 2. fallback search kalau kosong
+    # 2. fallback ke google search kalau lokal kosong
     if not contexts:
         try:
             ok, results = await google_search(user_prompt, limit=5)
             if ok and results:
                 contexts = [
-                    f"{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
+                    f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
                     for r in results
                 ]
         except Exception:
             pass
 
-    # 3. build prompt RAG
+    # 3. build RAG prompt
     rag_prompt = build_rag_prompt(user_prompt, contexts)
 
     headers = {
@@ -121,12 +124,11 @@ async def openrouter_ask_think(user_prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Jawab selalu menggunakan Bahasa Indonesia yang santai, "
-                    "jelas ala gen z tapi tetap mudah dipahami. "
-                    "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                    "Jawab langsung ke intinya. "
-                    "Jika data tidak ditemukan di konteks, "
-                    "gunakan pengetahuan umum dengan jujur dan sebutkan alasannya."
+                    "Kamu adalah KiyoshiBot.\n"
+                    "- Jika DATA berisi aturan bot atau dokumentasi, WAJIB gunakan itu.\n"
+                    "- Jangan mengarang aturan sendiri.\n"
+                    "- Jika DATA kosong, boleh pakai pengetahuan umum atau web dan jelaskan sumbernya.\n"
+                    "- Jawab pakai Bahasa Indonesia santai ala gen z."
                 ),
             },
             {
