@@ -11,7 +11,7 @@ from io import BytesIO
 from typing import List, Tuple, Optional
 from rag.retriever import retrieve_context
 from rag.prompt import build_rag_prompt
-from rag.loader import load_documents
+from rag.loader import load_local_contexts
 
 import aiohttp
 import pytesseract
