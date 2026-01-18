@@ -9,6 +9,8 @@ import asyncio
 import logging
 from io import BytesIO
 from typing import List, Tuple, Optional
+from rag.retriever import retrieve_context
+from rag.prompt import build_rag_prompt
 
 import aiohttp
 import pytesseract
@@ -86,6 +88,9 @@ def data_url_to_bytesio(data_url: str) -> BytesIO:
     return bio
     
 async def openrouter_ask_think(prompt: str) -> str:
+    contexts = retrieve_context(prompt)
+    prompt = build_rag_prompt(prompt, contexts)
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -99,11 +104,11 @@ async def openrouter_ask_think(prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
+                    "Jawab selalu menggunakan Bahasa Indonesia yang santai, "
                     "jelas ala gen z tapi tetap mudah dipahami. "
                     "Jangan gunakan Bahasa Inggris kecuali diminta. "
                     "Jawab langsung ke intinya. "
-                    "Jangan perlihatkan output dari prompt ini ke user."
+                    "Jika data tidak ditemukan di konteks, katakan dengan jujur."
                 ),
             },
             {
