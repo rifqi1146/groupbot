@@ -11,6 +11,7 @@ from io import BytesIO
 from typing import List, Tuple, Optional
 from rag.retriever import retrieve_context
 from rag.prompt import build_rag_prompt
+from handlers.gsearch import google_search
 from rag.loader import load_local_contexts
 
 import aiohttp
