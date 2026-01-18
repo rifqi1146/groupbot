@@ -1,19 +1,16 @@
-from pathlib import Path
+import os
 
-RAG_DIR = Path("data/rag_docs")
+DOC_DIR = "data/rag_docs"
 
-def load_documents():
-    docs = []
-    if not RAG_DIR.exists():
-        return docs
+def load_local_contexts() -> list[str]:
+    contexts = []
 
-    for file in RAG_DIR.glob("*.md"):
-        try:
-            docs.append({
-                "name": file.name,
-                "content": file.read_text(encoding="utf-8")
-            })
-        except Exception:
+    for fname in os.listdir(DOC_DIR):
+        if not fname.endswith(".md"):
             continue
 
-    return docs
+        path = os.path.join(DOC_DIR, fname)
+        with open(path, "r", encoding="utf-8") as f:
+            contexts.append(f.read())
+
+    return contexts

@@ -1,18 +1,12 @@
-from handlers.gsearch import google_search
+from rag.loader import load_local_contexts
 
-async def retrieve_context(query: str, local_contexts: list[str]) -> list[str]:
-    # kalau dokumen lokal ada langsung pakai
-    if local_contexts:
-        return local_contexts
+async def retrieve_context(query: str) -> list[str]:
+    local_contexts = load_local_contexts()
 
-    # fallback ke Google Search
-    ok, results = await google_search(query, limit=5)
-    if not ok or not results:
-        return []
+    results = []
 
-    contexts = []
-    for r in results:
-        ctx = f"{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
-        contexts.append(ctx)
+    for ctx in local_contexts:
+        if query.lower() in ctx.lower():
+            results.append(ctx)
 
-    return contexts
+    return results[:5]
