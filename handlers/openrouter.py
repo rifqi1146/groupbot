@@ -87,9 +87,12 @@ def data_url_to_bytesio(data_url: str) -> BytesIO:
     bio.seek(0)
     return bio
     
-async def openrouter_ask_think(prompt: str) -> str:
-    contexts = retrieve_context(prompt)
-    prompt = build_rag_prompt(prompt, contexts)
+async def openrouter_ask_think(user_prompt: str) -> str:
+    # ambil konteks
+    contexts = await retrieve_context(user_prompt)
+
+    # RAG prompt
+    rag_prompt = build_rag_prompt(user_prompt, contexts)
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -108,12 +111,13 @@ async def openrouter_ask_think(prompt: str) -> str:
                     "jelas ala gen z tapi tetap mudah dipahami. "
                     "Jangan gunakan Bahasa Inggris kecuali diminta. "
                     "Jawab langsung ke intinya. "
-                    "Jika data tidak ditemukan di konteks, katakan dengan jujur."
+                    "Jika data tidak ditemukan di konteks, "
+                    "gunakan pengetahuan umum dengan jujur dan sebutkan alasannya."
                 ),
             },
             {
                 "role": "user",
-                "content": prompt,
+                "content": rag_prompt,
             },
         ],
     }

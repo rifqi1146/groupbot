@@ -1,20 +1,18 @@
-from .loader import load_documents
-from .chunker import chunk_text
+from handlers.gsearch import google_search
 
-_DOCS = load_documents()
+async def retrieve_context(query: str, local_contexts: list[str]) -> list[str]:
+    # kalau dokumen lokal ada langsung pakai
+    if local_contexts:
+        return local_contexts
 
-def retrieve_context(query: str, limit: int = 3):
-    if not query:
+    # fallback ke Google Search
+    ok, results = await google_search(query, limit=5)
+    if not ok or not results:
         return []
 
-    q = query.lower()
-    scored = []
+    contexts = []
+    for r in results:
+        ctx = f"{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
+        contexts.append(ctx)
 
-    for doc in _DOCS:
-        for chunk in chunk_text(doc["content"]):
-            score = sum(1 for w in q.split() if w in chunk.lower())
-            if score > 0:
-                scored.append((score, chunk))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [c for _, c in scored[:limit]]
+    return contexts
