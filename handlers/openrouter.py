@@ -89,11 +89,18 @@ def data_url_to_bytesio(data_url: str) -> BytesIO:
     return bio
     
 async def openrouter_ask_think(user_prompt: str) -> str:
-    # ambil konteks
-    contexts = await retrieve_context(user_prompt)
+    contexts = await retrieve_context(prompt)
 
-    # RAG prompt
-    rag_prompt = build_rag_prompt(user_prompt, contexts)
+    if not contexts:
+        # fallback ke google search
+        ok, results = await google_search(prompt, limit=5)
+        if ok and results:
+            contexts = [
+                f"{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
+                for r in results
+            ]
+    
+    prompt = build_rag_prompt(prompt, contexts)
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
