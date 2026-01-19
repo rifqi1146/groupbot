@@ -1,5 +1,6 @@
 from telegram.ext import MessageHandler, filters
 
+
 from handlers.logger import log_commands
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
@@ -7,8 +8,8 @@ from handlers.dl import auto_dl_detect
 from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
-from handlers.zhipu import zhipu_cmd
-from handlers.groqllama import meta_query
+from handlers.zhipu import zhipu_cmd, _ZHIPU_ACTIVE_USERS
+from handlers.groqllama import meta_query, _META_ACTIVE_USERS
 from fun.quiz import quiz_answer
 
 async def ai_reply_router(update, context):
