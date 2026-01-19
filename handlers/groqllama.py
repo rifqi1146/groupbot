@@ -332,7 +332,7 @@ async def meta_query(update, context):
                     "Ringkas dengan bullet point + kesimpulan singkat."
                 )
 
-    history = GROQ_MEMORY.get(chat_id, [])
+    history = META_MEMORY.get(chat_id, [])
 
     if not (
         msg.reply_to_message
@@ -382,7 +382,7 @@ async def meta_query(update, context):
             raw = data["choices"][0]["message"]["content"]
 
             history.append({"role": "assistant", "content": raw})
-            GROQ_MEMORY[chat_id] = history
+            META_MEMORY[chat_id] = history
 
             clean = sanitize_ai_output(raw)
             chunks = split_message(clean, 4000)
