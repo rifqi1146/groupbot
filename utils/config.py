@@ -41,6 +41,7 @@ OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_MODEL2 = "meta-llama/llama-prompt-guard-2-22m"
 GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "30"))
 COOLDOWN = int(os.getenv("GROQ_COOLDOWN", "2"))
 GROQ_MEMORY = {}

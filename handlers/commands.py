@@ -22,6 +22,7 @@ from handlers.gemini import ai_cmd, setmodeai_cmd
 from handlers.groq import groq_query
 from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
+from handlers.groqllama import meta_query
 
 
 from handlers.asupan import (
@@ -34,6 +35,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("meta", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
     ("img", zhipuimg_cmd, False),
