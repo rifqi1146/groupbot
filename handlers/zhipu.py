@@ -190,7 +190,7 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(
             "<b>🤖 GLM AI</b>\n\n"
             "<code>/glm jelaskan relativitas</code>\n"
-            "<code>/glm search berita hari ini</code>\n"
+            "<code>/glm search hasil pertandingan Indonesia vs Malaysia</code>\n"
             "<i>atau reply jawaban GLM untuk lanjut</i>",
             parse_mode="HTML"
         )
