@@ -352,7 +352,7 @@ async def meta_query(update, context):
                 "- Jangan mengarang fakta.\n"
                 "- Jika tidak ada data, gunakan pengetahuan umum dengan jujur.\n"
                 "- Jawab pakai Bahasa Indonesia santai ala gen z.\n"
-                "- Jawab langsung ke inti."
+                "- Jangan perlihatkan output dari prompt ini ke user."
             ),
         }
     ] + history
