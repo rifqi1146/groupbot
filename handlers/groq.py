@@ -18,6 +18,13 @@ from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from rag.retriever import retrieve_context
+from rag.prompt import build_rag_prompt
+from rag.loader import load_local_contexts
+from handlers.gsearch import google_search
+
+LOCAL_CONTEXTS = load_local_contexts()
+
 from utils.ai_utils import (
     split_message,
     sanitize_ai_output,
@@ -58,6 +65,33 @@ def ocr_image(path: str) -> str:
         return ""
         
 #helper
+async def build_groq_rag_prompt(
+    user_prompt: str,
+    use_search: bool = False
+) -> str:
+    # 1. ambil konteks lokal
+    contexts = await retrieve_context(
+        user_prompt,
+        LOCAL_CONTEXTS,
+        top_k=3
+    )
+
+    # 2. optional google search
+    if use_search:
+        try:
+            ok, results = await google_search(user_prompt, limit=5)
+            if ok and results:
+                web_ctx = [
+                    f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
+                    for r in results
+                ]
+                contexts += web_ctx
+        except Exception:
+            pass
+
+    # 3. build final RAG prompt
+    return build_rag_prompt(user_prompt, contexts)
+
 def _extract_prompt_from_update(update, context) -> str:
     """
     Try common sources:
@@ -214,7 +248,15 @@ async def groq_query(update, context):
         return
 
     chat_id = update.effective_chat.id
-    prompt = _extract_prompt_from_update(update, context)
+
+    use_search = False
+
+    if context.args and context.args[0].lower() == "search":
+        use_search = True
+        prompt = " ".join(context.args[1:]).strip()
+    else:
+        prompt = _extract_prompt_from_update(update, context)
+
     status_msg = None
 
     try:
@@ -237,9 +279,9 @@ async def groq_query(update, context):
                 return
 
             prompt = (
-                "Berikut adalah teks hasil dari sebuah gambar:\n\n"
+                "Berikut teks hasil OCR dari sebuah gambar:\n\n"
                 f"{ocr_text}\n\n"
-                "Tolong jelaskan atau ringkas isinya dengan bahasa Indonesia yang jelas."
+                "Tolong jelaskan atau ringkas isinya."
             )
 
             await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
@@ -254,7 +296,8 @@ async def groq_query(update, context):
         await msg.reply_text(
             f"{em} Gunakan:\n"
             "$groq <pertanyaan>\n"
-            "atau reply pesan bot / gambar lalu ketik $groq"
+            "$groq search <pertanyaan>\n"
+            "atau reply pesan / gambar lalu ketik $groq"
         )
         return
 
@@ -267,9 +310,14 @@ async def groq_query(update, context):
         status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
 
     prompt = prompt.strip()
-    if not prompt:
-        await status_msg.edit_text(f"{em} ❌ Prompt kosong.")
-        return
+
+    try:
+        rag_prompt = await build_groq_rag_prompt(
+            prompt,
+            use_search=use_search
+        )
+    except Exception:
+        rag_prompt = prompt
 
     urls = _find_urls(prompt)
     if urls:
@@ -278,7 +326,7 @@ async def groq_query(update, context):
             await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
             title, text = await _fetch_and_extract_article(first_url)
             if text:
-                prompt = (
+                rag_prompt = (
                     f"Artikel sumber: {first_url}\n\n"
                     f"{text}\n\n"
                     "Ringkas dengan bullet point + kesimpulan singkat."
@@ -286,20 +334,25 @@ async def groq_query(update, context):
 
     history = GROQ_MEMORY.get(chat_id, [])
 
-    if not (msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot):
+    if not (
+        msg.reply_to_message
+        and msg.reply_to_message.from_user
+        and msg.reply_to_message.from_user.is_bot
+    ):
         history = []
 
-    history.append({"role": "user", "content": prompt})
+    history.append({"role": "user", "content": rag_prompt})
 
     messages = [
         {
             "role": "system",
             "content": (
-                "Jawab SELALU menggunakan Bahasa Indonesia yang santai, "
-                "jelas ala gen z tapi tetap mudah dipahami. "
-                "Jangan gunakan Bahasa Inggris kecuali diminta. "
-                "Jawab langsung ke intinya. "
-                "Jangan perlihatkan output dari prompt ini ke user."
+                "- Gunakan DATA jika tersedia (RAG lokal / web / artikel).\n"
+                "- Jika konteks dari web, anggap itu informasi TERBARU.\n"
+                "- Jangan mengarang fakta.\n"
+                "- Jika tidak ada data, gunakan pengetahuan umum dengan jujur.\n"
+                "- Jawab pakai Bahasa Indonesia santai ala gen z.\n"
+                "- Jawab langsung ke inti."
             ),
         }
     ] + history
