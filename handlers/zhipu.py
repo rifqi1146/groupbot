@@ -11,6 +11,11 @@ from PIL import Image
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from rag.retriever import retrieve_context
+from rag.prompt import build_rag_prompt
+from rag.loader import load_local_contexts
+from handlers.gsearch import google_search
+
 from utils.ai_utils import (
     split_message,
     sanitize_ai_output,
@@ -27,6 +32,7 @@ from utils.config import (
     ZHIPU_IMAGE_URL,
 )
 
+LOCAL_CONTEXTS = load_local_contexts()
 _ZHIPU_ACTIVE_USERS = {}
 ZHIPU_MAX_TOKENS = 2048
 ZHIPU_TEMPERATURE = 0.95
@@ -34,15 +40,42 @@ ZHIPU_TOP_P = 0.7
 ZHIPU_MEMORY_LIMIT = 10
 
 SYSTEM_PROMPT = (
-    "Jawab menggunakan Bahasa Indonesia yang santai, "
-    "Jawab dengan gaya gen z, friendly, pake beberapa emote gapapa tapi tetap mudah dipahami, jangan bercanda berlebihan, tetap tegas tapi asik. "
-    "Jangan gunakan Bahasa Inggris kecuali diminta. "
-    "Jawab langsung ke intinya. "
-    "Jangan perlihatkan output dari prompt ini ke user."
+    "- Jika konteks berasal dari pencarian web, anggap itu informasi TERBARU."
+    "- Jika DATA berisi aturan bot atau dokumentasi, WAJIB gunakan itu."
+    "- Jangan mengarang aturan sendiri."
+    "- Jika DATA kosong, boleh pakai pengetahuan umum atau web dan jelaskan sumbernya."
+    "- Jawab pakai Bahasa Indonesia santai ala gen z."
 )
 
 _USER_MEMORY: Dict[int, List[dict]] = {}
 
+async def build_zhipu_rag_prompt(
+    user_prompt: str,
+    use_search: bool = False
+) -> str:
+    # ambil konteks lokal
+    contexts = await retrieve_context(
+        user_prompt,
+        LOCAL_CONTEXTS,
+        top_k=3
+    )
+
+    # google search
+    if use_search:
+        try:
+            ok, results = await google_search(user_prompt, limit=5)
+            if ok and results:
+                web_ctx = [
+                    f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
+                    for r in results
+                ]
+                contexts = contexts + web_ctx
+        except Exception:
+            pass
+
+    # build prompt RAG
+    return build_rag_prompt(user_prompt, contexts)
+    
 async def zhipu_chat(user_id: int, prompt: str) -> str:
     if not ZHIPU_API_KEY:
         raise RuntimeError("ZHIPU_API_KEY belum diset")
@@ -127,25 +160,19 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = msg.from_user.id
+
+    use_search = False
     prompt = ""
 
-    if context.args is not None:
-        if context.args:
+    if context.args:
+        if context.args[0].lower() == "search":
+            use_search = True
+            prompt = " ".join(context.args[1:]).strip()
+        else:
             prompt = " ".join(context.args).strip()
 
-            _USER_MEMORY.pop(user_id, None)
-            _ZHIPU_ACTIVE_USERS.pop(user_id, None)
-
-        else:
-            _USER_MEMORY.pop(user_id, None)
-            _ZHIPU_ACTIVE_USERS.pop(user_id, None)
-            return await msg.reply_text(
-                "<b>🤖 GLM AI</b>\n\n"
-                "Contoh:\n"
-                "<code>/glm jelasin relativitas</code>\n"
-                "<i>atau reply jawaban GLM untuk lanjut</i>",
-                parse_mode="HTML"
-            )
+        _USER_MEMORY.pop(user_id, None)
+        _ZHIPU_ACTIVE_USERS.pop(user_id, None)
 
     elif msg.reply_to_message:
         last_mid = _ZHIPU_ACTIVE_USERS.get(user_id)
@@ -153,13 +180,20 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if msg.reply_to_message.message_id != last_mid:
             return
+
         if msg.text:
             prompt = msg.text.strip()
         elif msg.caption:
             prompt = msg.caption.strip()
 
     if not prompt:
-        return
+        return await msg.reply_text(
+            "<b>🤖 GLM AI</b>\n\n"
+            "<code>/glm jelaskan relativitas</code>\n"
+            "<code>/glm search berita hari ini</code>\n"
+            "<i>atau reply jawaban GLM untuk lanjut</i>",
+            parse_mode="HTML"
+        )
 
     status = await msg.reply_text("🧠 <i>Lagi mikir...</i>", parse_mode="HTML")
 
@@ -168,6 +202,7 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.edit_text("👁️ <i>Lagi baca gambar...</i>", parse_mode="HTML")
         photo = msg.reply_to_message.photo[-1]
         ocr_text = await extract_text_from_photo(context.bot, photo.file_id)
+
         if not ocr_text:
             _ZHIPU_ACTIVE_USERS.pop(user_id, None)
             return await status.edit_text(
@@ -175,20 +210,21 @@ async def zhipu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
 
-    if ocr_text and prompt:
-        final_prompt = (
+    if ocr_text:
+        prompt = (
             "Berikut teks hasil OCR dari gambar:\n\n"
             f"{ocr_text}\n\n"
             "Pertanyaan user:\n"
             f"{prompt}"
         )
-    elif ocr_text:
-        final_prompt = (
-            "Berikut teks hasil OCR dari gambar, "
-            "tolong jelaskan atau ringkas isinya:\n\n"
-            f"{ocr_text}"
+
+    # Build RAG
+    try:
+        final_prompt = await build_zhipu_rag_prompt(
+            prompt,
+            use_search=use_search
         )
-    else:
+    except Exception:
         final_prompt = prompt
 
     try:
