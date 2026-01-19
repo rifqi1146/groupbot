@@ -11,6 +11,22 @@ from handlers.zhipu import zhipu_cmd
 from handlers.groqllama import meta_query
 from fun.quiz import quiz_answer
 
+async def ai_reply_router(update, context):
+    msg = update.message
+    if not msg or not msg.reply_to_message:
+        return
+
+    chat_id = update.effective_chat.id
+    reply_mid = msg.reply_to_message.message_id
+
+    if _ZHIPU_ACTIVE_USERS.get(msg.from_user.id) == reply_mid:
+        return await zhipu_cmd(update, context)
+
+    if _META_ACTIVE_USERS.get(chat_id) == reply_mid:
+        return await meta_query(update, context)
+
+    return
+    
 def register_messages(app):
     app.add_handler(
         MessageHandler(filters.ALL, collect_chat),
@@ -48,12 +64,7 @@ def register_messages(app):
     )
     
     app.add_handler(
-        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, zhipu_cmd),
-        group=1
-    )
-    
-    app.add_handler(
-        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, meta_query),
+        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, ai_reply_router),
         group=-1
     )
     
