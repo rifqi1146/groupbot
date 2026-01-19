@@ -37,7 +37,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_THINK = "openai/gpt-oss-120b:free"
 OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 
-#groq
+#groq & meta
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -45,6 +45,7 @@ GROQ_MODEL2 = "llama-3.3-70b-versatile"
 GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "30"))
 COOLDOWN = int(os.getenv("GROQ_COOLDOWN", "2"))
 GROQ_MEMORY = {}
+META_MEMORY = {}
 
 
 #zhipu glm & image generation

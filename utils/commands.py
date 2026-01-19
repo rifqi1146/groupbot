@@ -5,5 +5,5 @@ BOT_COMMANDS = {
     "whoisdomain","domain","dl","stats","tr","gsearch",
     "enableasupan","disableasupan","asupanlist","asupan",
     "wlc","restart","ai","setmodeai","groq","nsfw","autodel",
-    "ship","reminder","glm",
+    "ship","reminder","glm","meta",
 }

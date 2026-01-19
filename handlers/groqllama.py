@@ -32,7 +32,7 @@ from utils.ai_utils import (
 )
 
 from utils.config import (
-    GROQ_MEMORY,
+    META_MEMORY,
     COOLDOWN,
     GROQ_TIMEOUT,
     GROQ_MODEL2,
