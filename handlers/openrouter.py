@@ -95,14 +95,14 @@ async def openrouter_ask_think(
     user_prompt: str,
     use_search: bool = False
 ) -> str:
-    # 1. ambil konteks dari dokumen lokal
+    # ambil konteks dari dokumen lokal
     contexts = await retrieve_context(
         user_prompt,
         LOCAL_CONTEXTS,
         top_k=3
     )
     
-    # 2. optional: google search (HANYA kalau diizinkan)
+    # gunakan google search
     if use_search:
         try:
             ok, results = await google_search(user_prompt, limit=5)
@@ -115,7 +115,7 @@ async def openrouter_ask_think(
         except Exception:
             pass
 
-    # 3. build RAG prompt
+    # build RAG prompt
     rag_prompt = build_rag_prompt(user_prompt, contexts)
 
     headers = {
@@ -131,6 +131,7 @@ async def openrouter_ask_think(
             {
                 "role": "system",
                 "content": (
+                    "- Jika konteks berasal dari pencarian web, anggap itu informasi TERBARU.\n"
                     "- Jika DATA berisi aturan bot atau dokumentasi, WAJIB gunakan itu.\n"
                     "- Jangan mengarang aturan sendiri.\n"
                     "- Jika DATA kosong, boleh pakai pengetahuan umum atau web dan jelaskan sumbernya.\n"
@@ -225,7 +226,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(
             "<b>❓ Ask AI</b>\n\n"
             "<code>/ask jelaskan relativitas</code>\n"
-            "<code>/ask search atr 42 maros</code>\n"
+            "<code>/ask search hasil pertandingan Indonesia vs Malaysia</code>\n"
             "<code>/ask img anime cyberpunk</code>",
             parse_mode="HTML"
         )

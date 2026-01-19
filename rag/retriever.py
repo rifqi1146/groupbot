@@ -6,7 +6,7 @@ async def retrieve_context(
     top_k: int = 3,
 ) -> List[str]:
     """
-    Ambil konteks paling relevan dari dokumen lokal
+    Ambil konteks dari dokumen lokal
     """
 
     query_l = query.lower()
