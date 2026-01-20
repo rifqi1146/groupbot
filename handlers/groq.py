@@ -42,6 +42,8 @@ from utils.config import (
 
 from utils.http import get_http_session
 
+_GROQ_ACTIVE_USERS = {}
+
 #groq
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 def _emo(): return random.choice(_EMOS)
