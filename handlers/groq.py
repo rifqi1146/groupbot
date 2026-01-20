@@ -367,11 +367,14 @@ async def groq_query(update, context):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, 4000)
 
-        await status_msg.edit_text(f"{em} {chunks[0]}")
+        await status_msg.edit_text(
+            f"{em} {chunks[0]}",
+            parse_mode="HTML"
+        )
         _GROQ_ACTIVE_USERS[chat_id] = status_msg.message_id
 
         for ch in chunks[1:]:
-            await msg.reply_text(ch)
+            await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
         GROQ_MEMORY.pop(chat_id, None)
