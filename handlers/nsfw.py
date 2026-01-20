@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from utils.http import get_http_session
 from utils.config import OWNER_ID
-from utils.text import bold
+from utils.text import bold, code
 
 from handlers.groq import _emo, _can, _extract_prompt_from_update
 
