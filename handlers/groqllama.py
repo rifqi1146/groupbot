@@ -254,36 +254,33 @@ async def meta_query(update, context):
     use_search = False
     status_msg = None
 
-    if context.args:
-        if context.args[0].lower() == "search":
+    if msg.text and msg.text.startswith("/meta"):
+        if context.args and context.args[0].lower() == "search":
             use_search = True
             prompt = " ".join(context.args[1:]).strip()
         else:
-            prompt = " ".join(context.args).strip()
-
+            prompt = " ".join(context.args).strip() if context.args else ""
+    
         META_MEMORY.pop(chat_id, None)
         _META_ACTIVE_USERS.pop(chat_id, None)
-
+    
+        if not prompt:
+            return await msg.reply_text(
+                f"{em} Gunakan:\n"
+                "/meta <pertanyaan>\n"
+                "/meta search <pertanyaan>\n"
+                "atau reply jawaban Meta untuk lanjut",
+                parse_mode="HTML"
+            )
+    
     elif msg.reply_to_message:
         last_mid = _META_ACTIVE_USERS.get(chat_id)
         if not last_mid:
             return
         if msg.reply_to_message.message_id != last_mid:
             return
-
-        if msg.text:
-            prompt = msg.text.strip()
-        elif msg.caption:
-            prompt = msg.caption.strip()
-
-    if not prompt:
-        return await msg.reply_text(
-            f"{em} Gunakan:\n"
-            "$meta <pertanyaan>\n"
-            "$meta search <pertanyaan>\n"
-            "atau reply jawaban Meta untuk lanjut",
-            parse_mode="HTML"
-        )
+    
+        prompt = msg.text.strip() if msg.text else ""
 
     uid = msg.from_user.id
     if not _can(uid):
