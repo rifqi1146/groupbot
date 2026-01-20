@@ -1,6 +1,5 @@
 from telegram.ext import MessageHandler, filters
 
-
 from handlers.logger import log_commands
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
@@ -21,7 +20,7 @@ async def ai_reply_router(update, context):
     chat_id = update.effective_chat.id
     reply_mid = msg.reply_to_message.message_id
     
-    if _AI_ACTIVE_USERS(chat_id) == reply_mid:
+    if _AI_ACTIVE_USERS.get(chat_id) == reply_mid:
         return await ai_cmd(update, context)
         
     if _GROQ_ACTIVE_USERS.get(chat_id) == reply_mid:
