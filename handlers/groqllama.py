@@ -252,7 +252,6 @@ async def meta_query(update, context):
     chat_id = update.effective_chat.id
     prompt = ""
     use_search = False
-    status_msg = None
 
     if msg.text and msg.text.startswith("/meta"):
         if context.args and context.args[0].lower() == "search":
@@ -260,27 +259,29 @@ async def meta_query(update, context):
             prompt = " ".join(context.args[1:]).strip()
         else:
             prompt = " ".join(context.args).strip() if context.args else ""
-    
+
         META_MEMORY.pop(chat_id, None)
         _META_ACTIVE_USERS.pop(chat_id, None)
-    
+
         if not prompt:
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
                 "/meta <pertanyaan>\n"
                 "/meta search <pertanyaan>\n"
-                "atau reply jawaban Meta untuk lanjut",
-                parse_mode="HTML"
+                "atau reply jawaban Meta untuk lanjut"
             )
-    
+
     elif msg.reply_to_message:
         last_mid = _META_ACTIVE_USERS.get(chat_id)
         if not last_mid:
             return
         if msg.reply_to_message.message_id != last_mid:
             return
-    
+
         prompt = msg.text.strip() if msg.text else ""
+
+    if not prompt:
+        return
 
     uid = msg.from_user.id
     if not _can(uid):
@@ -309,20 +310,19 @@ async def meta_query(update, context):
             f"Pertanyaan user:\n{prompt}"
         )
 
-    # RAG
     try:
         rag_prompt = await build_groq_rag_prompt(prompt, use_search)
     except Exception:
         rag_prompt = prompt
 
-    # artikel extractor
     urls = _find_urls(prompt)
     if urls:
         await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
         title, text = await _fetch_and_extract_article(urls[0])
         if text:
             rag_prompt = (
-                f"Artikel sumber:\n{text}\n\n"
+                "Artikel sumber:\n\n"
+                f"{text}\n\n"
                 "Ringkas dengan bullet point + kesimpulan."
             )
 
@@ -367,11 +367,11 @@ async def meta_query(update, context):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, 4000)
 
-        await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
+        await status_msg.edit_text(f"{em} {chunks[0]}")
         _META_ACTIVE_USERS[chat_id] = status_msg.message_id
 
         for ch in chunks[1:]:
-            await msg.reply_text(ch, parse_mode="HTML")
+            await msg.reply_text(ch)
 
     except Exception as e:
         META_MEMORY.pop(chat_id, None)
