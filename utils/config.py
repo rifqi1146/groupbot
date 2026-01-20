@@ -46,12 +46,3 @@ GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "30"))
 COOLDOWN = int(os.getenv("GROQ_COOLDOWN", "2"))
 GROQ_MEMORY = {}
 META_MEMORY = {}
-
-
-#zhipu glm & image generation
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
-ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-ZHIPU_MODEL = "glm-4.6v-flash"
-ZHIPU_IMAGE_URL = "https://open.bigmodel.cn/api/paas/v4/images/generations"
-ZHIPU_IMAGE_MODEL = "cogview-3-flash"
-ZHIPU_IMAGE_SIZE = "1024x1024"

@@ -40,7 +40,6 @@ HELP_TEXT = {
         "🤖 <b>AI Commands</b>\n\n"
         "• 💬 <code>/ai</code> — Chat with AI (default mode)\n"
         "• 🧠 <code>/ask</code> — ChatGPT\n"
-        "• 🧶 <code>/glm</code> — GLM AI\n"
         "• ⚡ <code>/groq</code> — Groq\n"
         "• 🍌 <code>/meta</code> — Meta AI\n"
         "• 🧪 <code>/ai flash | pro | lite</code> — Switch AI model\n"

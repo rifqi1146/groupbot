@@ -8,7 +8,6 @@ from handlers.dl import auto_dl_detect
 from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
-from handlers.zhipu import zhipu_cmd, _ZHIPU_ACTIVE_USERS
 from handlers.groqllama import meta_query, _META_ACTIVE_USERS
 from fun.quiz import quiz_answer
 
@@ -19,9 +18,6 @@ async def ai_reply_router(update, context):
 
     chat_id = update.effective_chat.id
     reply_mid = msg.reply_to_message.message_id
-
-    if _ZHIPU_ACTIVE_USERS.get(msg.from_user.id) == reply_mid:
-        return await zhipu_cmd(update, context)
 
     if _META_ACTIVE_USERS.get(chat_id) == reply_mid:
         return await meta_query(update, context)
