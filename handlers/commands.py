@@ -17,7 +17,7 @@ from handlers.helpowner import helpowner_cmd
 from handlers.welcome import wlc_cmd
 from fun.ship import ship_cmd
 from fun.reminder import reminder_cmd
-from handlers.gemini import ai_cmd, setmodeai_cmd
+from handlers.gemini import ai_cmd
 from handlers.groq import groq_query
 from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
@@ -53,7 +53,6 @@ COMMAND_HANDLERS = [
     ("wlc", wlc_cmd, True),
     ("ask", ask_cmd, False),
     ("ai", ai_cmd, False),
-    ("setmodeai", setmodeai_cmd, True),
     ("groq", groq_query, False),
     ("weather", weather_cmd, False),
     ("speedtest", speedtest_cmd, False),
