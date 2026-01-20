@@ -377,3 +377,4 @@ async def meta_query(update, context):
         META_MEMORY.pop(chat_id, None)
         _META_ACTIVE_USERS.pop(chat_id, None)
         await status_msg.edit_text(f"{em} ❌ Error: {e}")
+        

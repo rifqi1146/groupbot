@@ -266,9 +266,9 @@ async def groq_query(update, context):
         if not prompt:
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
-                "/meta <pertanyaan>\n"
-                "/meta search <pertanyaan>\n"
-                "atau reply jawaban Meta untuk lanjut"
+                "/groq <pertanyaan>\n"
+                "/groq search <pertanyaan>\n"
+                "atau reply jawaban Groq untuk lanjut"
             )
 
     elif msg.reply_to_message:
