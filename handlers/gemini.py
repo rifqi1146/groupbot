@@ -25,23 +25,48 @@ from utils.ai_utils import (
 )
 
 from utils.config import (
-    GEMINI_MODELS,
     GEMINI_API_KEY,
 )
   
 from utils.http import get_http_session
 from utils.storage import load_json_file, save_json_file
 
-AI_MODE_FILE = "data/ai_mode.json"
+from rag.retriever import retrieve_context
+from rag.prompt import build_rag_prompt
+from rag.loader import load_local_contexts
 
-# ---- ai mode 
-def load_ai_mode():
-    return load_json_file(AI_MODE_FILE, {})
-def save_ai_mode(data):
-    save_json_file(AI_MODE_FILE, data)
-_ai_mode = load_ai_mode()
-    
+LOCAL_CONTEXTS = load_local_contexts()
+AI_MEMORY = {}
+_AI_ACTIVE_USERS = {}
+
 #gemini
+async def build_ai_prompt(chat_id: str, user_prompt: str) -> str:
+    history = AI_MEMORY.get(chat_id, [])
+
+    lines = []
+    for h in history:
+        lines.append(f"User: {h['user']}")
+        lines.append(f"AI: {h['ai']}")
+
+    # RAG lokal
+    try:
+        contexts = await retrieve_context(
+            user_prompt,
+            LOCAL_CONTEXTS,
+            top_k=3
+        )
+    except Exception:
+        contexts = []
+
+    if contexts:
+        rag_block = "\n\n".join(contexts)
+        lines.append("=== KONTEKS LOKAL ===")
+        lines.append(rag_block)
+        lines.append("=== END KONTEKS ===")
+
+    lines.append(f"User: {user_prompt}")
+    return "\n".join(lines)
+    
 async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, str):
     if not GEMINI_API_KEY:
         return False, "API key Gemini belum diset."
@@ -112,65 +137,61 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
 #cmd
 async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
-    model_key = _ai_mode.get(chat_id, "flash")
+    msg = update.message
     prompt = ""
 
-    if context.args:
-        first = context.args[0].lower()
-        if first in GEMINI_MODELS:
-            model_key = first
-            prompt = " ".join(context.args[1:])
-        else:
+    if msg.text and msg.text.startswith("/ai"):
+        if context.args:
             prompt = " ".join(context.args)
-    elif update.message.reply_to_message:
-        prompt = update.message.reply_to_message.text or ""
+        else:
+            prompt = ""
+
+        AI_MEMORY.pop(chat_id, None)
+        _AI_ACTIVE_USERS.pop(chat_id, None)
+
+        if not prompt:
+            return await msg.reply_text(
+                "Contoh:\n"
+                "/ai apa itu relativitas?\n"
+                "atau reply jawaban AI untuk lanjut"
+            )
+
+    elif msg.reply_to_message:
+        last_mid = _AI_ACTIVE_USERS.get(chat_id)
+        if not last_mid:
+            return
+        if msg.reply_to_message.message_id != last_mid:
+            return
+
+        prompt = msg.text or ""
 
     if not prompt:
-        return await update.message.reply_text(
-            f"Model default chat: {model_key.upper()}\n"
-            "Contoh:\n"
-            "/ai apa itu relativitas?\n"
-            "/ai pro jelaskan apa itu jawa"
-        )
-
-    model_name = GEMINI_MODELS.get(model_key, GEMINI_MODELS["flash"])
-    loading = await update.message.reply_text("⏳ Memproses...")
-
-    ok, answer = await ask_ai_gemini(prompt, model=model_name)
-
-    if not ok:
-        try:
-            await loading.edit_text(f"❗ Error: {answer}")
-        except Exception:
-            await update.message.reply_text(f"❗ Error: {answer}")
         return
 
-    clean = sanitize_ai_output(answer)
-    header = f"💡 Jawaban ({model_key.upper()})"
-    full_text = f"{header}\n\n{clean}"
+    loading = await msg.reply_text("⏳ Memproses...")
 
+    final_prompt = await build_ai_prompt(chat_id, prompt)
+
+    ok, answer = await ask_ai_gemini(
+        final_prompt,
+        model="gemini-2.5-flash"
+    )
+
+    if not ok:
+        return await loading.edit_text(f"❗ Error: {answer}")
+
+    clean = sanitize_ai_output(answer)
     chunks = split_message(clean, 4000)
 
-    try:
-        await loading.edit_text(chunks[0], parse_mode="HTML")
-    except Exception:
-        await update.message.reply_text(chunks[0], parse_mode="HTML")
-
+    await loading.edit_text(chunks[0], parse_mode="HTML")
     for part in chunks[1:]:
         await asyncio.sleep(0.25)
-        await update.message.reply_text(part, parse_mode="HTML")
-        
-#default ai
-async def setmodeai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text(
-            "Pilih mode AI:\n/setmodeai flash\n/setmodeai pro\n/setmodeai lite"
-        )
-    mode = context.args[0].lower()
-    if mode not in GEMINI_MODELS:
-        return await update.message.reply_text("Pilihan hanya: flash / pro / lite")
-    chat_id = str(update.effective_chat.id)
-    _ai_mode[chat_id] = mode
-    save_ai_mode(_ai_mode)
-    await update.message.reply_text(f"Default model AI untuk chat ini diset ke {mode.upper()} ✔️")
+        await msg.reply_text(part, parse_mode="HTML")
 
+    history = AI_MEMORY.get(chat_id, [])
+    history.append({
+        "user": prompt,
+        "ai": clean
+    })
+    AI_MEMORY[chat_id] = history
+    _AI_ACTIVE_USERS[chat_id] = loading.message_id
