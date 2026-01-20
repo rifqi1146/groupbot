@@ -84,9 +84,10 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
             "parts": [
                 {
                     "text": (
-                        "Selalu Gunakan Google Search untuk mencari semua informasi. "
-                        "Jika data tidak ditemukan, katakan secara jujur. "
-                        "Jangan mengarang jawaban."
+                        "Gunakan DATA jika ada (RAG / Google search / artikel).\n"
+                        "Jika dari Googke search, anggap itu informasi TERBARU.\n"
+                        "Jangan mengarang fakta.\n"
+                        "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
                     )
                 }
             ]
