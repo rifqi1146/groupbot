@@ -9,6 +9,7 @@ from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
 from handlers.groqllama import meta_query, _META_ACTIVE_USERS
+from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from fun.quiz import quiz_answer
 
 async def ai_reply_router(update, context):
@@ -18,7 +19,10 @@ async def ai_reply_router(update, context):
 
     chat_id = update.effective_chat.id
     reply_mid = msg.reply_to_message.message_id
-
+    
+    if _GROQ_ACTIVE_USERS.get(chat_id) == reply_mid:
+        return await meta_query(update, context)
+        
     if _META_ACTIVE_USERS.get(chat_id) == reply_mid:
         return await meta_query(update, context)
 

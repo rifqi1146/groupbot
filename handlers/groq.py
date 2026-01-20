@@ -244,115 +244,97 @@ async def _fetch_and_extract_article(
 async def groq_query(update, context):
     em = _emo()
     msg = update.message
-    if not msg:
+    if not msg or not msg.from_user:
         return
 
     chat_id = update.effective_chat.id
-
+    prompt = ""
     use_search = False
 
-    if context.args and context.args[0].lower() == "search":
-        use_search = True
-        prompt = " ".join(context.args[1:]).strip()
-    else:
-        prompt = _extract_prompt_from_update(update, context)
+    if msg.text and msg.text.startswith("/groq"):
+        if context.args and context.args[0].lower() == "search":
+            use_search = True
+            prompt = " ".join(context.args[1:]).strip()
+        else:
+            prompt = " ".join(context.args).strip() if context.args else ""
 
-    status_msg = None
+        GROQ_MEMORY.pop(chat_id, None)
+        _GROQ_ACTIVE_USERS.pop(chat_id, None)
 
-    try:
-        if msg.reply_to_message and msg.reply_to_message.photo:
-            status_msg = await msg.reply_text(f"{em} 👀 Lagi lihat gambar...")
-
-            photo = msg.reply_to_message.photo[-1]
-            file = await photo.get_file()
-            img_path = await file.download_to_drive()
-
-            ocr_text = ocr_image(img_path)
-
-            try:
-                os.remove(img_path)
-            except Exception:
-                pass
-
-            if not ocr_text:
-                await status_msg.edit_text(f"{em} ❌ Gagal membaca teks dari gambar.")
-                return
-
-            prompt = (
-                "Berikut teks hasil OCR dari sebuah gambar:\n\n"
-                f"{ocr_text}\n\n"
-                "Tolong jelaskan atau ringkas isinya."
+        if not prompt:
+            return await msg.reply_text(
+                f"{em} Gunakan:\n"
+                "/meta <pertanyaan>\n"
+                "/meta search <pertanyaan>\n"
+                "atau reply jawaban Meta untuk lanjut"
             )
 
-            await status_msg.edit_text(f"{em} ✨ Lagi mikir jawaban...")
+    elif msg.reply_to_message:
+        last_mid = _GROQ_ACTIVE_USERS.get(chat_id)
+        if not last_mid:
+            return
+        if msg.reply_to_message.message_id != last_mid:
+            return
 
-    except Exception:
-        logger.exception("OCR failed")
-        if status_msg:
-            await status_msg.edit_text(f"{em} ❌ OCR error.")
-        return
+        prompt = msg.text.strip() if msg.text else ""
 
     if not prompt:
-        await msg.reply_text(
-            f"{em} Gunakan:\n"
-            "$groq <pertanyaan>\n"
-            "$groq search <pertanyaan>\n"
-            "atau reply pesan / gambar lalu ketik $groq"
+        return
+
+    uid = msg.from_user.id
+    if not _can(uid):
+        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
+
+    status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
+
+    if msg.reply_to_message and msg.reply_to_message.photo:
+        await status_msg.edit_text(f"{em} 👀 Lagi baca gambar...")
+        photo = msg.reply_to_message.photo[-1]
+        file = await photo.get_file()
+        img_path = await file.download_to_drive()
+
+        ocr_text = ocr_image(img_path)
+        try:
+            os.remove(img_path)
+        except Exception:
+            pass
+
+        if not ocr_text:
+            return await status_msg.edit_text(f"{em} ❌ Teks gambar ga kebaca.")
+
+        prompt = (
+            "Berikut teks hasil OCR dari gambar:\n\n"
+            f"{ocr_text}\n\n"
+            f"Pertanyaan user:\n{prompt}"
         )
-        return
-
-    uid = msg.from_user.id if msg.from_user else 0
-    if uid and not _can(uid):
-        await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
-        return
-
-    if not status_msg:
-        status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
-
-    prompt = prompt.strip()
 
     try:
-        rag_prompt = await build_groq_rag_prompt(
-            prompt,
-            use_search=use_search
-        )
+        rag_prompt = await build_groq_rag_prompt(prompt, use_search)
     except Exception:
         rag_prompt = prompt
 
     urls = _find_urls(prompt)
     if urls:
-        first_url = urls[0]
-        if first_url.startswith("http"):
-            await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
-            title, text = await _fetch_and_extract_article(first_url)
-            if text:
-                rag_prompt = (
-                    f"Artikel sumber: {first_url}\n\n"
-                    f"{text}\n\n"
-                    "Ringkas dengan bullet point + kesimpulan singkat."
-                )
+        await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
+        title, text = await _fetch_and_extract_article(urls[0])
+        if text:
+            rag_prompt = (
+                "Artikel sumber:\n\n"
+                f"{text}\n\n"
+                "Ringkas dengan bullet point + kesimpulan."
+            )
 
     history = GROQ_MEMORY.get(chat_id, [])
-
-    if not (
-        msg.reply_to_message
-        and msg.reply_to_message.from_user
-        and msg.reply_to_message.from_user.is_bot
-    ):
-        history = []
-
     history.append({"role": "user", "content": rag_prompt})
 
     messages = [
         {
             "role": "system",
             "content": (
-                "- Gunakan DATA jika tersedia (RAG lokal / web / artikel).\n"
-                "- Jika konteks dari web, anggap itu informasi TERBARU.\n"
-                "- Jangan mengarang fakta.\n"
-                "- Jika tidak ada data, gunakan pengetahuan umum dengan jujur.\n"
-                "- Jawab pakai Bahasa Indonesia santai ala gen z.\n"
-                "- Jawab langsung ke inti."
+                "Gunakan DATA jika ada (RAG / web / artikel).\n"
+                "Jika dari web, anggap itu informasi TERBARU.\n"
+                "Jangan mengarang fakta.\n"
+                "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
             ),
         }
     ] + history
@@ -374,25 +356,22 @@ async def groq_query(update, context):
             },
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
-            if resp.status not in (200, 201):
-                await status_msg.edit_text(f"{em} ❌ Groq error {resp.status}")
-                return
-
             data = await resp.json()
             raw = data["choices"][0]["message"]["content"]
 
-            history.append({"role": "assistant", "content": raw})
-            GROQ_MEMORY[chat_id] = history
+        history.append({"role": "assistant", "content": raw})
+        GROQ_MEMORY[chat_id] = history[-10:]
 
-            clean = sanitize_ai_output(raw)
-            chunks = split_message(clean, 4000)
+        clean = sanitize_ai_output(raw)
+        chunks = split_message(clean, 4000)
 
-            await status_msg.edit_text(f"{em} {chunks[0]}", parse_mode="HTML")
-            for ch in chunks[1:]:
-                await msg.reply_text(ch, parse_mode="HTML")
+        await status_msg.edit_text(f"{em} {chunks[0]}")
+        _GROQ_ACTIVE_USERS[chat_id] = status_msg.message_id
 
-    except asyncio.TimeoutError:
-        await status_msg.edit_text(f"{em} ❌ Timeout nyambung Groq.")
+        for ch in chunks[1:]:
+            await msg.reply_text(ch)
+
     except Exception as e:
-        logger.exception("groq_query failed")
+        GROQ_MEMORY.pop(chat_id, None)
+        _GROQ_ACTIVE_USERS.pop(chat_id, None)
         await status_msg.edit_text(f"{em} ❌ Error: {e}")
