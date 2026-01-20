@@ -11,6 +11,7 @@ from utils.user_collector import user_collector
 from handlers.groqllama import meta_query, _META_ACTIVE_USERS
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from fun.quiz import quiz_answer
+from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
 
 async def ai_reply_router(update, context):
     msg = update.message
@@ -20,6 +21,9 @@ async def ai_reply_router(update, context):
     chat_id = update.effective_chat.id
     reply_mid = msg.reply_to_message.message_id
     
+    if _AI_ACTIVE_USERS(chat_id) == reply_mid:
+        return await ai_cmd(update, context)
+        
     if _GROQ_ACTIVE_USERS.get(chat_id) == reply_mid:
         return await groq_query(update, context)
         
