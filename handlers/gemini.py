@@ -136,7 +136,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> (bool, 
 
 #cmd
 async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
+    chat_id = update.effective_chat.id
     msg = update.message
     prompt = ""
 
