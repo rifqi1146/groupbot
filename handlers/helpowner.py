@@ -30,9 +30,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/restart</code> — restart the bot\n\n"
 
         "🍜 <b>Asupan Management</b>\n"
-        "• <code>/enableasupan</code> — enable asupan feature\n"
-        "• <code>/disableasupan</code> — disable asupan feature\n"
-        "• <code>/asupanlist</code> — list asupan-enabled chats\n"
+        "• <code>asupann</code> — manage asupan.\n"
     )
 
     await msg.reply_text(

@@ -27,9 +27,7 @@ from fun.waifu import waifu_cmd
 
 from handlers.asupan import (
     asupan_cmd,
-    enable_asupan_cmd,
-    disable_asupan_cmd,
-    asupanlist_cmd,
+    asupann_cmd,
     autodel_cmd,
 )
 
@@ -61,9 +59,7 @@ COMMAND_HANDLERS = [
     ("gsearch", gsearch_cmd, False),
     ("dl", dl_cmd, False),
     ("asupan", asupan_cmd, False),
-    ("asupanlist", asupanlist_cmd, True),
-    ("enableasupan", enable_asupan_cmd, True),
-    ("disableasupan", disable_asupan_cmd, True),
+    ("asupann", asupann_cmd, False),
     ("nsfw", pollinations_generate_nsfw, False),
     ("enablensfw", enablensfw_cmd, True),
     ("disablensfw", disablensfw_cmd, True),

@@ -116,6 +116,31 @@ def load_asupan_groups():
     except Exception:
         ASUPAN_ENABLED_CHATS = set()
         
+async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    bot = context.bot
+
+    if user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Owner only.")
+
+    if not ASUPAN_ENABLED_CHATS:
+        return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
+
+    lines = ["<b>📋 Grup Asupan Aktif</b>\n"]
+
+    for cid in ASUPAN_ENABLED_CHATS:
+        try:
+            chat = await bot.get_chat(cid)
+            title = chat.title or chat.username or "Unknown"
+            lines.append(f"• {html.escape(title)}")
+        except Exception:
+            lines.append(f"• <code>{cid}</code>")
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML"
+    )
+    
 async def _expire_asupan_notice(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     try:
@@ -163,7 +188,62 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
     ASUPAN_DELETE_JOBS.pop(asupan_msg_id, None)
     ASUPAN_MESSAGE_KEYWORD.pop(asupan_msg_id, None)
 
+async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    bot = context.bot
 
+    if user.id != OWNER_ID:
+        return await update.message.reply_text("❌ Owner only.")
+
+    if not context.args:
+        return await update.message.reply_text(
+            "<b>📦 Asupan Command</b>\n\n"
+            "• <code>/asupann enable</code>\n"
+            "• <code>/asupann disable</code>\n"
+            "• <code>/asupann status</code>\n"
+            "• <code>/asupann list</code>",
+            parse_mode="HTML"
+        )
+
+    sub = context.args[0].lower()
+
+    if sub == "enable":
+        ASUPAN_ENABLED_CHATS.add(chat.id)
+        save_asupan_groups()
+        return await update.message.reply_text("✅ Asupan diaktifkan di grup ini.")
+
+    if sub == "disable":
+        ASUPAN_ENABLED_CHATS.discard(chat.id)
+        save_asupan_groups()
+        return await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
+
+    if sub == "status":
+        if chat.id in ASUPAN_ENABLED_CHATS:
+            return await update.message.reply_text("✅ Asupan <b>AKTIF</b> di grup ini.", parse_mode="HTML")
+        return await update.message.reply_text("🚫 Asupan <b>TIDAK AKTIF</b> di grup ini.", parse_mode="HTML")
+
+    if sub == "list":
+        if not ASUPAN_ENABLED_CHATS:
+            return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
+
+        lines = ["<b>📋 Grup Asupan Aktif</b>\n"]
+
+        for cid in ASUPAN_ENABLED_CHATS:
+            try:
+                c = await bot.get_chat(cid)
+                title = c.title or c.username or "Unknown"
+                lines.append(f"• {html.escape(title)}")
+            except Exception:
+                lines.append(f"• <code>{cid}</code>")
+
+        return await update.message.reply_text(
+            "\n".join(lines),
+            parse_mode="HTML"
+        )
+
+    return await update.message.reply_text("❌ Subcommand tidak dikenal.")
+    
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -218,31 +298,6 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     await update.message.reply_text("❌ Argumen tidak dikenali.")
-    
-async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    bot = context.bot
-
-    if user.id != OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
-
-    if not ASUPAN_ENABLED_CHATS:
-        return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
-
-    lines = ["<b>📋 Grup Asupan Aktif</b>\n"]
-
-    for cid in ASUPAN_ENABLED_CHATS:
-        try:
-            chat = await bot.get_chat(cid)
-            title = chat.title or chat.username or "Unknown"
-            lines.append(f"• {html.escape(title)}")
-        except Exception:
-            lines.append(f"• <code>{cid}</code>")
-
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="HTML"
-    )
     
 
 #inline keyboard
