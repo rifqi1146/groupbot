@@ -35,7 +35,7 @@ async def enablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     if chat.type == "private":
@@ -52,7 +52,7 @@ async def disablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     data = _load_nsfw()

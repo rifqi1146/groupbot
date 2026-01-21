@@ -11,7 +11,7 @@ async def reply_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.reply_to_message:
         return
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return
 
     if msg.text.strip().lower() != "del":

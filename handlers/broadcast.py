@@ -17,7 +17,7 @@ def _load():
 
 
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
+    if update.effective_user.id not in OWNER_ID:
         return
 
     msg = update.message

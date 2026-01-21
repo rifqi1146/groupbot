@@ -17,9 +17,6 @@ from utils.config import OWNER_ID
 IMG_W, IMG_H = 900, 520
 
 #util
-def is_owner(user_id: int) -> bool:
-    return user_id == OWNER_ID
-
 def run_speedtest():
     p = subprocess.run(
         [
@@ -129,8 +126,8 @@ FONT_SMALL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 #cmd speedtest
 async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id):
-        return await update.message.reply_text("❌ Owner only")
+    if user.id not in OWNER_ID:
+        return await msg.reply_text("❌ Owner only.")
 
     status = await update.message.reply_text("⏳ Running Speedtest...")
 

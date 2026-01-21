@@ -84,8 +84,8 @@ async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id != OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+    if user.id not in OWNER_ID:
+        return await msg.reply_text("❌ Owner only.")
 
     ASUPAN_ENABLED_CHATS.add(chat.id)
     save_asupan_groups()
@@ -96,7 +96,7 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     ASUPAN_ENABLED_CHATS.discard(chat.id)
@@ -120,7 +120,7 @@ async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     bot = context.bot
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     if not ASUPAN_ENABLED_CHATS:
@@ -193,7 +193,7 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     bot = context.bot
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     if not context.args:
@@ -248,7 +248,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     if chat.type == "private":

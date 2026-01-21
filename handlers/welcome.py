@@ -31,7 +31,7 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     if not context.args:
