@@ -241,7 +241,14 @@ async def _fetch_and_extract_article(
     except Exception:
         return None, None
 
-
+async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
+    try:
+        while not stop_event.is_set():
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+    except Exception:
+        pass
+        
 # handler
 async def groq_query(update, context):
     em = _emo()
@@ -284,96 +291,98 @@ async def groq_query(update, context):
         return
 
     uid = msg.from_user.id
-    if not _can(uid):
-        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
-
-    status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
-
-    if msg.reply_to_message and msg.reply_to_message.photo:
-        await status_msg.edit_text(f"{em} 👀 Lagi baca gambar...")
-        photo = msg.reply_to_message.photo[-1]
-        file = await photo.get_file()
-        img_path = await file.download_to_drive()
-
-        ocr_text = ocr_image(img_path)
-        try:
-            os.remove(img_path)
-        except Exception:
-            pass
-
-        if not ocr_text:
-            return await status_msg.edit_text(f"{em} ❌ Teks gambar ga kebaca.")
-
-        prompt = (
-            "Berikut teks hasil OCR dari gambar:\n\n"
-            f"{ocr_text}\n\n"
-            f"Pertanyaan user:\n{prompt}"
+        if not _can(uid):
+            return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
+        
+        stop_typing = asyncio.Event()
+        typing_task = asyncio.create_task(
+            _typing_loop(context.bot, chat_id, stop_typing)
         )
+        
+        try:
+            if msg.reply_to_message and msg.reply_to_message.photo:
+                photo = msg.reply_to_message.photo[-1]
+                file = await photo.get_file()
+                img_path = await file.download_to_drive()
+        
+                ocr_text = ocr_image(img_path)
+                try:
+                    os.remove(img_path)
+                except Exception:
+                    pass
+        
+                if ocr_text:
+                    prompt = (
+                        "Berikut teks hasil OCR dari gambar:\n\n"
+                        f"{ocr_text}\n\n"
+                        f"Pertanyaan user:\n{prompt}"
+                    )
+        
+            rag_prompt = await build_groq_rag_prompt(prompt, use_search)
+        
+            urls = _find_urls(prompt)
+            if urls:
+                title, text = await _fetch_and_extract_article(urls[0])
+                if text:
+                    rag_prompt = (
+                        "Artikel sumber:\n\n"
+                        f"{text}\n\n"
+                        "Ringkas dengan bullet point + kesimpulan."
+                    )
+        
+            history = GROQ_MEMORY.get(chat_id, [])
+            history.append({"role": "user", "content": rag_prompt})
+        
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Gunakan DATA jika ada (RAG / web / artikel).\n"
+                        "Jika dari web, anggap itu informasi TERBARU.\n"
+                        "Jangan mengarang fakta.\n"
+                        "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
+                    ),
+                }
+            ] + history
+        
+            session = await get_http_session()
+            async with session.post(
+                f"{GROQ_BASE}/chat/completions",
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": messages,
+                    "temperature": 0.9,
+                    "top_p": 0.95,
+                    "max_tokens": 2048,
+                },
+                headers={
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
+            ) as resp:
+                data = await resp.json()
+                raw = data["choices"][0]["message"]["content"]
+        
+            history.append({"role": "assistant", "content": raw})
+            GROQ_MEMORY[chat_id] = history[-10:]
+        
+            clean = sanitize_ai_output(raw)
+            chunks = split_message(clean, 4000)
+        
+        finally:
+            stop_typing.set()
+            typing_task.cancel()
 
-    try:
-        rag_prompt = await build_groq_rag_prompt(prompt, use_search)
-    except Exception:
-        rag_prompt = prompt
-
-    urls = _find_urls(prompt)
-    if urls:
-        await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
-        title, text = await _fetch_and_extract_article(urls[0])
-        if text:
-            rag_prompt = (
-                "Artikel sumber:\n\n"
-                f"{text}\n\n"
-                "Ringkas dengan bullet point + kesimpulan."
-            )
-
-    history = GROQ_MEMORY.get(chat_id, [])
-    history.append({"role": "user", "content": rag_prompt})
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Gunakan DATA jika ada (RAG / web / artikel).\n"
-                "Jika dari web, anggap itu informasi TERBARU.\n"
-                "Jangan mengarang fakta.\n"
-                "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
-            ),
-        }
-    ] + history
-
-    try:
-        session = await get_http_session()
-        async with session.post(
-            f"{GROQ_BASE}/chat/completions",
-            json={
-                "model": GROQ_MODEL,
-                "messages": messages,
-                "temperature": 0.9,
-                "top_p": 0.95,
-                "max_tokens": 2048,
-            },
-            headers={
-                "Authorization": f"Bearer {GROQ_KEY}",
-                "Content-Type": "application/json",
-            },
-            timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
-        ) as resp:
-            data = await resp.json()
-            raw = data["choices"][0]["message"]["content"]
-
-        history.append({"role": "assistant", "content": raw})
-        GROQ_MEMORY[chat_id] = history[-10:]
-
-        clean = sanitize_ai_output(raw)
-        chunks = split_message(clean, 4000)
-
-        await status_msg.edit_text(chunks[0], parse_mode="HTML")
-        _GROQ_ACTIVE_USERS[chat_id] = status_msg.message_id
-
+        await msg.reply_text(chunks[0], parse_mode="HTML")
+        _GROQ_ACTIVE_USERS[chat_id] = msg.message_id + 1
+        
         for ch in chunks[1:]:
             await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
+        stop_typing.set()
+        typing_task.cancel()
         GROQ_MEMORY.pop(chat_id, None)
         _GROQ_ACTIVE_USERS.pop(chat_id, None)
-        await status_msg.edit_text(f"{em} ❌ Error: {e}")
+        await msg.reply_text(f"{em} ❌ Error: {e}")
