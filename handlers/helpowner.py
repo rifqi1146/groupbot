@@ -15,7 +15,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     msg = update.message
 
-    if not user or user.id != OWNER_ID:
+    if user.id not in OWNER_ID:
         return await msg.reply_text("❌ Owner only.")
 
     text = (
