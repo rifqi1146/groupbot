@@ -42,6 +42,15 @@ ASK_MEMORY = {}
 _ASK_ACTIVE_USERS = {}
 
 #core function
+_last_req = {}
+
+def _can(uid: int) -> bool:
+    now = time.time()
+    if now - _last_req.get(uid, 0) < COOLDOWN:
+        return False
+    _last_req[uid] = now
+    return True
+    
 async def openrouter_ask_think(
     user_prompt: str,
     use_search: bool = False
@@ -117,7 +126,7 @@ async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
             await asyncio.sleep(4)
     except Exception:
         pass
-
+        
 #askcmd
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     em = "🧠"

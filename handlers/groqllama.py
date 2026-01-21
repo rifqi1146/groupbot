@@ -365,7 +365,7 @@ async def meta_query(update, context):
             raw = data["choices"][0]["message"]["content"]
 
         history.append({"role": "assistant", "content": raw})
-        META_MEMORY[chat_id] = history[-10:]
+        META_MEMORY[chat_id] = history[-50:]
 
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, 4000)

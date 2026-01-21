@@ -49,6 +49,7 @@ _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 def _emo(): return random.choice(_EMOS)
 
 _last_req = {}
+
 def _can(uid: int) -> bool:
     now = time.time()
     if now - _last_req.get(uid, 0) < COOLDOWN:
@@ -362,7 +363,7 @@ async def groq_query(update, context):
             raw = data["choices"][0]["message"]["content"]
 
         history.append({"role": "assistant", "content": raw})
-        GROQ_MEMORY[chat_id] = history[-10:]
+        GROQ_MEMORY[chat_id] = history[-50:]
 
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, 4000)
