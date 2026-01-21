@@ -41,7 +41,6 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     params = {
         "is_nsfw": "true",
-        "limit": 1
     }
     if tag:
         params["included_tags"] = tag
