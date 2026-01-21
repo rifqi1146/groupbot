@@ -509,7 +509,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("❌ Bukan asupan lu dongo!", show_alert=True)
         return
 
-    if user_id != OWNER_ID:
+    if user_id not in OWNER_ID:
         now = time.time()
         last = ASUPAN_COOLDOWN.get(user_id, 0)
         if now - last < ASUPAN_COOLDOWN_SEC:
