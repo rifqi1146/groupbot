@@ -106,46 +106,47 @@ ANIME_APIS = [
     }
 ]
 
+TAG_MAPPING = {
+    "raiden": "raiden-shogun",
+    "shogun": "raiden-shogun",
+    "genshin": "genshin-impact",
+    "ayaka": "kamisato-ayaka",
+    "marin": "marin-kitagawa",
+    "maid": "maid",
+    "random": "waifu"
+}
+
 async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
     if not msg or not chat:
         return
 
-    # NSFW check
     nsfw = _load_nsfw()
     allow_nsfw = True
     if chat.type in ("group", "supergroup"):
         allow_nsfw = chat.id in nsfw["groups"]
 
-    tags = [t.lower() for t in context.args] if context.args else []
-    session = await get_http_session()
+    keyword = context.args[0].lower() if context.args else "random"
+    tag = TAG_MAPPING.get(keyword, keyword)
 
+    session = await get_http_session()
     random.shuffle(ANIME_APIS)
 
     for api in ANIME_APIS:
         try:
-            tag = tags[0] if tags else None
+            tags = api["nsfw_tags"] if allow_nsfw else api["sfw_tags"]
+            url_tpl = api["nsfw_url"] if allow_nsfw else api["sfw_url"]
 
-            # pilih SFW / NSFW
-            if allow_nsfw and api["nsfw_tags"]:
-                allowed_tags = api["nsfw_tags"]
-                base_url = api["nsfw_url"]
-            else:
-                allowed_tags = api["sfw_tags"]
-                base_url = api["sfw_url"]
+            # kalau tag ga supported → fallback ke random tag API itu
+            use_tag = tag if tag in tags else random.choice(tags)
 
-            # skip kalau tag ga didukung
-            if tag and tag not in allowed_tags:
-                continue
-
-            use_tag = tag or random.choice(allowed_tags)
-            url = base_url.format(tag=use_tag)
+            url = url_tpl.format(tag=use_tag)
 
             async with session.get(
                 url,
-                headers={"User-Agent": "TelegramBot"},
-                timeout=aiohttp.ClientTimeout(total=10)
+                timeout=aiohttp.ClientTimeout(total=10),
+                headers={"User-Agent": "TelegramBot"}
             ) as resp:
 
                 if resp.status != 200:
@@ -157,9 +158,11 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if not img_url:
                     continue
 
-                caption = f"💖 <b>Waifu</b>\n"
-                caption += f"🧩 API: <b>{api['name']}</b>\n"
-                caption += f"🏷 Tag: <code>{use_tag}</code>"
+                caption = (
+                    f"💖 <b>Waifu</b>\n"
+                    f"🏷 Tag: <code>{use_tag}</code>\n"
+                    f"🌐 API: <b>{api['name']}</b>"
+                )
 
                 return await msg.reply_photo(
                     photo=img_url,
@@ -170,7 +173,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             continue
 
-    await msg.reply_text("❌ Ga nemu waifu dari semua API 😭")
+    await msg.reply_text("❌ Semua API gagal 😭")
     
 ## Big thanks to @aenulrofik for this awesome feature ##
 ## And to me: Tg @IgnoredProjectXcl for the major enhancements ##
