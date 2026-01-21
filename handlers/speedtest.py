@@ -126,6 +126,12 @@ FONT_SMALL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 #cmd speedtest
 async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    user = update.effective_user
+
+    if not msg or not user:
+        return
+
     if user.id not in OWNER_ID:
         return await msg.reply_text("❌ Owner only.")
 
