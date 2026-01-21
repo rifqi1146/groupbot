@@ -32,65 +32,16 @@ from utils.config import (
     OPENROUTER_API_KEY,
     OPENROUTER_URL,
     MODEL_THINK,
-    OPENROUTER_IMAGE_MODEL,
 )
   
 from utils.http import get_http_session
 
 # load rag
 LOCAL_CONTEXTS = load_local_contexts()
+ASK_MEMORY = {}
+_ASK_ACTIVE_USERS = {}
 
 #core function
-async def openrouter_generate_image(prompt: str) -> list[str]:
-    session = await get_http_session()
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://example.com",
-        "X-Title": "KiyoshiBot",
-    }
-
-    payload = {
-        "model": OPENROUTER_IMAGE_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
-        "extra_body": {
-            "modalities": ["image", "text"]
-        }
-    }
-
-    async with session.post(
-        OPENROUTER_URL,
-        headers=headers,
-        json=payload,
-    ) as resp:
-        if resp.status != 200:
-            raise RuntimeError(await resp.text())
-
-        data = await resp.json()
-
-    images: list[str] = []
-    msg = data.get("choices", [{}])[0].get("message", {})
-
-    for img in msg.get("images", []):
-        url = img.get("image_url", {}).get("url")
-        if isinstance(url, str):
-            images.append(url)
-
-    return images
-    
-def data_url_to_bytesio(data_url: str) -> BytesIO:
-    header, encoded = data_url.split(",", 1)
-    data = base64.b64decode(encoded)
-    bio = BytesIO(data)
-    bio.seek(0)
-    return bio
-    
 async def openrouter_ask_think(
     user_prompt: str,
     use_search: bool = False
@@ -158,97 +109,91 @@ async def openrouter_ask_think(
         data = await resp.json()
 
     return data["choices"][0]["message"]["content"].strip()
+    
+async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
+    try:
+        while not stop_event.is_set():
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+    except Exception:
+        pass
 
 #askcmd
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    em = "🧠"
     msg = update.message
-    if not msg:
+    if not msg or not msg.from_user:
         return
 
-    # Image generator 
-    if context.args and context.args[0].lower() == "img":
-        prompt = " ".join(context.args[1:]).strip()
+    chat_id = update.effective_chat.id
+    prompt = ""
+    use_search = False
+
+    if msg.text and msg.text.startswith("/ask"):
+        if context.args and context.args[0].lower() == "search":
+            use_search = True
+            prompt = " ".join(context.args[1:]).strip()
+        else:
+            prompt = " ".join(context.args).strip() if context.args else ""
+
+        ASK_MEMORY.pop(chat_id, None)
+        _ASK_ACTIVE_USERS.pop(chat_id, None)
 
         if not prompt:
             return await msg.reply_text(
-                "🎨 <b>Generate Image</b>\n\n"
-                "Contoh:\n"
-                "<code>/ask img anime girl cyberpunk</code>",
+                "<b>❓ Ask AI</b>\n\n"
+                "<code>/ask jelaskan relativitas</code>\n"
+                "<code>/ask search hasil pertandingan Indonesia vs Malaysia</code>",
                 parse_mode="HTML"
             )
 
-        status = await msg.reply_text("🎨 <i>Lagi bikin gambar...</i>", parse_mode="HTML")
+    elif msg.reply_to_message:
+        last_mid = _ASK_ACTIVE_USERS.get(chat_id)
+        if not last_mid or msg.reply_to_message.message_id != last_mid:
+            return
+        prompt = msg.text.strip() if msg.text else ""
 
-        try:
-            images = await openrouter_generate_image(prompt)
-            await status.delete()
-
-            if not images:
-                return await msg.reply_text("❌ Gagal generate gambar.")
-
-            for url in images:
-                if isinstance(url, str) and url.startswith("data:image"):
-                    bio = data_url_to_bytesio(url)
-                    await msg.reply_photo(photo=bio)
-                else:
-                    await msg.reply_photo(photo=url)
-
-        except Exception as e:
-            try:
-                await status.delete()
-            except:
-                pass
-
-            await msg.reply_text(
-                f"<b>❌ Gagal generate image</b>\n<code>{html.escape(str(e))}</code>",
-                parse_mode="HTML"
-            )
+    if not prompt:
         return
 
-   # Google search
-    use_search = False
+    uid = msg.from_user.id
+    if not _can(uid):
+        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
 
-    if context.args and context.args[0].lower() == "search":
-        use_search = True
-        user_prompt = " ".join(context.args[1:]).strip()
-    elif context.args:
-        user_prompt = " ".join(context.args).strip()
-    elif msg.reply_to_message:
-        user_prompt = (
-            msg.reply_to_message.text
-            or msg.reply_to_message.caption
-            or ""
-        ).strip()
-    else:
-        user_prompt = ""
-
-    if not user_prompt:
-        return await msg.reply_text(
-            "<b>❓ Ask AI</b>\n\n"
-            "<code>/ask jelaskan relativitas</code>\n"
-            "<code>/ask search hasil pertandingan Indonesia vs Malaysia</code>\n"
-            "<code>/ask img anime cyberpunk</code>",
-            parse_mode="HTML"
-        )
-
-    status_msg = await msg.reply_text("🧠 <i>Memproses...</i>", parse_mode="HTML")
+    stop_typing = asyncio.Event()
+    typing_task = asyncio.create_task(
+        _typing_loop(context.bot, chat_id, stop_typing)
+    )
 
     try:
-        raw = await openrouter_ask_think(
-            user_prompt,
+        rag_prompt = await openrouter_ask_think(
+            prompt,
             use_search=use_search
         )
-        clean = sanitize_ai_output(raw)
+
+        history = ASK_MEMORY.get(chat_id, [])
+        history.append({"role": "user", "content": prompt})
+        history.append({"role": "assistant", "content": rag_prompt})
+        ASK_MEMORY[chat_id] = history
+
+        clean = sanitize_ai_output(rag_prompt)
         chunks = split_message(clean, max_length=3800)
 
-        await status_msg.edit_text(chunks[0], parse_mode="HTML")
+        stop_typing.set()
+        typing_task.cancel()
+
+        await msg.reply_text(chunks[0], parse_mode="HTML")
+        _ASK_ACTIVE_USERS[chat_id] = msg.message_id + 1
+
         for ch in chunks[1:]:
-            await asyncio.sleep(0.25)
             await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
-        await status_msg.edit_text(
-            f"<b>❌ Gagal</b>\n<code>{html.escape(str(e))}</code>",
+        stop_typing.set()
+        typing_task.cancel()
+        ASK_MEMORY.pop(chat_id, None)
+        _ASK_ACTIVE_USERS.pop(chat_id, None)
+        await msg.reply_text(
+            f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
         )
-    
