@@ -24,61 +24,55 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat.id not in nsfw["groups"]:
             return await msg.reply_text("❌ NSFW tidak diaktifkan di grup ini.")
 
-    if context.args:
-        tags = [t.lower() for t in context.args]
-    else:
-        tags = []
+    tags = [t.lower() for t in context.args] if context.args else []
 
     params = {
         "limit": 1,
-        "is_nsfw": "true",
+        "is_nsfw": True,
     }
 
     if tags:
-        params["included_tags"] = tags
+        params["included_tags"] = ",".join(tags)
 
-    url = "https://api.waifu.im/search"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (TelegramBot)"
+    }
 
     session = await get_http_session()
     async with session.get(
-        url,
+        "https://api.waifu.im/search",
         params=params,
+        headers=headers,
         timeout=aiohttp.ClientTimeout(total=15)
     ) as resp:
         if resp.status != 200:
-            return await msg.reply_text("❌ Gagal ambil waifu 😭")
+            text = await resp.text()
+            return await msg.reply_text(
+                f"❌ API Error ({resp.status})\n<code>{text}</code>",
+                parse_mode="HTML"
+            )
 
         data = await resp.json()
 
     images = data.get("images")
     if not images:
-        if tags:
-            return await msg.reply_text(
-                f"❌ Waifu dengan tag <b>{', '.join(tags)}</b> tidak ditemukan.",
-                parse_mode="HTML"
-            )
-        return await msg.reply_text("❌ Waifu tidak ditemukan.")
+        return await msg.reply_text("❌ Waifu tidak ditemukan 😭")
 
     img = images[0]
-
-    img_url = img.get("url")
-    artist = img.get("artist", {})
-    artist_name = artist.get("name", "Unknown")
-    artist_twitter = artist.get("twitter")
-    source = img.get("source")
 
     caption = "💖 <b>Waifu</b>\n"
     if tags:
         caption += f"🏷 Tag: <code>{', '.join(tags)}</code>\n"
-    caption += f"🎨 Artist: <b>{artist_name}</b>\n"
 
-    if artist_twitter:
-        caption += f"🐦 <a href='{artist_twitter}'>Twitter</a>\n"
-    if source:
-        caption += f"🔗 <a href='{source}'>Source</a>"
+    artist = img.get("artist") or {}
+    if artist.get("name"):
+        caption += f"🎨 Artist: <b>{artist['name']}</b>\n"
+
+    if img.get("source"):
+        caption += f"🔗 <a href='{img['source']}'>Source</a>"
 
     await msg.reply_photo(
-        photo=img_url,
+        photo=img["url"],
         caption=caption,
         parse_mode="HTML"
     )
