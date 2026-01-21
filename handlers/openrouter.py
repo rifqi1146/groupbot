@@ -42,6 +42,8 @@ ASK_MEMORY = {}
 _ASK_ACTIVE_USERS = {}
 
 #core function
+COOLDOWN = 1
+
 _last_req = {}
 
 def _can(uid: int) -> bool:
