@@ -27,7 +27,6 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tags = [t.lower() for t in context.args] if context.args else []
 
     params = {
-        "limit": 1,
         "is_nsfw": "true",
     }
     
