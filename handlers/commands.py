@@ -22,6 +22,7 @@ from handlers.groq import groq_query
 from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
 from handlers.groqllama import meta_query
+from fun.waifu import waifu_cmd
 
 
 from handlers.asupan import (
@@ -34,6 +35,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("waifu", waifu_cmd, False),
     ("meta", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
