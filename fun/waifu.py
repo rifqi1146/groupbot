@@ -28,9 +28,9 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     params = {
         "limit": 1,
-        "is_nsfw": True,
+        "is_nsfw": "true",
     }
-
+    
     if tags:
         params["included_tags"] = ",".join(tags)
 
