@@ -11,12 +11,22 @@ def require_env(name: str, cast=str):
         return cast(value)
     except Exception:
         raise RuntimeError(f"Environment variable {name} must be {cast.__name__}")
-
+        
+def require_env_list(key: str) -> set[int]:
+    val = os.getenv(key)
+    if not val:
+        raise RuntimeError(f"Missing env: {key}")
+    return {
+        int(x)
+        for x in val.split(",")
+        if x.strip().isdigit()
+    }
+    
 #Bot token
 BOT_TOKEN = require_env("BOT_TOKEN")
 
 #owner id
-OWNER_ID = require_env("BOT_OWNER_ID", int)
+OWNER_ID = require_env_list("BOT_OWNER_ID")
 
 #log & asupan startup
 LOG_CHAT_ID = require_env("LOG_CHAT_ID", int)
