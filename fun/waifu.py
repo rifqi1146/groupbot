@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import aiohttp
 import random
-
+from telegram import InputMediaPhoto
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utils.http import get_http_session
 from utils.storage import load_json_file
@@ -98,8 +98,7 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tag = _WAIFU_LAST_TAG.get(chat_id)
 
     params = {
-        "is_nsfw": "true",
-        "limit": 1
+        "is_nsfw": "true"
     }
     if tag:
         params["included_tags"] = tag
@@ -108,16 +107,17 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with session.get(
         "https://api.waifu.im/search",
         params=params,
+        headers={"User-Agent": "TelegramBot"},
         timeout=aiohttp.ClientTimeout(total=15)
     ) as resp:
         if resp.status != 200:
-            return await query.edit_message_caption("❌ API Error")
+            return await query.answer("API error 😭", show_alert=True)
 
         data = await resp.json()
 
     images = data.get("images")
     if not images:
-        return await query.edit_message_caption("❌ Waifu tidak ditemukan 😭")
+        return await query.answer("Waifu kosong 😭", show_alert=True)
 
     img = images[0]
 
@@ -131,20 +131,21 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     buttons = [
         [
+            InlineKeyboardButton("⏪ Pref", callback_data="waifu_pref"),
             InlineKeyboardButton("▶️ Next", callback_data="waifu_next")
         ]
     ]
+
     if img.get("source"):
-        buttons[0].append(
+        buttons.append([
             InlineKeyboardButton("🔗 Source", url=img["source"])
-        )
+        ])
 
     await query.message.edit_media(
-        media={
-            "type": "photo",
-            "media": img["url"],
-            "caption": caption,
-            "parse_mode": "HTML"
-        },
+        media=InputMediaPhoto(
+            media=img["url"],
+            caption=caption,
+            parse_mode="HTML"
+        ),
         reply_markup=InlineKeyboardMarkup(buttons)
     )
