@@ -136,41 +136,54 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for api in ANIME_APIS:
         try:
             tags = api["nsfw_tags"] if allow_nsfw else api["sfw_tags"]
-            url_tpl = api["nsfw_url"] if allow_nsfw else api["sfw_url"]
+            if not tags:
+                continue
 
-            # kalau tag ga supported → fallback ke random tag API itu
             use_tag = tag if tag in tags else random.choice(tags)
 
-            url = url_tpl.format(tag=use_tag)
+            # special case: waifu.im
+            if api["name"] == "Waifu.im":
+                params = {
+                    "included_tags": use_tag,
+                    "limit": 1
+                }
+                async with session.get(
+                    "https://api.waifu.im/search",
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    img_url = api["parse"](data)
 
-            async with session.get(
-                url,
-                timeout=aiohttp.ClientTimeout(total=10),
-                headers={"User-Agent": "TelegramBot"}
-            ) as resp:
+            else:
+                url = (api["nsfw_url"] if allow_nsfw else api["sfw_url"]).format(tag=use_tag)
+                async with session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    img_url = api["parse"](data)
 
-                if resp.status != 200:
-                    continue
+            if not img_url:
+                continue
 
-                data = await resp.json()
-                img_url = api["parse"](resp)
+            caption = (
+                f"💖 <b>Waifu</b>\n"
+                f"🏷 Tag: <code>{use_tag}</code>\n"
+                f"🌐 API: <b>{api['name']}</b>"
+            )
 
-                if not img_url:
-                    continue
+            return await msg.reply_photo(
+                photo=img_url,
+                caption=caption,
+                parse_mode="HTML"
+            )
 
-                caption = (
-                    f"💖 <b>Waifu</b>\n"
-                    f"🏷 Tag: <code>{use_tag}</code>\n"
-                    f"🌐 API: <b>{api['name']}</b>"
-                )
-
-                return await msg.reply_photo(
-                    photo=img_url,
-                    caption=caption,
-                    parse_mode="HTML"
-                )
-
-        except Exception:
+        except Exception as e:
             continue
 
     await msg.reply_text("❌ Semua API gagal 😭")
