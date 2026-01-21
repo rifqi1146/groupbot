@@ -67,14 +67,24 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("❌ NSFW tidak diaktifkan di grup ini.")
 
     if not context.args:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "🏷️ Daftar Tag Waifu",
+                    url="https://docs.waifu.im/tags"
+                )
+            ]
+        ])
+    
         return await msg.reply_text(
             "💖 <b>Waifu Command</b>\n\n"
             "• <code>/waifu random</code>\n"
             "• <code>/waifu maid</code>\n"
             "• <code>/waifu raiden-shogun</code>\n\n"
-            "Tag: https://docs.waifu.im/reference/tags",
+            "Klik tombol di bawah untuk lihat tag 👇",
             parse_mode="HTML",
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=keyboard
         )
 
     keyword = context.args[0].lower()
