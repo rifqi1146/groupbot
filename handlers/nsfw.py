@@ -70,10 +70,17 @@ async def nsfwlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data["groups"]:
         return await update.message.reply_text("📭 Tidak ada grup NSFW.")
 
-    text = "🔞 <b>NSFW Whitelisted Groups</b>\n\n"
-    for gid in data["groups"]:
-        text += f"• <code>{gid}</code>\n"
+    lines = ["🔞 <b>NSFW Whitelisted Groups</b>\n"]
 
+    for gid in data["groups"]:
+        try:
+            chat = await context.bot.get_chat(gid)
+            title = chat.title or chat.username or "Unknown Group"
+            lines.append(f"• {html.escape(title)}")
+        except Exception:
+            lines.append("• <i>Unknown / Bot not in group</i>")
+
+    text = "\n".join(lines)
     await update.message.reply_text(text, parse_mode="HTML")
     
 async def pollinations_generate_nsfw(update, context):
@@ -107,7 +114,7 @@ async def pollinations_generate_nsfw(update, context):
 
     try:
         status_msg = await msg.reply_text(
-            bold("🔞 Generating mage..."),
+            bold("🔞 Generating image..."),
             parse_mode="HTML"
         )
     except Exception:
