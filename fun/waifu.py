@@ -5,7 +5,7 @@ import aiohttp
 from utils.http import get_http_session
 from utils.storage import load_json_file
 
-NSFW_FILE = "data/nsfw.json"
+NSFW_FILE = "data/nsfw_groups.json"
 
 
 def _load_nsfw():
