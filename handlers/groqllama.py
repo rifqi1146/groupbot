@@ -241,7 +241,14 @@ async def _fetch_and_extract_article(
     except Exception:
         return None, None
 
-
+async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
+    try:
+        while not stop_event.is_set():
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+    except Exception:
+        pass
+        
 # handler
 async def meta_query(update, context):
     em = _emo()
@@ -273,11 +280,8 @@ async def meta_query(update, context):
 
     elif msg.reply_to_message:
         last_mid = _META_ACTIVE_USERS.get(chat_id)
-        if not last_mid:
+        if not last_mid or msg.reply_to_message.message_id != last_mid:
             return
-        if msg.reply_to_message.message_id != last_mid:
-            return
-
         prompt = msg.text.strip() if msg.text else ""
 
     if not prompt:
@@ -287,61 +291,60 @@ async def meta_query(update, context):
     if not _can(uid):
         return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
 
-    status_msg = await msg.reply_text(f"{em} ✨ Lagi mikir jawaban...")
+    stop_typing = asyncio.Event()
+    typing_task = asyncio.create_task(
+        _typing_loop(context.bot, chat_id, stop_typing)
+    )
 
-    if msg.reply_to_message and msg.reply_to_message.photo:
-        await status_msg.edit_text(f"{em} 👀 Lagi baca gambar...")
-        photo = msg.reply_to_message.photo[-1]
-        file = await photo.get_file()
-        img_path = await file.download_to_drive()
+    try:
+        if msg.reply_to_message and msg.reply_to_message.photo:
+            photo = msg.reply_to_message.photo[-1]
+            file = await photo.get_file()
+            img_path = await file.download_to_drive()
 
-        ocr_text = ocr_image(img_path)
+            ocr_text = ocr_image(img_path)
+            try:
+                os.remove(img_path)
+            except Exception:
+                pass
+
+            if ocr_text:
+                prompt = (
+                    "Berikut teks hasil OCR dari gambar:\n\n"
+                    f"{ocr_text}\n\n"
+                    f"Pertanyaan user:\n{prompt}"
+                )
+
         try:
-            os.remove(img_path)
+            rag_prompt = await build_groq_rag_prompt(prompt, use_search)
         except Exception:
-            pass
+            rag_prompt = prompt
 
-        if not ocr_text:
-            return await status_msg.edit_text(f"{em} ❌ Teks gambar ga kebaca.")
+        urls = _find_urls(prompt)
+        if urls:
+            _, text = await _fetch_and_extract_article(urls[0])
+            if text:
+                rag_prompt = (
+                    "Artikel sumber:\n\n"
+                    f"{text}\n\n"
+                    "Ringkas dengan bullet point + kesimpulan."
+                )
 
-        prompt = (
-            "Berikut teks hasil OCR dari gambar:\n\n"
-            f"{ocr_text}\n\n"
-            f"Pertanyaan user:\n{prompt}"
-        )
+        history = META_MEMORY.get(chat_id, [])
+        history.append({"role": "user", "content": rag_prompt})
 
-    try:
-        rag_prompt = await build_groq_rag_prompt(prompt, use_search)
-    except Exception:
-        rag_prompt = prompt
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Gunakan DATA jika ada (RAG / web / artikel).\n"
+                    "Jika dari web, anggap itu informasi TERBARU.\n"
+                    "Jangan mengarang fakta.\n"
+                    "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
+                ),
+            }
+        ] + history
 
-    urls = _find_urls(prompt)
-    if urls:
-        await status_msg.edit_text(f"{em} 🔎 Lagi baca artikel...")
-        title, text = await _fetch_and_extract_article(urls[0])
-        if text:
-            rag_prompt = (
-                "Artikel sumber:\n\n"
-                f"{text}\n\n"
-                "Ringkas dengan bullet point + kesimpulan."
-            )
-
-    history = META_MEMORY.get(chat_id, [])
-    history.append({"role": "user", "content": rag_prompt})
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Gunakan DATA jika ada (RAG / web / artikel).\n"
-                "Jika dari web, anggap itu informasi TERBARU.\n"
-                "Jangan mengarang fakta.\n"
-                "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
-            ),
-        }
-    ] + history
-
-    try:
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
@@ -367,14 +370,18 @@ async def meta_query(update, context):
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, 4000)
 
-        await status_msg.edit_text(chunks[0], parse_mode="HTML")
-        _META_ACTIVE_USERS[chat_id] = status_msg.message_id
+        stop_typing.set()
+        typing_task.cancel()
+
+        await msg.reply_text(chunks[0], parse_mode="HTML")
+        _META_ACTIVE_USERS[chat_id] = msg.message_id + 1
 
         for ch in chunks[1:]:
             await msg.reply_text(ch, parse_mode="HTML")
 
     except Exception as e:
+        stop_typing.set()
+        typing_task.cancel()
         META_MEMORY.pop(chat_id, None)
         _META_ACTIVE_USERS.pop(chat_id, None)
-        await status_msg.edit_text(f"{em} ❌ Error: {e}")
-        
+        await msg.reply_text(f"{em} ❌ Error: {e}")
