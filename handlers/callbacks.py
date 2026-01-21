@@ -6,6 +6,7 @@ from handlers.dl import dl_callback, dlask_callback
 from handlers.asupan import asupan_callback
 from handlers.helpowner import helpowner_callback
 from fun.reminder import reminder_cancel_cb
+from fun.waifu import waifu_next_cb
 
 def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
@@ -15,3 +16,4 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(asupan_callback, pattern=r"^asupan:"))
     app.add_handler(CallbackQueryHandler(helpowner_callback, pattern=r"^helpowner:"))
     app.add_handler(CallbackQueryHandler(reminder_cancel_cb, pattern=r"^reminder:"))
+    app.add_handler(CallbackQueryHandler(waifu_next_cb, pattern="^waifu_next$"))
