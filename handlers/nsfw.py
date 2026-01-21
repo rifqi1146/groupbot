@@ -63,7 +63,7 @@ async def disablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 NSFW dimatikan di grup ini.")
     
 async def nsfwlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
+    if update.effective_user.id not in OWNER_ID:
         return await update.message.reply_text("❌ Owner only.")
 
     data = _load_nsfw()
