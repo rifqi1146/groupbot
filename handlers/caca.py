@@ -194,25 +194,33 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as r:
             data = await r.json()
+
+            if "choices" not in data or not data["choices"]:
+                raise RuntimeError(
+                    data.get("error", {}).get("message", "Groq response invalid")
+                )
+            
             raw = data["choices"][0]["message"]["content"]
 
         history.append({"role": "user", "content": rag_prompt})
         history.append({"role": "assistant", "content": raw})
-
+        
         META_MEMORY[user_id] = {
             "history": history,
             "last_used": time.time(),
         }
-
+        
         clean = sanitize_ai_output(raw)
         chunks = split_message(clean, 4000)
-
+        
         stop_typing.set()
         typing_task.cancel()
-
-        await msg.reply_text(chunks[0], parse_mode="HTML")
-        _META_ACTIVE_USERS[user_id] = msg.message_id + 1
-
+        
+        sent = await msg.reply_text(chunks[0], parse_mode="HTML")
+        
+        _META_ACTIVE_USERS[user_id] = sent.message_id
+        META_MEMORY[user_id]["last_used"] = time.time()
+        
         for c in chunks[1:]:
             await msg.reply_text(c, parse_mode="HTML")
 

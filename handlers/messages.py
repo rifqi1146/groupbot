@@ -34,6 +34,12 @@ async def ai_reply_router(update, context):
     if _META_ACTIVE_USERS.get(user_id) == reply_mid:
         return await meta_query(update, context)
 
+    if reply_mid in _META_ACTIVE_USERS.values():
+        return await msg.reply_text(
+            "😒 Lu siapa?\nGue belum ngobrol sama lu.\nKetik /caca dulu.",
+            parse_mode="HTML"
+        )
+
     return
     
 def register_messages(app):
