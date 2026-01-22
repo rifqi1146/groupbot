@@ -21,7 +21,7 @@ from handlers.gemini import ai_cmd
 from handlers.groq import groq_query
 from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
-from handlers.groqllama import meta_query
+from handlers.caca import meta_query
 from fun.waifu import waifu_cmd
 from handlers.update import update_cmd
 
