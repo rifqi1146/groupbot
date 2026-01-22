@@ -11,8 +11,6 @@ from io import BytesIO
 from typing import List, Tuple, Optional
 
 import aiohttp
-import pytesseract
-from PIL import Image
 from bs4 import BeautifulSoup
 
 from telegram import Update

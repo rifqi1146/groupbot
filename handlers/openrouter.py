@@ -53,64 +53,22 @@ def _can(uid: int) -> bool:
     _last_req[uid] = now
     return True
     
-async def openrouter_ask_think(
-    user_prompt: str,
-    use_search: bool = False
-) -> str:
-    # ambil konteks dari dokumen lokal
-    contexts = await retrieve_context(
-        user_prompt,
-        LOCAL_CONTEXTS,
-        top_k=3
-    )
-    
-    # gunakan google search
-    if use_search:
-        try:
-            ok, results = await google_search(user_prompt, limit=5)
-            if ok and results:
-                web_contexts = [
-                    f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
-                    for r in results
-                ]
-                contexts = contexts + web_contexts
-        except Exception:
-            pass
-
-    # build RAG prompt
-    rag_prompt = build_rag_prompt(user_prompt, contexts)
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://example.com",
-        "X-Title": "KiyoshiBot",
-    }
+async def openrouter_ask_think(messages: list[dict]) -> str:
+    session = await get_http_session()
 
     payload = {
         "model": MODEL_THINK,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "- Jika konteks berasal dari pencarian web, anggap itu informasi TERBARU.\n"
-                    "- Jika DATA berisi aturan bot atau dokumentasi, WAJIB gunakan itu.\n"
-                    "- Jangan mengarang aturan sendiri.\n"
-                    "- Jika DATA kosong, boleh pakai pengetahuan umum atau web dan jelaskan sumbernya.\n"
-                    "- Jawab pakai Bahasa Indonesia santai ala gen z."
-                ),
-            },
-            {
-                "role": "user",
-                "content": rag_prompt,
-            },
-        ],
+        "messages": messages,
     }
 
-    session = await get_http_session()
     async with session.post(
         OPENROUTER_URL,
-        headers=headers,
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://example.com",
+            "X-Title": "KiyoshiBot",
+        },
         json=payload,
         timeout=aiohttp.ClientTimeout(total=60),
     ) as resp:
@@ -177,17 +135,45 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        rag_prompt = await openrouter_ask_think(
-            prompt,
-            use_search=use_search
-        )
+        history = ASK_MEMORY.get(chat_id, [])
+
+        contexts = await retrieve_context(prompt, LOCAL_CONTEXTS, top_k=3)
+        if use_search:
+            try:
+                ok, results = await google_search(prompt, limit=5)
+                if ok and results:
+                    contexts += [
+                        f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
+                        for r in results
+                    ]
+            except:
+                pass
+        
+        rag_prompt = build_rag_prompt(prompt, contexts)
+        
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Gunakan DATA jika ada (RAG / web / artikel).\n"
+                    "Jika dari web, anggap itu informasi TERBARU.\n"
+                    "Jangan mengarang fakta.\n"
+                    "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
+                ),
+            },
+        ]
+        
+        messages += history
+        messages.append({"role": "user", "content": rag_prompt})
+        
+        raw = await openrouter_ask_think(messages)
 
         history = ASK_MEMORY.get(chat_id, [])
         history.append({"role": "user", "content": prompt})
-        history.append({"role": "assistant", "content": rag_prompt})
+        history.append({"role": "assistant", "content": raw})
         ASK_MEMORY[chat_id] = history
 
-        clean = sanitize_ai_output(rag_prompt)
+        clean = sanitize_ai_output(raw)
         chunks = split_message(clean, max_length=3800)
 
         stop_typing.set()
