@@ -30,7 +30,7 @@ async def ai_reply_router(update, context):
     if _GROQ_ACTIVE_USERS.get(chat_id) == reply_mid:
         return await groq_query(update, context)
         
-    if _META_ACTIVE_USERS.get(chat_id) == reply_mid:
+    if _META_ACTIVE_USERS.get(user_id) == reply_mid:
         return await meta_query(update, context)
 
     return
