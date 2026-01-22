@@ -23,6 +23,7 @@ from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
 from handlers.groqllama import meta_query
 from fun.waifu import waifu_cmd
+from handler.update import update_cmd
 
 
 from handlers.asupan import (
@@ -37,6 +38,7 @@ COMMAND_HANDLERS = [
     ("meta", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
+    ("update", update_cmd, False),
     ("reminder", reminder_cmd, False),
     ("broadcast", broadcast_cmd, False),
     ("autodel", autodel_cmd, True),
