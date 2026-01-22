@@ -1,8 +1,15 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-import subprocess
 import os
 import sys
 import asyncio
+import subprocess
+import html
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from utils.config import OWNER_ID
 
 async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
