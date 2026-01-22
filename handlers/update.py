@@ -62,17 +62,19 @@ async def update_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user
 
-    await query.answer()
-
     if not user or user.id not in OWNER_ID:
-        return await query.edit_message_text("❌ Owner only.")
+        await query.answer("❌ Lu bukan owner.", show_alert=True)
+        return
 
     if query.data == "update_cancel":
-        return await query.edit_message_text("🚫 Update dibatalkan.")
+        await query.answer("❎ Dibatalkan.")
+        await query.message.edit_reply_markup(None)
+        return
 
     if query.data == "update_restart":
-        await query.edit_message_text(
-            "♻️ <b>Update sukses, restart bot...</b>",
+        await query.answer("♻️ Restarting...")
+        await query.message.edit_text(
+            "♻️ <b>Restarting bot...</b>",
             parse_mode="HTML"
         )
 
