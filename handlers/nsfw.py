@@ -8,7 +8,8 @@ from utils.http import get_http_session
 from utils.config import OWNER_ID
 from utils.text import bold, code
 
-from handlers.groq import _emo, _can, _extract_prompt_from_update
+from handlers.groq import _emo, _can 
+from utils.nsfw import _extract_prompt_from_update
 
 #nsfw
 NSFW_FILE = "data/nsfw_groups.json"
