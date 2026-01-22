@@ -242,7 +242,9 @@ async def meta_query(update, context):
     typing_task = asyncio.create_task(
         _typing_loop(context.bot, chat_id, stop_typing)
     )
-
+    
+    try:
+    
         try:
             rag_prompt = await build_groq_rag_prompt(prompt, use_search)
         except Exception:
