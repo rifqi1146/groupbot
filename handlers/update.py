@@ -1,6 +1,7 @@
 import subprocess
 import asyncio
 import os
+import sys
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
@@ -48,5 +49,4 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await asyncio.sleep(1)
 
-    # pakai restart handler lu
     os.execv(sys.executable, [sys.executable] + sys.argv)
