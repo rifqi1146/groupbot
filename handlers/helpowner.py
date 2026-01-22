@@ -23,14 +23,15 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<i>Administrative & system-level controls</i>\n\n"
 
         "⚙️ <b>System Management</b>\n"
-        "• <code>/speedtest</code> — run server speed test\n"
-        "• <code>/broadcast</code> — announcement \n"
-        "• <code>/autodel</code> — manage auto delete asupan settings\n"
-        "• <code>/wlc</code> — configure welcome message\n"
-        "• <code>/restart</code> — restart the bot\n\n"
+        "• <code>/update</code> — Update bot.\n"
+        "• <code>/speedtest</code> — Run server speed test.\n"
+        "• <code>/broadcast</code> — Announcement.\n"
+        "• <code>/autodel</code> — Manage auto delete asupan settings.\n"
+        "• <code>/wlc</code> — Configure welcome message.\n"
+        "• <code>/restart</code> — Restart the bot.\n\n"
 
         "🍜 <b>Asupan Management</b>\n"
-        "• <code>asupann</code> — manage asupan.\n"
+        "• <code>asupann</code> — Manage asupan.\n"
     )
 
     await msg.reply_text(
