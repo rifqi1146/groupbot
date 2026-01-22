@@ -53,16 +53,6 @@ def _can(uid: int) -> bool:
         return False
     _last_req[uid] = now
     return True
-
-def ocr_image(path: str) -> str:
-    try:
-        text = pytesseract.image_to_string(
-            Image.open(path),
-            lang="ind+eng"
-        )
-        return text.strip()
-    except Exception:
-        return ""
         
 #helper
 async def build_groq_rag_prompt(
