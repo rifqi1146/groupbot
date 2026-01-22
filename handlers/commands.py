@@ -23,7 +23,7 @@ from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
 from handlers.groqllama import meta_query
 from fun.waifu import waifu_cmd
-from handler.update import update_cmd
+from handlers.update import update_cmd
 
 
 from handlers.asupan import (
