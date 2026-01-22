@@ -53,16 +53,6 @@ def _can(uid: int) -> bool:
     _last_req[uid] = now
     return True
 
-def ocr_image(path: str) -> str:
-    try:
-        text = pytesseract.image_to_string(
-            Image.open(path),
-            lang="ind+eng"
-        )
-        return text.strip()
-    except Exception:
-        return ""
-        
 #helper
 async def build_groq_rag_prompt(
     user_prompt: str,
@@ -91,46 +81,6 @@ async def build_groq_rag_prompt(
     # 3. build final RAG prompt
     return build_rag_prompt(user_prompt, contexts)
 
-def _extract_prompt_from_update(update, context) -> str:
-    """
-    Try common sources:
-     - context.args (list) -> join
-     - command text after dollar (update.message.text)
-     - reply_to_message.text or caption
-    Returns empty string if none found.
-    """
-    try:
-        if getattr(context, "args", None):
-            joined = " ".join(context.args).strip()
-            if joined:
-                return joined
-    except Exception:
-        pass
-
-    try:
-        msg = update.message
-        if msg and getattr(msg, "text", None):
-            txt = msg.text.strip()
-           
-            if txt.startswith("$"):
-                parts = txt[1:].strip().split(maxsplit=1)
-                if len(parts) > 1:
-                    return parts[1].strip()
-    except Exception:
-        pass
-
-    try:
-        if msg and getattr(msg, "reply_to_message", None):
-            rm = msg.reply_to_message
-            if getattr(rm, "text", None):
-                return rm.text.strip()
-            if getattr(rm, "caption", None):
-                return rm.caption.strip()
-    except Exception:
-        pass
-
-    return ""
-    
 #helper url
 _URL_RE = re.compile(
     r"(https?://[^\s'\"<>]+)", re.IGNORECASE
@@ -292,25 +242,6 @@ async def meta_query(update, context):
     typing_task = asyncio.create_task(
         _typing_loop(context.bot, chat_id, stop_typing)
     )
-
-    try:
-        if msg.reply_to_message and msg.reply_to_message.photo:
-            photo = msg.reply_to_message.photo[-1]
-            file = await photo.get_file()
-            img_path = await file.download_to_drive()
-
-            ocr_text = ocr_image(img_path)
-            try:
-                os.remove(img_path)
-            except Exception:
-                pass
-
-            if ocr_text:
-                prompt = (
-                    "Berikut teks hasil OCR dari gambar:\n\n"
-                    f"{ocr_text}\n\n"
-                    f"Pertanyaan user:\n{prompt}"
-                )
 
         try:
             rag_prompt = await build_groq_rag_prompt(prompt, use_search)
