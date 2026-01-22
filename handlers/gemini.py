@@ -165,73 +165,48 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif msg.reply_to_message:
         last_mid = _AI_ACTIVE_USERS.get(chat_id)
-        if not last_mid:
+        if not last_mid or msg.reply_to_message.message_id != last_mid:
             return
-        if msg.reply_to_message.message_id != last_mid:
-            return
-
         prompt = msg.text or ""
 
     if not prompt:
         return
 
     stop_typing = asyncio.Event()
-        typing_task = asyncio.create_task(
-            _typing_loop(context.bot, chat_id, stop_typing)
-        )
+    typing_task = asyncio.create_task(
+        _typing_loop(context.bot, chat_id, stop_typing)
+    )
 
     try:
         final_prompt = await build_ai_prompt(chat_id, prompt)
-    
+
         ok, answer = await ask_ai_gemini(
             final_prompt,
             model="gemini-2.5-flash"
         )
-    
+
         if not ok:
             raise RuntimeError(answer)
-    
+
         clean = sanitize_ai_output(answer)
         chunks = split_message(clean, 4000)
-    
+
         stop_typing.set()
         typing_task.cancel()
-    
+
         await msg.reply_text(chunks[0], parse_mode="HTML")
         _AI_ACTIVE_USERS[chat_id] = msg.message_id + 1
-    
+
         for part in chunks[1:]:
             await msg.reply_text(part, parse_mode="HTML")
-    
+
         history = AI_MEMORY.get(chat_id, [])
-        history.append({
-            "user": prompt,
-            "ai": clean
-        })
+        history.append({"user": prompt, "ai": clean})
         AI_MEMORY[chat_id] = history
-    
+
     except Exception as e:
         stop_typing.set()
         typing_task.cancel()
         AI_MEMORY.pop(chat_id, None)
         _AI_ACTIVE_USERS.pop(chat_id, None)
         await msg.reply_text(f"❌ Error: {e}")
-
-    if not ok:
-        return await loading.edit_text(f"❗ Error: {answer}")
-
-    clean = sanitize_ai_output(answer)
-    chunks = split_message(clean, 4000)
-
-    await loading.edit_text(chunks[0], parse_mode="HTML")
-    for part in chunks[1:]:
-        await asyncio.sleep(0.25)
-        await msg.reply_text(part, parse_mode="HTML")
-
-    history = AI_MEMORY.get(chat_id, [])
-    history.append({
-        "user": prompt,
-        "ai": clean
-    })
-    AI_MEMORY[chat_id] = history
-    _AI_ACTIVE_USERS[chat_id] = loading.message_id
