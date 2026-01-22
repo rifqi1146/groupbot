@@ -11,8 +11,6 @@ from io import BytesIO
 from typing import List, Tuple, Optional
 
 import aiohttp
-import pytesseract
-from PIL import Image
 from bs4 import BeautifulSoup
 
 from telegram import Update
@@ -40,6 +38,14 @@ AI_MEMORY = {}
 _AI_ACTIVE_USERS = {}
 
 #gemini
+async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
+    try:
+        while not stop_event.is_set():
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+    except Exception:
+        pass
+        
 async def build_ai_prompt(chat_id: str, user_prompt: str) -> str:
     history = AI_MEMORY.get(chat_id, [])
 
@@ -169,14 +175,47 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not prompt:
         return
 
-    loading = await msg.reply_text("⏳ Memproses...")
+    stop_typing = asyncio.Event()
+        typing_task = asyncio.create_task(
+            _typing_loop(context.bot, chat_id, stop_typing)
+        )
 
-    final_prompt = await build_ai_prompt(chat_id, prompt)
-
-    ok, answer = await ask_ai_gemini(
-        final_prompt,
-        model="gemini-2.5-flash"
-    )
+    try:
+        final_prompt = await build_ai_prompt(chat_id, prompt)
+    
+        ok, answer = await ask_ai_gemini(
+            final_prompt,
+            model="gemini-2.5-flash"
+        )
+    
+        if not ok:
+            raise RuntimeError(answer)
+    
+        clean = sanitize_ai_output(answer)
+        chunks = split_message(clean, 4000)
+    
+        stop_typing.set()
+        typing_task.cancel()
+    
+        await msg.reply_text(chunks[0], parse_mode="HTML")
+        _AI_ACTIVE_USERS[chat_id] = msg.message_id + 1
+    
+        for part in chunks[1:]:
+            await msg.reply_text(part, parse_mode="HTML")
+    
+        history = AI_MEMORY.get(chat_id, [])
+        history.append({
+            "user": prompt,
+            "ai": clean
+        })
+        AI_MEMORY[chat_id] = history
+    
+    except Exception as e:
+        stop_typing.set()
+        typing_task.cancel()
+        AI_MEMORY.pop(chat_id, None)
+        _AI_ACTIVE_USERS.pop(chat_id, None)
+        await msg.reply_text(f"❌ Error: {e}")
 
     if not ok:
         return await loading.edit_text(f"❗ Error: {answer}")
