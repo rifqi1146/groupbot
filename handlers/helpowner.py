@@ -23,7 +23,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<i>Administrative & system-level controls</i>\n\n"
 
         "⚙️ <b>System Management</b>\n"
-        "• <code>/update</code> — Update bot.\n"
+        "• <code>/update</code> — Update Bot.\n"
         "• <code>/speedtest</code> — Run server speed test.\n"
         "• <code>/broadcast</code> — Announcement.\n"
         "• <code>/autodel</code> — Manage auto delete asupan settings.\n"
