@@ -27,3 +27,4 @@ async def startup_tasks(app):
         log.info("Asupan startup sent")
     except Exception as e:
         log.warning(f"Asupan startup failed: {e}")
+        

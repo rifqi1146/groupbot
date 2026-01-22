@@ -9,7 +9,7 @@ from utils.http import close_http_session
 from handlers.commands import register_commands
 from handlers.callbacks import register_callbacks
 from handlers.messages import register_messages
-from handlers.startup import startup_tasks
+from utils.startup import startup_tasks
 from utils.config import BOT_TOKEN
 BOT_USERNAME = None
 
@@ -61,7 +61,7 @@ async def post_init(app):
             ("ship", "Choose couple"),
             ("stats", "System statistics"),
             ("dl", "Download video"),
-            ("ai", "Ask AI"),
+            ("ai", "Ask Gemini AI"),
             ("ask", "Ask ChatGPT"),
             ("meta", "Ask Meta AI"),
             ("groq", "Ask Groq AI"),
