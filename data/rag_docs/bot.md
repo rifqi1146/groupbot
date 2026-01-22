@@ -15,7 +15,7 @@ Mendukung:
         • 💬 /ai — Chat with AI Gemini
         • 🧠 /ask — ChatGPT
         • ⚡ /groq — Groq
-        • 🍌 /meta — Meta AI
+        • 🍌 /Caca — Si cewe ngeselin
 
         🛠️ Utilities
         • 📊 /stats — Bot & system statistics
