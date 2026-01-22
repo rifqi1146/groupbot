@@ -15,8 +15,6 @@ from handlers.gsearch import google_search
 from rag.loader import load_local_contexts
 
 import aiohttp
-import pytesseract
-from PIL import Image
 from bs4 import BeautifulSoup
 
 from telegram import Update
@@ -25,7 +23,6 @@ from telegram.ext import ContextTypes
 from utils.ai_utils import (
     split_message,
     sanitize_ai_output,
-    extract_text_from_photo,
 )
 
 from utils.config import (

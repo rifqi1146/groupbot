@@ -95,20 +95,3 @@ def sanitize_ai_output(text: str) -> str:
 
     return text.strip()
     
-#helperocr
-async def extract_text_from_photo(bot, file_id: str) -> str:
-    file = await bot.get_file(file_id)
-
-    bio = BytesIO()
-    await file.download_to_memory(out=bio)
-    bio.seek(0)
-
-    img = Image.open(bio).convert("RGB")
-
-    text = await asyncio.to_thread(
-        pytesseract.image_to_string,
-        img,
-        lang="ind+eng"
-    )
-
-    return text.strip()

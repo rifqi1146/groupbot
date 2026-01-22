@@ -11,8 +11,6 @@ from io import BytesIO
 from typing import List, Tuple, Optional
 
 import aiohttp
-import pytesseract
-from PIL import Image
 from bs4 import BeautifulSoup
 
 from telegram import Update
@@ -28,7 +26,6 @@ LOCAL_CONTEXTS = load_local_contexts()
 from utils.ai_utils import (
     split_message,
     sanitize_ai_output,
-    extract_text_from_photo,
 )
 
 from utils.config import (

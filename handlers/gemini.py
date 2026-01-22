@@ -19,7 +19,6 @@ from telegram.ext import ContextTypes
 from utils.ai_utils import (
     split_message,
     sanitize_ai_output,
-    extract_text_from_photo,
 )
 
 from utils.config import (
