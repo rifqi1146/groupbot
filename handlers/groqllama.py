@@ -207,7 +207,7 @@ async def meta_query(update, context):
     prompt = ""
     use_search = False
 
-    if msg.text and msg.text.startswith("/meta"):
+    if msg.text and msg.text.startswith("/caca"):
         if context.args and context.args[0].lower() == "search":
             use_search = True
             prompt = " ".join(context.args[1:]).strip()
@@ -220,9 +220,9 @@ async def meta_query(update, context):
         if not prompt:
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
-                "/meta <pertanyaan>\n"
-                "/meta search <pertanyaan>\n"
-                "atau reply jawaban Meta untuk lanjut"
+                "/caca <pertanyaan>\n"
+                "/caca search <pertanyaan>\n"
+                "atau reply jawaban caca untuk lanjut"
             )
 
     elif msg.reply_to_message:
