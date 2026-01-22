@@ -1,10 +1,8 @@
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import subprocess
-import asyncio
 import os
 import sys
-from telegram import Update
-from telegram.ext import ContextTypes
-from utils.config import OWNER_ID
+import asyncio
 
 async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -15,17 +13,11 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status = await msg.reply_text("🔄 Cek update...")
 
-    fetch = subprocess.run(
-        ["git", "fetch"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+    subprocess.run(["git", "fetch"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     check = subprocess.run(
         ["git", "status", "-uno"],
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
         text=True
     )
 
@@ -45,8 +37,38 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    await status.edit_text("♻️ Update sukses, restart bot...")
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("♻️ Restart Bot", callback_data="update_restart"),
+            InlineKeyboardButton("❌ Batal", callback_data="update_cancel"),
+        ]
+    ])
 
-    await asyncio.sleep(1)
+    await status.edit_text(
+        "✅ <b>Update ditemukan & berhasil di-pull.</b>\n\n"
+        "Restart bot sekarang?",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    
+async def update_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user = query.from_user
 
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+    await query.answer()
+
+    if not user or user.id not in OWNER_ID:
+        return await query.edit_message_text("❌ Owner only.")
+
+    if query.data == "update_cancel":
+        return await query.edit_message_text("🚫 Update dibatalkan.")
+
+    if query.data == "update_restart":
+        await query.edit_message_text(
+            "♻️ <b>Restarting bot...</b>",
+            parse_mode="HTML"
+        )
+
+        await asyncio.sleep(1)
+
+        os.execv(sys.executable, [sys.executable] + sys.argv)
