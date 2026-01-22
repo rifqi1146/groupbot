@@ -35,7 +35,7 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("waifu", waifu_cmd, False),
-    ("Caca", meta_query, False),
+    ("caca", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
     ("update", update_cmd, False),
