@@ -252,7 +252,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sent = await update.message.reply_text(out, parse_mode="HTML")
 
-    await asyncio.sleep(20)
+    await asyncio.sleep(15)
     try:
         await sent.delete()
     except Exception:
