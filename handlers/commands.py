@@ -24,6 +24,7 @@ from fun.quiz import quiz_cmd
 from handlers.caca import meta_query
 from fun.waifu import waifu_cmd
 from handlers.update import update_cmd
+from handlers.groups import groups_cmd
 
 
 from handlers.asupan import (
@@ -34,6 +35,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("group_ls", groups_cmd, False),
     ("waifu", waifu_cmd, False),
     ("caca", meta_query, False),
     ("quiz", quiz_cmd, False),
