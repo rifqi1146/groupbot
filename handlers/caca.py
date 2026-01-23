@@ -197,12 +197,12 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if "choices" not in data or not data["choices"]:
                 raise RuntimeError(
-                    data.get("error", {}).get("message", "Groq response invalid")
+                    data.get("error", {}).get("message", "Caca response invalid")
                 )
             
             raw = data["choices"][0]["message"]["content"]
 
-        history.append({"role": "user", "content": rag_prompt})
+        history.append({"role": "user", "content": prompt})
         history.append({"role": "assistant", "content": raw})
         
         META_MEMORY[user_id] = {
