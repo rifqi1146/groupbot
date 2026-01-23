@@ -171,7 +171,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text(
                 "🚫 <b>Caca tidak tersedia di grup ini</b>\n\n"
                 "Chat bot Caca mengandung unsur <b>18+</b>.\n"
-                "Gunakan di <b>PM bot</b> atau hubungi <code>@hirohitokiyoshi</code> jika ingin mengaktifkandi grup anda.",
+                "Gunakan di <b>PM bot</b> atau hubungi <code>@hirohitokiyoshi</code> jika ingin mengaktifkan di grup anda.",
                 parse_mode="HTML"
             )
 
