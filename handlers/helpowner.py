@@ -16,14 +16,14 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
 
     if user.id not in OWNER_ID:
-        return await msg.reply_text("❌ Owner only.")
+        return
 
     text = (
         "👑 <b>Owner Commands</b>\n"
         "<i>Administrative & system-level controls</i>\n\n"
 
         "⚙️ <b>System Management</b>\n"
-        "• <code>/update</code> — Update Bot.\n"
+        "• <code>/update</code> — Update system Bot.\n"
         "• <code>/speedtest</code> — Run server speed test.\n"
         "• <code>/broadcast</code> — Announcement.\n"
         "• <code>/autodel</code> — Manage auto delete asupan settings.\n"

@@ -232,3 +232,5 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await loading.edit_text(text, parse_mode="HTML")
     
+## Credit Moon Userbot
+## https://github.com/The-MoonTg-project/Moon-Userbot

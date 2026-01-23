@@ -21,4 +21,4 @@ async def close_http_session():
     if _HTTP_SESSION and not _HTTP_SESSION.closed:
         await _HTTP_SESSION.close()
         _HTTP_SESSION = None
-        logger.info("HTTP session closed")
+        logger.info("Kyahhh Modar 🥲")

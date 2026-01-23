@@ -1,6 +1,6 @@
 from telegram.ext import MessageHandler, filters
 
-from handlers.logger import log_commands
+from utils.logger import log_commands
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
 from handlers.dl import auto_dl_detect

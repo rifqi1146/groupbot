@@ -592,3 +592,7 @@ async def send_asupan_once(bot):
 
     except Exception as e:
         log.warning(f"[ASUPAN STARTUP] Failed: {e}")
+
+## Credit 
+## Special thanks to Pikachu for the inspiration behind the *asupan* feature.  
+## Telegram channel: https://t.me/pikachukocak5
