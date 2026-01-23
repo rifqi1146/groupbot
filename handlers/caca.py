@@ -189,7 +189,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "model": GROQ_MODEL2,
                 "messages": messages,
                 "temperature": 0.9,
-                "max_tokens": 2048,
+                "max_tokens": 1024,
             },
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as r:
