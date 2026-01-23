@@ -28,15 +28,17 @@ async def ai_reply_router(update, context):
     if _AI_ACTIVE_USERS.get(chat_id) == reply_mid:
         return await ai_cmd(update, context)
 
-    if _GROQ_ACTIVE_USERS.get(chat_id) == reply_mid:
+    if _GROQ_ACTIVE_USERS.get(user_id) == reply_mid:
         return await groq_query(update, context)
 
     if _META_ACTIVE_USERS.get(user_id) == reply_mid:
         return await meta_query(update, context)
 
-    if reply_mid in _META_ACTIVE_USERS.values():
+    if reply_mid in _META_ACTIVE_USERS.values() or reply_mid in _GROQ_ACTIVE_USERS.values():
         return await msg.reply_text(
-            "😒 Lu siapa?\nGue belum ngobrol sama lu.\nKetik /caca dulu.",
+            "😒 Lu siapa?\n"
+            "Gue belum ngobrol sama lu.\n"
+            "Ketik command dulu.",
             parse_mode="HTML"
         )
 
