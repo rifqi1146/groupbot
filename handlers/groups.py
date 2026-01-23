@@ -1,24 +1,42 @@
+import json
+import os
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
-from utils.storage import load_groups
+
+BROADCAST_FILE = "data/broadcast_chats.json"
+
+
+def _load_groups():
+    if not os.path.exists(BROADCAST_FILE):
+        return []
+    with open(BROADCAST_FILE, "r") as f:
+        data = json.load(f)
+    return data.get("groups", [])
+
 
 async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     user = update.effective_user
+    bot = context.bot
 
     if not user or user.id not in OWNER_ID:
-        return await msg.reply_text("❌ Owner only.")
+        return
 
-    groups = load_groups()
+    group_ids = _load_groups()
+    if not group_ids:
+        return await msg.reply_text("📭 Bot belum tercatat di grup manapun.")
 
-    if not groups:
-        return await msg.reply_text("📭 Bot belum ada di grup manapun.")
+    lines = ["<b>📋 Grup Bot Saat Ini</b>\n"]
 
-    lines = ["📋 <b>Bot ada di grup berikut:</b>\n"]
-
-    for g in groups.values():
-        lines.append(f"• {g['title']}")
+    for gid in group_ids:
+        try:
+            chat = await bot.get_chat(gid)
+            title = chat.title or "Unknown"
+            lines.append(f"• {title}")
+        except Exception:
+            # grup dihapus / bot keluar
+            continue
 
     await msg.reply_text(
         "\n".join(lines),
