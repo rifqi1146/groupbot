@@ -38,6 +38,7 @@ COMMAND_HANDLERS = [
     ("groups", groups_cmd, False),
     ("waifu", waifu_cmd, False),
     ("caca", meta_query, False),
+    ("cacaa", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
     ("update", update_cmd, False),

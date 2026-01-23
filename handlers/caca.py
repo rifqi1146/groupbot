@@ -1,9 +1,11 @@
 import time
 import re
+import json
+import os
 import asyncio
 import random
 import html
-from typing import List, Tuple, Optional
+from typing import List, Optional
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -22,15 +24,17 @@ from utils.config import (
     GROQ_MODEL2,
     GROQ_TIMEOUT,
     COOLDOWN,
+    OWNER_ID,
 )
 from utils.http import get_http_session
 
 LOCAL_CONTEXTS = load_local_contexts()
 
-META_MEMORY = {}         # user_id -> {"history": [...], "last_used": ts}
-_META_ACTIVE_USERS = {}  # user_id -> last_bot_message_id
+META_MEMORY = {}
+_META_ACTIVE_USERS = {}
 
-MEMORY_EXPIRE = 60 * 60 * 24  # 24 jam
+MEMORY_EXPIRE = 60 * 60 * 24
+CACA_GROUP_FILE = "data/caca_groups.json"
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 _last_req = {}
@@ -55,15 +59,29 @@ def _cleanup_memory():
         META_MEMORY.pop(uid, None)
         _META_ACTIVE_USERS.pop(uid, None)
 
-async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
+def _load_groups() -> set[int]:
+    if not os.path.exists(CACA_GROUP_FILE):
+        return set()
     try:
-        while not stop_event.is_set():
-            await bot.send_chat_action(chat_id=chat_id, action="typing")
+        with open(CACA_GROUP_FILE, "r") as f:
+            return set(json.load(f).get("groups", []))
+    except Exception:
+        return set()
+
+def _save_groups(groups: set[int]):
+    os.makedirs("data", exist_ok=True)
+    with open(CACA_GROUP_FILE, "w") as f:
+        json.dump({"groups": list(groups)}, f, indent=2)
+
+async def _typing_loop(bot, chat_id, stop: asyncio.Event):
+    try:
+        while not stop.is_set():
+            await bot.send_chat_action(chat_id, "typing")
             await asyncio.sleep(4)
     except Exception:
         pass
 
-_URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.IGNORECASE)
+_URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
 
 def _find_urls(text: str) -> List[str]:
     return _URL_RE.findall(text) if text else []
@@ -81,16 +99,15 @@ async def _fetch_article(url: str) -> Optional[str]:
             t.decompose()
 
         ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
-        text = "\n\n".join(ps)[:12000]
-        return text.strip() or None
+        return ("\n\n".join(ps))[:12000] or None
     except Exception:
         return None
 
-async def build_rag(user_prompt: str, use_search: bool) -> str:
-    ctx = await retrieve_context(user_prompt, LOCAL_CONTEXTS, top_k=3)
+async def build_rag(prompt: str, use_search: bool) -> str:
+    ctx = await retrieve_context(prompt, LOCAL_CONTEXTS, top_k=3)
     if use_search:
         try:
-            ok, results = await google_search(user_prompt, limit=5)
+            ok, results = await google_search(prompt, limit=5)
             if ok:
                 ctx += [
                     f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
@@ -98,7 +115,7 @@ async def build_rag(user_prompt: str, use_search: bool) -> str:
                 ]
         except:
             pass
-    return build_rag_prompt(user_prompt, ctx)
+    return build_rag_prompt(prompt, ctx)
 
 async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_memory()
@@ -108,8 +125,56 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = msg.from_user.id
-    chat_id = update.effective_chat.id
+    chat = update.effective_chat
     em = _emo()
+
+    if msg.text and msg.text.startswith("/cacaa"):
+        if user_id not in OWNER_ID:
+            return await msg.reply_text("❌ Owner only.")
+
+        groups = _load_groups()
+        cmd = (context.args[0].lower() if context.args else "")
+
+        if cmd == "enable":
+            if chat.type == "private":
+                return await msg.reply_text("❌ Khusus grup.")
+            groups.add(chat.id)
+            _save_groups(groups)
+            return await msg.reply_text("✅ Caca diaktifkan di grup ini.")
+
+        if cmd == "disable":
+            groups.discard(chat.id)
+            _save_groups(groups)
+            return await msg.reply_text("🚫 Caca dimatikan di grup ini.")
+
+        if cmd == "status":
+            if chat.id in groups:
+                return await msg.reply_text("✅ Caca AKTIF di grup ini.")
+            return await msg.reply_text("🚫 Caca TIDAK aktif di grup ini.")
+
+        if cmd == "list":
+            if not groups:
+                return await msg.reply_text("📭 Belum ada grup aktif.")
+            text = ["📋 Grup Caca Aktif:\n"]
+            for gid in groups:
+                try:
+                    c = await context.bot.get_chat(gid)
+                    text.append(f"• {c.title}")
+                except:
+                    pass
+            return await msg.reply_text("\n".join(text))
+
+        return
+
+    if chat.type in ("group", "supergroup"):
+        if chat.id not in _load_groups():
+            return await msg.reply_text(
+                "🚫 <b>Caca tidak tersedia di grup ini</b>\n\n"
+                "Chat bot Caca mengandung unsur <b>18+</b>.\n"
+                "Gunakan di <b>PM bot</b> atau hubungi <code>@hirohitokiyoshi</code> jika ingin mengaktifkandi grup anda.",
+                parse_mode="HTML"
+            )
+
     prompt = ""
     use_search = False
 
@@ -134,22 +199,16 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif msg.reply_to_message:
         if user_id not in _META_ACTIVE_USERS:
             return await msg.reply_text(
-                "😒 Gue ga inget pernah ngobrol sama lu.\n"
-                "Ketik /caca dulu.",
-                parse_mode="HTML"
+                "😒 Gue ga inget ngobrol sama lu.\n"
+                "Ketik /caca dulu."
             )
         prompt = msg.text.strip()
 
-    if not prompt:
+    if not prompt or not _can(user_id):
         return
 
-    if not _can(user_id):
-        return await msg.reply_text(f"{em} Sabar napa…")
-
-    stop_typing = asyncio.Event()
-    typing_task = asyncio.create_task(
-        _typing_loop(context.bot, chat_id, stop_typing)
-    )
+    stop = asyncio.Event()
+    typing = asyncio.create_task(_typing_loop(context.bot, chat.id, stop))
 
     try:
         rag_prompt = await build_rag(prompt, use_search)
@@ -160,8 +219,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if art:
                 rag_prompt = f"Artikel:\n{art}\n\nJawab singkat & nyebelin."
 
-        mem = META_MEMORY.get(user_id, {"history": []})
-        history = mem["history"]
+        history = META_MEMORY.get(user_id, {"history": []})["history"]
 
         messages = [
             {
@@ -181,10 +239,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {GROQ_KEY}"},
             json={
                 "model": GROQ_MODEL2,
                 "messages": messages,
@@ -194,39 +249,30 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as r:
             data = await r.json()
-
-            if "choices" not in data or not data["choices"]:
-                raise RuntimeError(
-                    data.get("error", {}).get("message", "Caca response invalid")
-                )
-            
             raw = data["choices"][0]["message"]["content"]
 
-        history.append({"role": "user", "content": prompt})
-        history.append({"role": "assistant", "content": raw})
-        
+        history += [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": raw},
+        ]
+
         META_MEMORY[user_id] = {
             "history": history,
             "last_used": time.time(),
         }
-        
-        clean = sanitize_ai_output(raw)
-        chunks = split_message(clean, 4000)
-        
-        stop_typing.set()
-        typing_task.cancel()
-        
-        sent = await msg.reply_text(chunks[0], parse_mode="HTML")
-        
+
+        stop.set()
+        typing.cancel()
+
+        sent = await msg.reply_text(
+            split_message(sanitize_ai_output(raw), 4000)[0],
+            parse_mode="HTML",
+        )
         _META_ACTIVE_USERS[user_id] = sent.message_id
-        META_MEMORY[user_id]["last_used"] = time.time()
-        
-        for c in chunks[1:]:
-            await msg.reply_text(c, parse_mode="HTML")
 
     except Exception as e:
-        stop_typing.set()
-        typing_task.cancel()
+        stop.set()
+        typing.cancel()
         META_MEMORY.pop(user_id, None)
         _META_ACTIVE_USERS.pop(user_id, None)
         await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
