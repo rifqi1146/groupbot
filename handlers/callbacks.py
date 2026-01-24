@@ -8,6 +8,7 @@ from handlers.helpowner import helpowner_callback
 from fun.reminder import reminder_cancel_cb
 from handlers.update import update_cb
 from fun.waifu import waifu_next_cb, waifu_pref_cb
+from handlers.welcome import verify_callback
 
 def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
@@ -20,3 +21,4 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(waifu_next_cb, pattern="^waifu_next$"))
     app.add_handler(CallbackQueryHandler(waifu_pref_cb, pattern="^waifu_pref$"))
     app.add_handler(CallbackQueryHandler(update_cb, pattern="^update_"))
+    app.add_handler(CallbackQueryHandler(verify_callback, pattern=r"^verify:"))
