@@ -66,8 +66,6 @@ HELP_TEXT = {
         "• Pengembangan\n"
         "• Pemeliharaan\n"
         "• Peningkatan layanan bot\n\n"
-        "<b>Data tidak dibagikan ke pihak ketiga.</b>\n\n"
-        "Bot ini tidak ditujukan untuk mengumpulkan data pribadi sensitif.\n"
         "❗ Jangan kirimkan kata sandi, nomor identitas, atau data sensitive lainnya.\n\n"
         "Dengan melanjutkan penggunaan bot, pengguna dianggap telah menyetujui kebijakan ini."
     ),
