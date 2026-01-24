@@ -130,7 +130,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if msg.text and msg.text.startswith("/cacaa"):
         if user_id not in OWNER_ID:
-            return await msg.reply_text("❌ Owner only.")
+            return
 
         groups = _load_groups()
         cmd = (context.args[0].lower() if context.args else "")
