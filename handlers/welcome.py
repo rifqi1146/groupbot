@@ -104,31 +104,60 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     for user in msg.new_chat_members:
-        # mute user
-        await context.bot.restrict_chat_member(
-            chat_id=chat.id,
-            user_id=user.id,
-            permissions=ChatPermissions(can_send_messages=False)
-        )
+
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=chat.id,
+                user_id=user.id,
+                permissions=ChatPermissions(
+                    can_send_messages=False
+                )
+            )
+        except Exception:
+            pass
 
         username = f"@{user.username}" if user.username else "—"
-        chatname = chat.title or "this group"
         fullname = user.full_name
+        chatname = chat.title or "this group"
 
-        text = (
+        caption = (
             f"👋 <b>Hai {fullname}</b>\n"
             f"Selamat datang di <b>{chatname}</b> ✨\n\n"
             f"🧾 <b>User Information</b>\n"
             f"🆔 ID       : <code>{user.id}</code>\n"
             f"👤 Name     : {fullname}\n"
             f"🔖 Username : {username}\n\n"
+            f"🔐 <b>Silakan verifikasi untuk membuka chat</b>"
         )
 
-        await msg.reply_text(
-            text,
-            reply_markup=verify_keyboard(user.id),
-            parse_mode="HTML"
-        )
+        try:
+            photos = await context.bot.get_user_profile_photos(
+                user_id=user.id,
+                limit=1
+            )
+
+            if photos.total_count > 0:
+                await context.bot.send_photo(
+                    chat_id=chat.id,
+                    photo=photos.photos[0][-1].file_id,
+                    caption=caption,
+                    reply_markup=verify_keyboard(user.id),
+                    parse_mode="HTML"
+                )
+            else:
+                await msg.reply_text(
+                    caption,
+                    reply_markup=verify_keyboard(user.id),
+                    parse_mode="HTML"
+                )
+
+        except Exception:
+            # fallback
+            await msg.reply_text(
+                caption,
+                reply_markup=verify_keyboard(user.id),
+                parse_mode="HTML"
+            )
 
 async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -160,9 +189,6 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
-    await q.edit_message_text(
-        "✅ <b>Verifikasi berhasil!</b>\n"
-        "Sekarang kamu bisa ngobrol di grup 😄",
-        parse_mode="HTML"
+    await query.answer("✅ Verifikasi berhasil!", show_alert=True)
     )
     
