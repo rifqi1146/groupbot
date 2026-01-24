@@ -8,6 +8,7 @@ def help_main_keyboard():
         [InlineKeyboardButton("✨ Features", callback_data="help:features")],
         [InlineKeyboardButton("🤖 AI", callback_data="help:ai")],
         [InlineKeyboardButton("🧠 Utilities", callback_data="help:utils")],
+        [InlineKeyboardButton("🔐 Privacy & Policy", callback_data="help:privacy")],
         [InlineKeyboardButton("❌ Close", callback_data="help:close")],
     ])
 
@@ -50,6 +51,25 @@ HELP_TEXT = {
         "• 🌐 <code>/ip</code> — IP address lookup\n"
         "• 🏷️ <code>/domain</code> — Domain information\n"
         "• 🔍 <code>/whoisdomain</code> — Detailed domain lookup\n"
+    ),
+
+    "help:privacy": (
+        "🔐 <b>Privasi Pengguna</b>\n\n"
+        "Dengan menggunakan bot ini, pengguna memahami dan menyetujui bahwa:\n\n"
+        "• Owner bot dapat melihat dan menyimpan riwayat command yang digunakan pengguna\n"
+        "• Data yang dicatat meliputi:\n"
+        "  - ID pengguna Telegram\n"
+        "  - Username (jika ada)\n"
+        "  - Command yang digunakan\n"
+        "  - Waktu penggunaan (timestamp)\n\n"
+        "Data tersebut hanya digunakan untuk keperluan:\n"
+        "• Pengembangan\n"
+        "• Pemeliharaan\n"
+        "• Peningkatan layanan bot\n\n"
+        "<b>Data tidak dibagikan ke pihak ketiga.</b>\n\n"
+        "Bot ini tidak ditujukan untuk mengumpulkan data pribadi sensitif.\n"
+        "❗ Jangan kirimkan kata sandi, nomor identitas, atau data sensitive lainnya.\n\n"
+        "Dengan melanjutkan penggunaan bot, pengguna dianggap telah menyetujui kebijakan ini."
     ),
 }
 
