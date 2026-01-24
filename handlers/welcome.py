@@ -189,5 +189,5 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
-    await query.answer("✅ Verifikasi berhasil!", show_alert=True)
+    await q.answer("✅ Verifikasi berhasil!", show_alert=True)
     
