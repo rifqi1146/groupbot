@@ -19,14 +19,10 @@ async def ai_reply_router(update, context):
         return
 
     user_id = msg.from_user.id
-    chat_id = update.effective_chat.id
     reply_mid = msg.reply_to_message.message_id
 
-    if _ASK_ACTIVE_USERS.get(chat_id) == reply_mid:
+    if _ASK_ACTIVE_USERS.get(user_id) == reply_mid:
         return await ask_cmd(update, context)
-
-    if _AI_ACTIVE_USERS.get(chat_id) == reply_mid:
-        return await ai_cmd(update, context)
 
     if _GROQ_ACTIVE_USERS.get(user_id) == reply_mid:
         return await groq_query(update, context)
@@ -50,7 +46,13 @@ async def ai_reply_router(update, context):
             parse_mode="HTML"
         )
 
-    return
+    if reply_mid in _ASK_ACTIVE_USERS.values():
+        return await msg.reply_text(
+            "😒 Lu siapa?\n"
+            "Gue belum ngobrol sama lu.\n"
+            "Ketik /ask dulu.",
+            parse_mode="HTML"
+        )
 
     return
     

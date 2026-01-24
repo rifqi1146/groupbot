@@ -86,12 +86,14 @@ async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
         
 #askcmd
 async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    em = "🧠"
     msg = update.message
     if not msg or not msg.from_user:
         return
 
+    user_id = msg.from_user.id
     chat_id = update.effective_chat.id
+    em = "🧠"
+
     prompt = ""
     use_search = False
 
@@ -100,54 +102,57 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             use_search = True
             prompt = " ".join(context.args[1:]).strip()
         else:
-            prompt = " ".join(context.args).strip() if context.args else ""
+            prompt = " ".join(context.args).strip()
 
-        ASK_MEMORY.pop(chat_id, None)
-        _ASK_ACTIVE_USERS.pop(chat_id, None)
+        ASK_MEMORY.pop(user_id, None)
+        _ASK_ACTIVE_USERS.pop(user_id, None)
 
         if not prompt:
             return await msg.reply_text(
                 "<b>❓ Ask AI</b>\n\n"
                 "<code>/ask jelaskan relativitas</code>\n"
-                "<code>/ask search hasil pertandingan Indonesia vs Malaysia</code>",
+                "<code>/ask search berita AI terbaru</code>",
                 parse_mode="HTML"
             )
 
     elif msg.reply_to_message:
-        last_mid = _ASK_ACTIVE_USERS.get(chat_id)
-        if not last_mid or msg.reply_to_message.message_id != last_mid:
-            return
-        prompt = msg.text.strip() if msg.text else ""
+        if user_id not in _ASK_ACTIVE_USERS:
+            return await msg.reply_text(
+                "😒 Lu siapa?\n"
+                "Gue belum ngobrol sama lu.\n"
+                "Ketik /ask dulu.",
+                parse_mode="HTML"
+            )
+        prompt = msg.text.strip()
 
     if not prompt:
         return
 
-    uid = msg.from_user.id
-    if not _can(uid):
-        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya {COOLDOWN}s…")
+    if not _can(user_id):
+        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya…")
 
-    stop_typing = asyncio.Event()
-    typing_task = asyncio.create_task(
-        _typing_loop(context.bot, chat_id, stop_typing)
+    stop = asyncio.Event()
+    typing = asyncio.create_task(
+        _typing_loop(context.bot, chat_id, stop)
     )
 
     try:
-        history = ASK_MEMORY.get(chat_id, [])
-
         contexts = await retrieve_context(prompt, LOCAL_CONTEXTS, top_k=3)
         if use_search:
             try:
                 ok, results = await google_search(prompt, limit=5)
-                if ok and results:
+                if ok:
                     contexts += [
                         f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
                         for r in results
                     ]
             except:
                 pass
-        
+
         rag_prompt = build_rag_prompt(prompt, contexts)
-        
+
+        history = ASK_MEMORY.get(user_id, {"history": []})["history"]
+
         messages = [
             {
                 "role": "system",
@@ -157,36 +162,33 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Jangan mengarang fakta.\n"
                     "Jawab singkat, jelas, Bahasa Indonesia santai ala gen z."
                 ),
-            },
-        ]
-        
-        messages += history
-        messages.append({"role": "user", "content": rag_prompt})
-        
+            }
+        ] + history + [{"role": "user", "content": rag_prompt}]
+
         raw = await openrouter_ask_think(messages)
 
-        history = ASK_MEMORY.get(chat_id, [])
-        history.append({"role": "user", "content": prompt})
-        history.append({"role": "assistant", "content": raw})
-        ASK_MEMORY[chat_id] = history
+        history += [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": raw},
+        ]
 
-        clean = sanitize_ai_output(raw)
-        chunks = split_message(clean, max_length=3800)
+        ASK_MEMORY[user_id] = {"history": history}
 
-        stop_typing.set()
-        typing_task.cancel()
+        stop.set()
+        typing.cancel()
 
-        await msg.reply_text(chunks[0], parse_mode="HTML")
-        _ASK_ACTIVE_USERS[chat_id] = msg.message_id + 1
+        sent = await msg.reply_text(
+            split_message(sanitize_ai_output(raw), 4000)[0],
+            parse_mode="HTML"
+        )
 
-        for ch in chunks[1:]:
-            await msg.reply_text(ch, parse_mode="HTML")
+        _ASK_ACTIVE_USERS[user_id] = sent.message_id
 
     except Exception as e:
-        stop_typing.set()
-        typing_task.cancel()
-        ASK_MEMORY.pop(chat_id, None)
-        _ASK_ACTIVE_USERS.pop(chat_id, None)
+        stop.set()
+        typing.cancel()
+        ASK_MEMORY.pop(user_id, None)
+        _ASK_ACTIVE_USERS.pop(user_id, None)
         await msg.reply_text(
             f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
