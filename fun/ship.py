@@ -3,8 +3,11 @@ import json
 import random
 from telegram import Update
 from telegram.ext import ContextTypes
+import time
 
 DATA_FILE = "data/users.json"
+SHIP_COOLDOWN = 60 * 60 * 24  # 24 jam
+SHIP_STATE_FILE = "data/ship_state.json"
 
 SHIP_MESSAGES = [
     "🥰 Kalian keliatan nyaman satu sama lain",
@@ -57,12 +60,49 @@ def add_user(chat_id, user):
     }
     save_users(data)
 
+def load_ship_state():
+    if not os.path.exists(SHIP_STATE_FILE):
+        return {}
+    try:
+        with open(SHIP_STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_ship_state(data):
+    os.makedirs("data", exist_ok=True)
+    with open(SHIP_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def format_remaining(seconds: int) -> str:
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+    
 async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
 
     if not msg or not chat:
         return
+
+    now = int(time.time())
+    chat_id = str(chat.id)
+
+    state = load_ship_state()
+    last_time = state.get(chat_id, 0)
+
+    if now - last_time < SHIP_COOLDOWN:
+        remain = SHIP_COOLDOWN - (now - last_time)
+        return await msg.reply_text(
+            f"⏳ <b>Ship masih cooldown</b>\n\n"
+            f"Pasangan berikutnya bisa dipilih dalam:\n"
+            f"<code>{format_remaining(remain)}</code>",
+            parse_mode="HTML"
+        )
 
     add_user(chat.id, msg.from_user)
 
@@ -111,3 +151,6 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
         disable_web_page_preview=True
     )
+
+    state[chat_id] = now
+    save_ship_state(state)
