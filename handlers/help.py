@@ -66,7 +66,7 @@ HELP_TEXT = {
         "• Pengembangan\n"
         "• Pemeliharaan\n"
         "• Peningkatan layanan bot\n\n"
-        "❗ Jangan kirimkan kata sandi, nomor identitas, atau data sensitive lainnya.\n\n"
+        "<b>❗ Jangan kirimkan kata sandi, nomor identitas, atau data sensitive lainnya.</b>\n\n"
         "Dengan melanjutkan penggunaan bot, pengguna dianggap telah menyetujui kebijakan ini."
     ),
 }
