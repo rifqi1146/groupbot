@@ -127,7 +127,7 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🆔 ID       : <code>{user.id}</code>\n"
             f"👤 Name     : {fullname}\n"
             f"🔖 Username : {username}\n\n"
-            f"🔐 <b>Silakan verifikasi untuk membuka chat</b>"
+            f"🔐 <b>Silakan verifikasi terlebih dahulu</b>"
         )
 
         try:
