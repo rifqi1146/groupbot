@@ -5,11 +5,17 @@ from utils.text import bold, code, italic, underline, link, mono
 #menu/help
 def help_main_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✨ Features", callback_data="help:features")],
-        [InlineKeyboardButton("🤐 AI Chat", callback_data="help:ai")],
-        [InlineKeyboardButton("🧠 Utilities", callback_data="help:utils")],
-        [InlineKeyboardButton("🔐 Privacy & Policy", callback_data="help:privacy")],
-        [InlineKeyboardButton("❌ Close", callback_data="help:close")],
+        [
+            InlineKeyboardButton("✨ Features", callback_data="help:features"),
+            InlineKeyboardButton("🤐 AI Chat", callback_data="help:ai"),
+        ],
+        [
+            InlineKeyboardButton("🧠 Utilities", callback_data="help:utils"),
+            InlineKeyboardButton("🔐 Privacy", callback_data="help:privacy"),
+        ],
+        [
+            InlineKeyboardButton("❌ Close", callback_data="help:close"),
+        ],
     ])
 
 def help_back_keyboard():
