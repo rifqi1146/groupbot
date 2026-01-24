@@ -26,7 +26,6 @@ HELP_TEXT = {
 
     "help:features": (
         "✨ <b>Main Features</b>\n\n"
-        "• 🏓 <code>/ping</code> — Check bot response time\n"
         "• ⬇️ <code>/dl</code> — Download videos from supported platforms\n"
         "• 🍜 <code>/asupan</code> — Random TikTok content\n"
         "• 🌤️ <code>/weather</code> — Get weather information\n"
@@ -38,15 +37,17 @@ HELP_TEXT = {
     ),
 
     "help:ai": (
-        "🤖 <b>AI Commands</b>\n\n"
+        "🤐 <b>AI Chat</b>\n\n"
         "• 💬 <code>/ai</code> — Chat with AI Gemini\n"
         "• 🧠 <code>/ask</code> — ChatGPT\n"
         "• ⚡ <code>/groq</code> — Groq\n"
         "• 🍌 <code>/meta</code> — Meta AI\n"
+        "• 😍 <code>/caca</code> — Caca Chat Bot\n"
     ),
 
     "help:utils": (
         "🛠️ <b>Utilities</b>\n\n"
+        "• 🏓 <code>/ping</code> — Check bot response time\n"
         "• 📊 <code>/stats</code> — Bot & system statistics\n"
         "• 🌐 <code>/ip</code> — IP address lookup\n"
         "• 🏷️ <code>/domain</code> — Domain information\n"
