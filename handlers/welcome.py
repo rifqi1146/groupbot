@@ -112,6 +112,7 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         username = f"@{user.username}" if user.username else "—"
+        chatname = chat.title or "this group"
         fullname = user.full_name
 
         text = (
