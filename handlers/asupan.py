@@ -85,11 +85,11 @@ async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
 
     if user.id not in OWNER_ID:
-        return await msg.reply_text("❌ Owner only.")
+        return
 
     ASUPAN_ENABLED_CHATS.add(chat.id)
     save_asupan_groups()
-    await update.message.reply_text("✅ Asupan diaktifkan di grup ini.")
+    await update.message.reply_text("Asupan diaktifkan di grup ini.")
 
 
 async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,11 +97,11 @@ async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chat = update.effective_chat
 
     if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+        return
 
     ASUPAN_ENABLED_CHATS.discard(chat.id)
     save_asupan_groups()
-    await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
+    await update.message.reply_text("Asupan dimatikan di grup ini.")
 
 def load_asupan_groups():
     global ASUPAN_ENABLED_CHATS
@@ -121,12 +121,12 @@ async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
 
     if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+        return
 
     if not ASUPAN_ENABLED_CHATS:
-        return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
+        return await update.message.reply_text("Belum ada grup yang diizinkan asupan.")
 
-    lines = ["<b>📋 Grup Asupan Aktif</b>\n"]
+    lines = ["<b>Grup Asupan Aktif</b>\n"]
 
     for cid in ASUPAN_ENABLED_CHATS:
         try:
@@ -194,7 +194,7 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
 
     if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+        return
 
     if not context.args:
         return await update.message.reply_text(
@@ -211,23 +211,23 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if sub == "enable":
         ASUPAN_ENABLED_CHATS.add(chat.id)
         save_asupan_groups()
-        return await update.message.reply_text("✅ Asupan diaktifkan di grup ini.")
+        return await update.message.reply_text("Asupan diaktifkan di grup ini.")
 
     if sub == "disable":
         ASUPAN_ENABLED_CHATS.discard(chat.id)
         save_asupan_groups()
-        return await update.message.reply_text("🚫 Asupan dimatikan di grup ini.")
+        return await update.message.reply_text("Asupan dimatikan di grup ini.")
 
     if sub == "status":
         if chat.id in ASUPAN_ENABLED_CHATS:
-            return await update.message.reply_text("✅ Asupan <b>AKTIF</b> di grup ini.", parse_mode="HTML")
-        return await update.message.reply_text("🚫 Asupan <b>TIDAK AKTIF</b> di grup ini.", parse_mode="HTML")
+            return await update.message.reply_text("Asupan <b>AKTIF</b> di grup ini.", parse_mode="HTML")
+        return await update.message.reply_text("Asupan <b>TIDAK AKTIF</b> di grup ini.", parse_mode="HTML")
 
     if sub == "list":
         if not ASUPAN_ENABLED_CHATS:
-            return await update.message.reply_text("📭 Belum ada grup yang diizinkan asupan.")
+            return await update.message.reply_text("Belum ada grup yang diizinkan asupan.")
 
-        lines = ["<b>📋 Grup Asupan Aktif</b>\n"]
+        lines = ["<b>Grup Asupan Aktif</b>\n"]
 
         for cid in ASUPAN_ENABLED_CHATS:
             try:
@@ -242,17 +242,17 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    return await update.message.reply_text("❌ Subcommand tidak dikenal.")
+    return await update.message.reply_text("Command tidak dikenal.")
     
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
     if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
-
+        return
+        
     if chat.type == "private":
-        return await update.message.reply_text("🍌 Auto delete tidak berlaku di private chat.")
+        return await update.message.reply_text("Auto delete tidak berlaku di private chat.")
 
     if not context.args:
         return await update.message.reply_text(
@@ -268,15 +268,15 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "on":
         AUTODEL_ENABLED_CHATS.add(chat.id)
         save_autodel_groups()
-        return await update.message.reply_text("✅ Auto delete asupan diaktifkan di grup ini.")
+        return await update.message.reply_text("Auto delete asupan diaktifkan di grup ini.")
 
     if arg == "off":
         AUTODEL_ENABLED_CHATS.discard(chat.id)
         save_autodel_groups()
-        return await update.message.reply_text("🚫 Auto delete asupan dimatikan di grup ini.")
+        return await update.message.reply_text("Auto delete asupan dimatikan di grup ini.")
 
     if arg == "status":
-        status = "AKTIF ✅" if is_autodel_enabled(chat.id) else "NONAKTIF ❌"
+        status = "AKTIF" if is_autodel_enabled(chat.id) else "NONAKTIF"
         return await update.message.reply_text(
             f"📌 Status auto delete asupan di grup ini: <b>{status}</b>",
             parse_mode="HTML"
@@ -284,9 +284,9 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if arg == "list":
         if not AUTODEL_ENABLED_CHATS:
-            return await update.message.reply_text("📭 Tidak ada grup dengan auto delete asupan aktif.")
+            return await update.message.reply_text("Tidak ada grup dengan auto delete asupan aktif.")
 
-        lines = ["<b>📋 Grup Auto Delete Asupan Aktif</b>\n"]
+        lines = ["<b>Grup Auto Delete Asupan Aktif</b>\n"]
         for cid in AUTODEL_ENABLED_CHATS:
             try:
                 c = await context.bot.get_chat(cid)
@@ -297,7 +297,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
-    await update.message.reply_text("❌ Argumen tidak dikenali.")
+    await update.message.reply_text("Argumen tidak dikenali.")
     
 
 #inline keyboard

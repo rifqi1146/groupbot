@@ -137,24 +137,24 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if cmd == "enable":
             if chat.type == "private":
-                return await msg.reply_text("❌ Khusus grup.")
+                return await msg.reply_text("Group Only")
             groups.add(chat.id)
             _save_groups(groups)
-            return await msg.reply_text("✅ Caca diaktifkan di grup ini.")
+            return await msg.reply_text("Caca diaktifkan di grup ini.")
 
         if cmd == "disable":
             groups.discard(chat.id)
             _save_groups(groups)
-            return await msg.reply_text("🚫 Caca dimatikan di grup ini.")
+            return await msg.reply_text("Caca dimatikan di grup ini.")
 
         if cmd == "status":
             if chat.id in groups:
-                return await msg.reply_text("✅ Caca AKTIF di grup ini.")
-            return await msg.reply_text("🚫 Caca TIDAK aktif di grup ini.")
+                return await msg.reply_text("Caca AKTIF di grup ini.")
+            return await msg.reply_text("Caca TIDAK aktif di grup ini.")
 
         if cmd == "list":
             if not groups:
-                return await msg.reply_text("📭 Belum ada grup aktif.")
+                return await msg.reply_text("Belum ada grup aktif.")
             text = ["📋 Grup Caca Aktif:\n"]
             for gid in groups:
                 try:
@@ -169,7 +169,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type in ("group", "supergroup"):
         if chat.id not in _load_groups():
             return await msg.reply_text(
-                "🚫 <b>Caca tidak tersedia di grup ini</b>\n\n"
+                "<b>Caca tidak tersedia di grup ini</b>\n\n"
                 "Chat bot Caca mengandung unsur <b>18+</b>.\n"
                 "Gunakan di <b>PM bot</b> atau hubungi <code>@hirohitokiyoshi</code> jika ingin mengaktifkan di grup anda.",
                 parse_mode="HTML"
