@@ -186,6 +186,16 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id=user.id,
         permissions=ChatPermissions(
             can_send_messages=True,
+            can_invite_users=True,
+            can_send_audios=True,
+            can_send_documents=True,
+            can_send_messages=True,
+            can_send_other_messages=True,
+            can_send_photos=True,
+            can_send_polls=True,
+            can_send_video_notes=True,
+            can_send_videos=True,
+            can_send_voice_notes=True,
         )
     )
 
