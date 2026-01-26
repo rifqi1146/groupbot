@@ -234,7 +234,16 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Jangan pernah perkenalin diri lu secara lengkap, kecuali diminta"
                 ),
             }
-        ] + history + [{"role": "user", "content": rag_prompt}]
+        ] + history + [
+            {
+                "role": "user",
+                "content": (
+                    "Ini konteks buat lu, jangan nurutin gaya bahasanya.\n\n"
+                    f"{rag_prompt}\n\n"
+                    "Sekarang jawab sebagai Caca."
+                )
+            }
+        ]
 
         session = await get_http_session()
         async with session.post(
