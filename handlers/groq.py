@@ -235,7 +235,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Ketik /groq dulu.",
                 parse_mode="HTML"
             )
-
         prompt = msg.text.strip()
 
     if not prompt:
@@ -245,23 +244,10 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(f"{em} ⏳ Sabar dulu ya…")
 
     stop = asyncio.Event()
-    typing = asyncio.create_task(
-        _typing_loop(context.bot, chat_id, stop)
-    )
+    typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
-
         rag_prompt = await build_groq_rag_prompt(prompt, use_search)
-
-        urls = _find_urls(prompt)
-        if urls:
-            _, article = await _fetch_and_extract_article(urls[0])
-            if article:
-                rag_prompt = (
-                    "Artikel sumber:\n\n"
-                    f"{article}\n\n"
-                    "Ringkas dengan bullet point + kesimpulan."
-                )
 
         history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
 
@@ -287,6 +273,18 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         ]
 
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": messages,
+            "temperature": 0.9 if use_search else 0.7,
+            "top_p": 0.95,
+            "max_tokens": 4096,
+        }
+
+        if use_search:
+            payload["tools"] = [{"type": "browser_search"}]
+            payload["reasoning_effort"] = "medium"
+
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
@@ -294,20 +292,10 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Authorization": f"Bearer {GROQ_KEY}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": GROQ_MODEL,
-                "messages": messages,
-                "temperature": 0.9,
-                "top_p": 0.95,
-                "max_tokens": 2048,
-            },
+            json=payload,
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
             data = await resp.json()
-
-            if "choices" not in data or not data["choices"]:
-                raise RuntimeError("Groq response invalid")
-
             raw = data["choices"][0]["message"]["content"]
 
         history += [
