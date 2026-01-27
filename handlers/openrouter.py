@@ -196,7 +196,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-        _ASK_ACTIVE_USERS[user_id] = True
+        _ASK_ACTIVE_USERS[user_id] = sent.message_id
         _ASK_ACTIVE_MESSAGES.add(sent.message_id)
 
     except Exception as e:
