@@ -17,16 +17,18 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = None
 
     def progress_hook(d):
+        if d['status'] == 'finished':
+            print(f"Download awal finished: {d.get('filename')}")  # Log .webm
+
+    def postprocess_hook(d):
         nonlocal file_path
         if d['status'] == 'finished':
-            file_path = d.get('filename')  # Tangkep nama final
-            # Log detail
-            print(f"Download finished: {file_path}")  # Ini bakal muncul di console/log lu
+            file_path = d['filename']  # Ini setelah postprocess, .mp3
+            print(f"Postprocess finished: {file_path}")  # Log .mp3 final
 
     try:
-        # Check ffmpeg exists (biar tau kalau ini penyebab)
         if not shutil.which("ffmpeg"):
-            raise Exception("FFmpeg gak installed! Install dulu: sudo apt install ffmpeg -y")
+            raise Exception("FFmpeg gak installed! Install: sudo apt install ffmpeg -y")
 
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -36,36 +38,42 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'quiet': False,  # Matikan quiet biar liat log detail di console
-            'verbose': True,  # Tambah verbose buat debug full (liat di terminal pas run)
+            'quiet': True,  # Matikan buat produksi, nyalain False kalau debug
+            'no_warnings': True,
             'noplaylist': True,
             'progress_hooks': [progress_hook],
+            'postprocessor_hooks': [postprocess_hook],  # Kunci fix: Tangkep setelah convert
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(f"ytsearch:{query}", download=True)
-                if not info or not info.get('entries'):
-                    raise yt_dlp.DownloadError("Gak nemu lagu/video match query ini!")
-            except yt_dlp.DownloadError as de:
-                raise Exception(f"yt-dlp gagal download: {str(de)}. Mungkin query salah atau video restricted.")
+            info = ydl.extract_info(f"ytsearch:{query}", download=True)
+            if not info or not info.get('entries'):
+                raise Exception("Gak nemu lagu/video match query ini!")
+
+            entry = info['entries'][0]
 
             if not file_path:
-                base_name = ydl.prepare_filename(info['entries'][0])
-                file_path = base_name.rsplit('.', 1)[0] + '.mp3'
+                # Fallback lebih aman: Pakai _filename dari entry kalau ada, atau construct manual
+                if '_filename' in entry:
+                    file_path = entry['_filename']
+                else:
+                    base_name = ydl.prepare_filename(entry)
+                    file_path = base_name.rsplit('.', 1)[0] + '.mp3'
+
+            print(f"Final file_path yang dicoba: {file_path}")  # Log buat debug
 
         if not os.path.exists(file_path):
-            raise Exception(f"File gak ketemu setelah download: {file_path}. Cek log console buat detail.")
+            raise Exception(f"File gak ketemu: {file_path}. Cek apakah postprocess gagal.")
 
         await update.message.reply_audio(
             audio=open(file_path, 'rb'),
-            title=info['entries'][0]['title'],
-            performer=info['entries'][0].get('uploader', 'Unknown'),
-            duration=info['entries'][0]['duration'],
-            caption=f"Lagu: {info['entries'][0]['title']} 🎵"
+            title=entry['title'],
+            performer=entry.get('uploader', 'Unknown'),
+            duration=entry['duration'],
+            caption=f"Lagu: {entry['title']} 🎵"
         )
 
         os.remove(file_path)
 
     except Exception as e:
-        await update.message.reply_text(f"Error detail: {str(e)}\n\nCoba: Install ffmpeg, update yt-dlp, atau query lain yang valid (misal 'despacito'). Liat console log VPS lu buat detail yt-dlp.")
+        await update.message.reply_text(f"Error detail: {str(e)}\n\nCek console log buat detail yt-dlp. Kalau masih gagal, paste full log baru.")
