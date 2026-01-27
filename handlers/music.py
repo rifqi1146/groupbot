@@ -5,6 +5,7 @@ import os
 import asyncio
 import shutil
 import glob
+import html
 
 async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = ' '.join(context.args)
