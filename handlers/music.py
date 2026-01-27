@@ -98,7 +98,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             performer=entry.get('uploader', 'Unknown'),
             duration=entry['duration'],
             caption=f"Lagu yang lu pilih: {entry['title']} 🎵",
-            reply_to_message_id=query.message.reply_to_message_id  # Reply ke /music command
+            reply_to_message_id=query.message.reply_to_message.message_id
         )
 
         os.remove(file_path)
