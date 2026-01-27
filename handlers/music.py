@@ -1,6 +1,6 @@
 import yt_dlp
 from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler
+from telegram.ext import ContextTypes
 import os
 import asyncio
 
@@ -9,44 +9,61 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query:
         return await update.message.reply_text("Pake: /music <nama lagu atau artis>")
 
-    # Typing action biar user tau lagi proses
+    # Bikin folder kalau belum ada
+    os.makedirs('downloads', exist_ok=True)
+
+    # Typing action
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_audio")
 
+    file_path = None  # Var buat simpen nama file final
+
+    def progress_hook(d):
+        nonlocal file_path
+        if d['status'] == 'finished':
+            file_path = d['filename']  # Dapatkan nama file setelah download & postprocess
+            # Kalau postprocess, yt-dlp ubah ext, jadi ambil yang final
+
     try:
-        # Opsi yt-dlp: search YouTube, ambil audio best, format mp3
         ydl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': 'downloads/%(title)s.%(ext)s',  # Simpen di folder downloads/
+            'outtmpl': 'downloads/%(title)s.%(ext)s',  # Template nama
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '192',  # Bitrate oke, file kecil
+                'preferredquality': '192',
             }],
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True,  # Ambil satu lagu doang
+            'noplaylist': True,
+            'progress_hooks': [progress_hook],  # Hook buat tangkep nama file final
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Search & download
             info = ydl.extract_info(f"ytsearch:{query}", download=True)
-            file_path = ydl.prepare_filename(info)
-            file_path = file_path.rsplit('.', 1)[0] + '.mp3'  # Ubah ext ke mp3
+            if not info or not info.get('entries'):
+                raise Exception("Gak nemu lagu nih. Coba query lain!")
 
-        # Kirim audio ke user
+            # Kalau file_path masih None (jarang), fallback ke manual
+            if not file_path:
+                # Asumsi nama dari title, ubah ext ke mp3
+                base_name = ydl.prepare_filename(info['entries'][0])
+                file_path = base_name.rsplit('.', 1)[0] + '.mp3'
+
+        # Check file exists
+        if not os.path.exists(file_path):
+            raise Exception(f"File gak ketemu: {file_path}. Mungkin download gagal.")
+
+        # Kirim audio
         await update.message.reply_audio(
             audio=open(file_path, 'rb'),
-            title=info['title'],
-            performer=info.get('uploader', 'Unknown'),
-            duration=info['duration'],
-            caption=f"Lagu: {info['title']} 🎵"
+            title=info['entries'][0]['title'],
+            performer=info['entries'][0].get('uploader', 'Unknown'),
+            duration=info['entries'][0]['duration'],
+            caption=f"Lagu: {info['entries'][0]['title']} 🎵"
         )
 
-        # Hapus file setelah kirim (hemat storage)
+        # Hapus file
         os.remove(file_path)
 
     except Exception as e:
-        await update.message.reply_text(f"Error nih: {str(e)}. Coba query lain atau cek koneksi.")
-
-# Register di commands.py
-# Tambah: ("music", music_cmd, False)
+        await update.message.reply_text(f"Error nih: {str(e)}. Coba query lain, cek koneksi, atau pastiin ffmpeg installed di VPS lu.")
