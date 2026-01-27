@@ -40,7 +40,7 @@ _ASK_ACTIVE_USERS = {}
 
 #core function
 COOLDOWN = 1
-_ASK_ACTIVE_MESSAGES = set()
+
 _last_req = {}
 
 def _can(uid: int) -> bool:
@@ -105,6 +105,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = " ".join(context.args).strip()
 
         ASK_MEMORY.pop(user_id, None)
+        _ASK_ACTIVE_USERS.pop(user_id, None)
 
         if not prompt:
             return await msg.reply_text(
@@ -131,7 +132,9 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(f"{em} ⏳ Sabar dulu ya…")
 
     stop = asyncio.Event()
-    typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
+    typing = asyncio.create_task(
+        _typing_loop(context.bot, chat_id, stop)
+    )
 
     try:
         contexts = await retrieve_context(prompt, LOCAL_CONTEXTS, top_k=3)
