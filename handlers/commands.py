@@ -25,7 +25,7 @@ from handlers.caca import meta_query
 from fun.waifu import waifu_cmd
 from handlers.update import update_cmd
 from handlers.groups import groups_cmd
-from habdlers.music import music_cmd
+from handlers.music import music_cmd
 
 
 from handlers.asupan import (
