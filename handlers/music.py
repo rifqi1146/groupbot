@@ -42,4 +42,33 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # STRATEGI BARU: Scan folder downloads/ cari file MP3 terbaru
         # Cari semua .mp3 di folder
-        mp3_files
+        mp3_files = glob.glob('downloads/*.mp3')
+        if not mp3_files:
+            raise Exception("Gak nemu file MP3 setelah postprocess! Cek ffmpeg atau yt-dlp.")
+
+        # Ambil yang terbaru (berdasarkan waktu modifikasi)
+        latest_mp3 = max(mp3_files, key=os.path.getmtime)
+        print(f"Found latest MP3: {latest_mp3}")  # Log buat debug
+
+        # Optional: Cek kalau nama mirip entry title (biar akurat)
+        title = entry['title'].replace('/', '').replace('\\', '').replace(':', '').strip()
+        if title.lower() not in os.path.basename(latest_mp3).lower():
+            print(f"Warning: Filename mismatch. Expected: {title}, Got: {os.path.basename(latest_mp3)}")
+
+        file_path = latest_mp3
+
+        # Kirim audio
+        await update.message.reply_audio(
+            audio=open(file_path, 'rb'),
+            title=entry['title'],
+            performer=entry.get('uploader', 'Unknown'),
+            duration=entry['duration'],
+            caption=f"Lagu: {entry['title']} 🎵"
+        )
+
+        # Hapus file setelah kirim
+        os.remove(file_path)
+
+    except Exception as e:
+        await update.message.reply_text(f"Error detail: {str(e)}\n\nCoba query lain atau cek log.")
+        
