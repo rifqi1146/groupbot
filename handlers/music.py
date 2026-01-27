@@ -3,7 +3,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import os
 import asyncio
-import shutil  # Buat check ffmpeg
+import shutil
+import glob  # Buat scan file
 
 async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = ' '.join(context.args)
@@ -13,18 +14,6 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.makedirs('downloads', exist_ok=True)
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_audio")
-
-    file_path = None
-
-    def progress_hook(d):
-        if d['status'] == 'finished':
-            print(f"Download awal finished: {d.get('filename')}")  # Log .webm
-
-    def postprocess_hook(d):
-        nonlocal file_path
-        if d['status'] == 'finished':
-            file_path = d['filename']  # Ini setelah postprocess, .mp3
-            print(f"Postprocess finished: {file_path}")  # Log .mp3 final
 
     try:
         if not shutil.which("ffmpeg"):
@@ -38,11 +27,10 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'quiet': True,  # Matikan buat produksi, nyalain False kalau debug
+            'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'progress_hooks': [progress_hook],
-            'postprocessor_hooks': [postprocess_hook],  # Kunci fix: Tangkep setelah convert
+            # Gak pake hook lagi, biar simple
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -52,28 +40,6 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             entry = info['entries'][0]
 
-            if not file_path:
-                # Fallback lebih aman: Pakai _filename dari entry kalau ada, atau construct manual
-                if '_filename' in entry:
-                    file_path = entry['_filename']
-                else:
-                    base_name = ydl.prepare_filename(entry)
-                    file_path = base_name.rsplit('.', 1)[0] + '.mp3'
-
-            print(f"Final file_path yang dicoba: {file_path}")  # Log buat debug
-
-        if not os.path.exists(file_path):
-            raise Exception(f"File gak ketemu: {file_path}. Cek apakah postprocess gagal.")
-
-        await update.message.reply_audio(
-            audio=open(file_path, 'rb'),
-            title=entry['title'],
-            performer=entry.get('uploader', 'Unknown'),
-            duration=entry['duration'],
-            caption=f"Lagu: {entry['title']} 🎵"
-        )
-
-        os.remove(file_path)
-
-    except Exception as e:
-        await update.message.reply_text(f"Error detail: {str(e)}\n\nCek console log buat detail yt-dlp. Kalau masih gagal, paste full log baru.")
+        # STRATEGI BARU: Scan folder downloads/ cari file MP3 terbaru
+        # Cari semua .mp3 di folder
+        mp3_files
