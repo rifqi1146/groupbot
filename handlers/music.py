@@ -108,6 +108,3 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await context.bot.send_message(chat_id=chat_id, text=f"Error download: {str(e)}")
-
-# Register di bot.py (tambah ini di tempat register handlers)
-app.add_handler(CallbackQueryHandler(music_callback, pattern="^music_download:"))
