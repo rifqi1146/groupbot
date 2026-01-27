@@ -313,6 +313,13 @@ def asupan_keyboard(owner_id: int):
 async def fetch_asupan_tikwm(keyword: str | None = None):
     default_keywords = [
         "tante holic",
+        "cewe cantik",
+        "cewe tanktop",
+        "#tanteholic",
+        "shsshlla",
+        "Seeazeee",
+        "hi,its me tatut",
+        "billaazz",               
         "innova.kasih.4",
         "tobrut",
         "tanktopstyle",
