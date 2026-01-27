@@ -21,7 +21,7 @@ async def ai_reply_router(update, context):
     user_id = msg.from_user.id
     reply_mid = msg.reply_to_message.message_id
 
-    if reply_mid in _ASK_ACTIVE_MESSAGES:
+    if user_id in _ASK_ACTIVE_USERS:
         return await ask_cmd(update, context)
 
     if _GROQ_ACTIVE_USERS.get(user_id) == reply_mid:

@@ -105,7 +105,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = " ".join(context.args).strip()
 
         ASK_MEMORY.pop(user_id, None)
-        _ASK_ACTIVE_USERS.pop(user_id, None)
 
         if not prompt:
             return await msg.reply_text(
@@ -123,10 +122,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Ketik /ask dulu.",
                 parse_mode="HTML"
             )
-    
-        if msg.reply_to_message.message_id not in _ASK_ACTIVE_MESSAGES:
-            return
-    
         prompt = msg.text.strip()
 
     if not prompt:
@@ -136,9 +131,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(f"{em} ⏳ Sabar dulu ya…")
 
     stop = asyncio.Event()
-    typing = asyncio.create_task(
-        _typing_loop(context.bot, chat_id, stop)
-    )
+    typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
         contexts = await retrieve_context(prompt, LOCAL_CONTEXTS, top_k=3)
@@ -197,7 +190,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         _ASK_ACTIVE_USERS[user_id] = sent.message_id
-        _ASK_ACTIVE_MESSAGES.add(sent.message_id)
 
     except Exception as e:
         stop.set()
