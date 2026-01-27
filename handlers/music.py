@@ -18,48 +18,46 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'skip_download': True,  # Cuma extract info dulu, gak download
+            'skip_download': True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch5:{query}", download=False)  # Ambil 5 hasil
+            info = ydl.extract_info(f"ytsearch5:{query}", download=False)
             if not info or not info.get('entries'):
                 raise Exception("Gak nemu lagu/video match query ini!")
 
-            entries = info['entries'][:5]  # Ambil max 5
+            entries = info['entries'][:5]
 
-        # Buat list teks & buttons
         keyboard = []
         text = "Pilih lagu nih bro:\n\n"
         for i, entry in enumerate(entries, 1):
             title = entry['title']
-            video_id = entry['id']  # ID YouTube buat download nanti
+            video_id = entry['id']
             uploader = entry.get('uploader', 'Unknown')
             duration = entry['duration']
             text += f"{i}. {title} by {uploader} ({duration//60}:{duration%60:02d})\n"
 
-            # Button dengan callback_data unik (misal "music_download:video_id")
             keyboard.append([InlineKeyboardButton(f"Pilih {i}: {title[:20]}...", callback_data=f"music_download:{video_id}")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(text, reply_markup=reply_markup)
+        # Reply list ke command user
+        await update.message.reply_text(text, reply_markup=reply_markup, reply_to_message_id=update.message.message_id)
 
     except Exception as e:
         await update.message.reply_text(f"Error cari lagu: {str(e)}")
 
 async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # Ack klik
+    await query.answer()
 
-    video_id = query.data.split(':', 1)[1]  # Ambil video_id dari callback_data
+    video_id = query.data.split(':', 1)[1]
 
-    await query.edit_message_text(text="Download lagu yang lu pilih nih... 🎵")  # Update message
+    # Edit message list jadi notif download
+    await query.edit_message_text(text="Download lagu yang lu pilih nih... 🎵")
 
     chat_id = query.message.chat_id
     await context.bot.send_chat_action(chat_id=chat_id, action="upload_audio")
-
-    file_path = None
 
     try:
         if not shutil.which("ffmpeg"):
@@ -85,7 +83,6 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             entry = info
 
-        # Scan MP3 terbaru (logic sama persis kayak sebelumnya)
         mp3_files = glob.glob('downloads/*.mp3')
         if not mp3_files:
             raise Exception("Gak nemu file MP3!")
@@ -93,7 +90,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_path = max(mp3_files, key=os.path.getmtime)
         print(f"Found MP3: {file_path}")
 
-        # Kirim audio (logic sama)
+        # Kirim audio, reply ke command user asli
         await context.bot.send_audio(
             chat_id=chat_id,
             audio=open(file_path, 'rb'),
@@ -101,10 +98,13 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             performer=entry.get('uploader', 'Unknown'),
             duration=entry['duration'],
             caption=f"Lagu yang lu pilih: {entry['title']} 🎵",
-            reply_to_message_id=query.message.message_id
+            reply_to_message_id=query.message.reply_to_message_id  # Reply ke /music command
         )
 
         os.remove(file_path)
 
+        # Hapus pesan download setelah sukses
+        await query.message.delete()
+
     except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"Error download: {str(e)}")
+        await query.edit_message_text(text=f"Error download: {str(e)}")  # Kalau error, gak hapus, tapi edit
