@@ -83,11 +83,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     chat_id = query.message.chat_id
-    await context.bot.send_chat_action(
-        chat_id=chat_id,
-        action="upload_audio"
-    )
-
+    
     try:
         if not shutil.which("ffmpeg"):
             raise Exception("FFmpeg tidak terpasang di sistem.")
@@ -120,7 +116,12 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise Exception("File audio tidak ditemukan.")
 
         file_path = max(mp3_files, key=os.path.getmtime)
-
+        
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action="upload_audio"
+        )
+        
         await context.bot.send_audio(
             chat_id=chat_id,
             audio=open(file_path, 'rb'),
