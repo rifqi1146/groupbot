@@ -374,7 +374,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     bot_name = (await bot.get_me()).first_name or "Bot"
                     fixed_audio = reencode_mp3(tmp_audio)
                     
-                    await context.bot.send_chat_action(
+                    await bot.send_chat_action(
                         chat_id=chat_id,
                         action="upload_audio"
                     )
