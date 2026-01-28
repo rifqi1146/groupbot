@@ -2,7 +2,22 @@
 [![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-22.5-blue?logo=telegram)](https://github.com/python-telegram-bot/python-telegram-bot)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](https://www.gnu.org/licenses/gpl-3.0.html)
 
-gatau bg mau nulis apa
+# 🤖 Telegram Multi-Function Bot
+
+Bot Telegram multifungsi
+
+## ✨ Fitur
+
+- 🧠 AI Chat Bot — percakapan pintar dan responsif  
+- 📥 Downloader — unduh video, musik, dan file dari berbagai platform  
+- 🌐 Networking Tools — cek IP, koneksi, dan utilitas jaringan  
+- 🎉 Fun Commands — fitur hiburan ringan  
+
+## 🚀 Cocok Untuk
+
+- Bot pribadi (non publik)  
+- Home server & automation  
+- Eksperimen AI dan networking  
 
 ## 🚀 Quick Install (Recommended)
 
