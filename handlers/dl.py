@@ -73,6 +73,22 @@ def is_tiktok(url: str) -> bool:
 def is_instagram(url: str) -> bool:
     return "instagram.com" in url or "instagr.am" in url
 
+def is_ytdlp_supported(url: str) -> bool:
+    YT_DLP = shutil.which("yt-dlp")
+    if not YT_DLP:
+        return False
+
+    try:
+        p = subprocess.run(
+            [YT_DLP, "--dump-json", "--skip-download", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8
+        )
+        return p.returncode == 0
+    except Exception:
+        return False
+        
 #resolve tt
 def normalize_url(text: str) -> str:
     text = text.strip()
@@ -116,7 +132,10 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         return
 
-    if not (is_tiktok(text) or is_instagram(text) or is_youtube(text)):
+    if not text.startswith("http"):
+        return
+    
+    if not is_tiktok(text) and not is_ytdlp_supported(text):
         return
 
     dl_id = uuid.uuid4().hex[:8]
@@ -444,15 +463,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 await bot.delete_message(chat_id, status_msg_id)
                 return
         
-        elif is_youtube(raw_url):
-            path = await ytdlp_download(
-                raw_url,
-                fmt_key,
-                bot,
-                chat_id,
-                status_msg_id
-            )
-        elif is_instagram(raw_url):
+        elif not is_tiktok(raw_url):
             path = await ytdlp_download(
                 raw_url,
                 fmt_key,
