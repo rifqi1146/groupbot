@@ -28,6 +28,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'no_warnings': True,
             'noplaylist': True,
             'skip_download': True,
+            'cookies': '/data/cookies.txt',
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -99,6 +100,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
+            'cookies': '/data/cookies.txt',
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
