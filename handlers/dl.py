@@ -116,7 +116,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         return
 
-    if not (is_tiktok(text) or is_instagram(text)):
+    if not (is_tiktok(text) or is_instagram(text) or is_youtube(text)):
         return
 
     dl_id = uuid.uuid4().hex[:8]
@@ -443,7 +443,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
-
+        
+        elif is_youtube(raw_url):
+            path = await ytdlp_download(
+                raw_url,
+                fmt_key,
+                bot,
+                chat_id,
+                status_msg_id
+            )
         elif is_instagram(raw_url):
             path = await ytdlp_download(
                 raw_url,
@@ -525,8 +533,6 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link TikTok / IG")
 
     url = context.args[0]
-    if is_youtube(url):
-        return await update.message.reply_text("❌ YouTube tidak didukung")
 
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
