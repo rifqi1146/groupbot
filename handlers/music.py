@@ -7,6 +7,9 @@ import shutil
 import glob
 import html
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
+
 async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = ' '.join(context.args)
     if not query:
@@ -28,7 +31,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'no_warnings': True,
             'noplaylist': True,
             'skip_download': True,
-            'cookies': '/data/cookies.txt',
+            'cookies': COOKIES_PATH,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -100,7 +103,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'cookies': '/data/cookies.txt',
+            'cookies': COOKIES_PATH,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
