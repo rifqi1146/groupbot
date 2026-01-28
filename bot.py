@@ -96,6 +96,8 @@ def main():
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
+        .base_url("http://127.0.0.1:8081/bot")
+        .base_file_url("http://127.0.0.1:8081/file/bot")
         .job_queue(JobQueue())
         .connect_timeout(20)
         .read_timeout(60)
@@ -125,7 +127,7 @@ def main():
     log.info("Polling started")
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-    
-  
+
+
 if __name__ == "__main__":
     main()
