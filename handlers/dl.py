@@ -541,7 +541,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("❌ Kirim link TikTok / IG")
+        return await update.message.reply_text("❌ Kirim link TikTok / Platform Yt-dlp Support")
 
     url = context.args[0]
 
