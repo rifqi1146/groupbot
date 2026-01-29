@@ -192,7 +192,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif msg.reply_to_message:
-        if user_id not in _META_ACTIVE_USERS:
+        if user_id not in META_MEMORY:
             return await msg.reply_text(
                 "😒 Gue ga inget ngobrol sama lu.\n"
                 "Ketik /caca dulu."
