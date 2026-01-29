@@ -63,7 +63,7 @@ def dl_keyboard(dl_id: str):
         ]
     ])
 
-# platform check (FAST PATH, NO yt-dlp)
+# platform check
 def is_youtube(url: str) -> bool:
     return any(x in url for x in (
         "youtube.com",
@@ -99,26 +99,21 @@ def is_twitter_x(url: str) -> bool:
     ))
 
 def is_reddit(url: str) -> bool:
-    return "reddit.com" in url or "redd.it" in url
-
-def is_generic_ytdlp(url: str) -> bool:
-    """
-    Catch-all for platforms commonly supported by yt-dlp
-    (streamable, soundcloud, vimeo, etc)
-    """
-    return url.startswith("http")
-
-    try:
-        p = subprocess.run(
-            [YT_DLP, "--dump-json", "--skip-download", url],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=8
-        )
-        return p.returncode == 0
-    except Exception:
-        return False
+    return any(x in url for x in (
+        "reddit.com",
+        "redd.it",
+    ))
         
+def is_supported_platform(url: str) -> bool:
+    return any((
+        is_tiktok(url),
+        is_youtube(url),
+        is_instagram(url),
+        is_facebook(url),
+        is_twitter_x(url),
+        is_reddit(url),
+    ))
+    
 #resolve tt
 def normalize_url(text: str) -> str:
     text = text.strip()
@@ -162,18 +157,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         return
 
-    if not text.startswith("http"):
-        return
-
-    if not (
-        is_tiktok(text)
-        or is_youtube(text)
-        or is_instagram(text)
-        or is_facebook(text)
-        or is_twitter_x(text)
-        or is_reddit(text)
-        or is_generic_ytdlp(text)
-    ):
+    if not is_supported_platform(text):
         return
 
     dl_id = uuid.uuid4().hex[:8]
