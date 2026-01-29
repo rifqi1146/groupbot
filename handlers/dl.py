@@ -335,17 +335,31 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
                     last = time.time()
 
     await proc.wait()
+
+    stderr = await proc.stderr.read()
+    if stderr:
+        print(stderr.decode(errors="ignore"))
+
     if proc.returncode != 0:
         return None
+
+    def media_priority(p):
+        p = p.lower()
+        if p.endswith(".mp4"):
+            return 0
+        if p.endswith(".mp3"):
+            return 1
+        if p.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            return 2
+        return 9
 
     files = sorted(
         (
             os.path.join(TMP_DIR, f)
             for f in os.listdir(TMP_DIR)
-            if f.lower().endswith((".mp4", ".jpg", ".png", ".webp", ".mp3"))
+            if f.lower().endswith((".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp"))
         ),
-        key=os.path.getmtime,
-        reverse=True
+        key=lambda p: (media_priority(p), -os.path.getmtime(p))
     )
 
     return files[0] if files else None
