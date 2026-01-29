@@ -65,6 +65,14 @@ def dl_keyboard(dl_id: str):
         ]
     ])
 
+def detect_media_type(path: str) -> str:
+    ext = os.path.splitext(path.lower())[1]
+    if ext in (".jpg", ".jpeg", ".png", ".webp"):
+        return "photo"
+    if ext in (".mp4", ".mkv", ".webm"):
+        return "video"
+    return "unknown"
+    
 # platform check
 def is_youtube(url: str) -> bool:
     return any(x in url for x in (
@@ -365,6 +373,14 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
 
+    def detect_media_type(p):
+        ext = os.path.splitext(p.lower())[1]
+        if ext in (".jpg", ".jpeg", ".png", ".webp"):
+            return "photo"
+        if ext in (".mp4", ".mkv", ".webm"):
+            return "video"
+        return "unknown"
+
     try:
         if is_tiktok(raw_url):
             try:
@@ -415,12 +431,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
                     bot_name = (await bot.get_me()).first_name or "Bot"
                     fixed_audio = reencode_mp3(tmp_audio)
-                    
-                    await bot.send_chat_action(
-                        chat_id=chat_id,
-                        action="upload_audio"
-                    )
-                    
+
+                    await bot.send_chat_action(chat_id=chat_id, action="upload_audio")
+
                     await bot.send_audio(
                         chat_id=chat_id,
                         audio=fixed_audio,
@@ -432,7 +445,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     )
 
                     await bot.delete_message(chat_id, status_msg_id)
-
                     os.remove(tmp_audio)
                     os.remove(fixed_audio)
                     return
@@ -452,13 +464,11 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
                 bot_name = (await bot.get_me()).first_name or "Bot"
-
                 title = (
                     data.get("data", {}).get("title")
                     or data.get("data", {}).get("desc")
                     or "Slideshow TikTok"
                 )
-
                 title = html.escape(title.strip())
 
                 caption_text = (
@@ -485,8 +495,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
-        
-        elif not is_tiktok(raw_url):
+
+        else:
             path = await ytdlp_download(
                 raw_url,
                 fmt_key,
@@ -494,9 +504,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 chat_id,
                 status_msg_id
             )
-
-        else:
-            raise RuntimeError("Platform tidak didukung")
 
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
@@ -508,27 +515,37 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             parse_mode="HTML"
         )
 
-        if fmt_key == "mp3":
-            title = os.path.splitext(os.path.basename(path))[0]
-            bot_name = (await bot.get_me()).first_name or "Bot"
-            fixed_audio = reencode_mp3(path)
+        bot_name = (await bot.get_me()).first_name or "Bot"
+        caption = os.path.splitext(os.path.basename(path))[0]
+        media_type = detect_media_type(path)
 
+        if fmt_key == "mp3":
+            fixed_audio = reencode_mp3(path)
             await bot.send_audio(
                 chat_id=chat_id,
                 audio=fixed_audio,
-                title=title[:64],
+                title=caption[:64],
                 performer=bot_name,
-                filename=f"{title[:50]}.mp3",
+                filename=f"{caption[:50]}.mp3",
+                reply_to_message_id=reply_to,
+                disable_notification=True
+            )
+            os.remove(fixed_audio)
+
+        elif media_type == "photo":
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=path,
+                caption=(
+                    f"🖼️ <b>{html.escape(caption)}</b>\n\n"
+                    f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
+                ),
+                parse_mode="HTML",
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
 
-            os.remove(fixed_audio)
-
-        else:
-            caption = os.path.splitext(os.path.basename(path))[0]
-            bot_name = (await bot.get_me()).first_name or "Bot"
-
+        elif media_type == "video":
             await bot.send_video(
                 chat_id=chat_id,
                 video=path,
@@ -541,6 +558,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 reply_to_message_id=reply_to,
                 disable_notification=True
             )
+
+        else:
+            raise RuntimeError("Media tidak didukung")
 
         await bot.delete_message(chat_id, status_msg_id)
 
