@@ -20,6 +20,8 @@ from telegram.ext import ContextTypes
 from utils.http import get_http_session
 from utils.text import bold, code, italic, underline, link, mono
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
 
 #dl config
 TMP_DIR = "downloads"
@@ -267,6 +269,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if fmt_key == "mp3":
         cmd = [
             YT_DLP,
+            "--cookies", COOKIES_PATH,
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
@@ -280,7 +283,8 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     else:
         cmd = [
             YT_DLP,
-            "-f", "mp4/best",
+            "--cookies", COOKIES_PATH,
+            "-f", "mp4/bestvideo*+bestaudio/best",
             "--merge-output-format", "mp4",
             "--newline",
             "--progress-template",
