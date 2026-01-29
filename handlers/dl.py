@@ -278,6 +278,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         cmd = [
             YT_DLP,
             "--cookies", COOKIES_PATH,
+            "--no-playlist",
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
@@ -293,10 +294,10 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             YT_DLP,
             "--cookies", COOKIES_PATH,
             "--no-playlist",
+            "-f", "bestvideo*+bestaudio/best",
+            "--merge-output-format", "mp4",
             "--write-thumbnail",
             "--convert-thumbnails", "jpg",
-            "-f", "bestvideo+bestaudio/best",
-            "--merge-output-format", "mp4",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -338,7 +339,11 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         return None
 
     files = sorted(
-        (os.path.join(TMP_DIR, f) for f in os.listdir(TMP_DIR)),
+        (
+            os.path.join(TMP_DIR, f)
+            for f in os.listdir(TMP_DIR)
+            if f.lower().endswith((".mp4", ".jpg", ".png", ".webp", ".mp3"))
+        ),
         key=os.path.getmtime,
         reverse=True
     )
