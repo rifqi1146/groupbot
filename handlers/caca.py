@@ -43,11 +43,6 @@ def _emo():
     return random.choice(_EMOS)
 
 def _can(uid: int) -> bool:
-    now = time.time()
-    last = _last_req.get(uid, 0)
-    if now - last < COOLDOWN:
-        return False
-    _last_req[uid] = now
     return True
 
 def _cleanup_memory():
@@ -204,7 +199,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         prompt = msg.text.strip()
 
-    if not prompt or not _can(user_id):
+    if not prompt:
         return
 
     stop = asyncio.Event()
