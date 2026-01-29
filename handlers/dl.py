@@ -292,7 +292,10 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         cmd = [
             YT_DLP,
             "--cookies", COOKIES_PATH,
-            "-f", "mp4/bestvideo*+bestaudio/best",
+            "--no-playlist",
+            "--write-thumbnail",
+            "--convert-thumbnails", "jpg",
+            "-f", "bestvideo+bestaudio/best",
             "--merge-output-format", "mp4",
             "--newline",
             "--progress-template",
