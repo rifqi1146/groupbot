@@ -44,7 +44,8 @@ def _emo():
 
 def _can(uid: int) -> bool:
     now = time.time()
-    if now - _last_req.get(uid, 0) < COOLDOWN:
+    last = _last_req.get(uid, 0)
+    if now - last < COOLDOWN:
         return False
     _last_req[uid] = now
     return True
@@ -184,10 +185,9 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = " ".join(context.args[1:])
         else:
             prompt = " ".join(context.args)
-
-        META_MEMORY.pop(user_id, None)
-        _META_ACTIVE_USERS.pop(user_id, None)
-
+            META_MEMORY.pop(user_id, None)
+            _META_ACTIVE_USERS.pop(user_id, None)
+    
         if not prompt.strip():
             return await msg.reply_text(
                 f"{em} Pake gini:\n"
@@ -197,7 +197,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif msg.reply_to_message:
-        if user_id not in _META_ACTIVE_USERS:
+        if user_id not in META_MEMORY:
             return await msg.reply_text(
                 "😒 Gue ga inget ngobrol sama lu.\n"
                 "Ketik /caca dulu."
