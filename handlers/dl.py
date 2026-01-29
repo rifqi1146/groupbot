@@ -277,6 +277,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     if fmt_key == "mp3":
         cmd = [
             YT_DLP,
+            "--js-runtime", "node",
             "--cookies", COOKIES_PATH,
             "--no-playlist",
             "-f", "bestaudio/best",
@@ -292,6 +293,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     else:
         cmd = [
             YT_DLP,
+            "--js-runtime", "node",
             "--cookies", COOKIES_PATH,
             "--no-playlist",
             "-f", "bestvideo*+bestaudio/best",
