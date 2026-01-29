@@ -63,20 +63,50 @@ def dl_keyboard(dl_id: str):
         ]
     ])
 
-#platform check
+# platform check (FAST PATH, NO yt-dlp)
 def is_youtube(url: str) -> bool:
-    return any(x in url for x in ("youtube.com", "youtu.be", "music.youtube.com"))
+    return any(x in url for x in (
+        "youtube.com",
+        "youtu.be",
+        "music.youtube.com",
+    ))
 
 def is_tiktok(url: str) -> bool:
-    return "tiktok.com" in url or "vt.tiktok.com" in url
+    return any(x in url for x in (
+        "tiktok.com",
+        "vt.tiktok.com",
+        "vm.tiktok.com",
+    ))
 
 def is_instagram(url: str) -> bool:
-    return "instagram.com" in url or "instagr.am" in url
+    return any(x in url for x in (
+        "instagram.com",
+        "instagr.am",
+    ))
 
-def is_ytdlp_supported(url: str) -> bool:
-    YT_DLP = shutil.which("yt-dlp")
-    if not YT_DLP:
-        return False
+def is_facebook(url: str) -> bool:
+    return any(x in url for x in (
+        "facebook.com",
+        "fb.watch",
+        "fb.com",
+        "m.facebook.com",
+    ))
+
+def is_twitter_x(url: str) -> bool:
+    return any(x in url for x in (
+        "twitter.com",
+        "x.com",
+    ))
+
+def is_reddit(url: str) -> bool:
+    return "reddit.com" in url or "redd.it" in url
+
+def is_generic_ytdlp(url: str) -> bool:
+    """
+    Catch-all for platforms commonly supported by yt-dlp
+    (streamable, soundcloud, vimeo, etc)
+    """
+    return url.startswith("http")
 
     try:
         p = subprocess.run(
@@ -134,8 +164,16 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not text.startswith("http"):
         return
-    
-    if not is_tiktok(text) and not is_ytdlp_supported(text):
+
+    if not (
+        is_tiktok(text)
+        or is_youtube(text)
+        or is_instagram(text)
+        or is_facebook(text)
+        or is_twitter_x(text)
+        or is_reddit(text)
+        or is_generic_ytdlp(text)
+    ):
         return
 
     dl_id = uuid.uuid4().hex[:8]
@@ -144,7 +182,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "url": text,
         "user": update.effective_user.id,
         "reply_to": msg.message_id,
-        "ts": time.time()
+        "ts": time.time(),
     }
 
     keyboard = InlineKeyboardMarkup([
@@ -155,12 +193,9 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     await msg.reply_text(
-        (
-            "👀 <b>Ketemu link</b>\n\n"
-            "Mau aku downloadin?\n"
-        ),
+        "👀 <b>Ketemu link</b>\n\nMau aku downloadin?",
         reply_markup=keyboard,
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
 
