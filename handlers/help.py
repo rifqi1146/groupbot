@@ -140,9 +140,7 @@ HELP_TEXT.update({
         "• <code>/cacaa disable</code> — Matikan Caca di grup\n"
         "• <code>/cacaa status</code> — Cek status Caca\n\n"
     ),
-})
-
-HELP_TEXT.update({
+    
     "help:nsfw": (
         "🔞 <b>NSFW Settings</b>\n\n"
         "• <code>/nsfw enable</code> — Aktifkan NSFW di grup\n"
