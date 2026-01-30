@@ -203,9 +203,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type in ("group", "supergroup"):
         if chat.id not in _load_groups():
             return await msg.reply_text(
-                "<b>Caca tidak tersedia di grup ini</b>\n\n"
-                "Chat bot Caca mengandung unsur <b>18+</b>.\n"
-                "Gunakan di <b>PM bot</b> atau hubungi <code>@hirohitokiyoshi</code> jika ingin mengaktifkan di grup anda.",
+                "<b>Caca tidak tersedia di grup ini</b>",
                 parse_mode="HTML"
             )
 

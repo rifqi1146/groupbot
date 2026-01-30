@@ -281,8 +281,8 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
             "<b>🗑 Auto Delete Asupan</b>\n\n"
-            "• <code>/autodel on</code>\n"
-            "• <code>/autodel off</code>\n"
+            "• <code>/autodel enable</code>\n"
+            "• <code>/autodel disable</code>\n"
             "• <code>/autodel status</code>\n"
             "• <code>/autodel list</code>",
             parse_mode="HTML"
@@ -290,12 +290,12 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     arg = context.args[0].lower()
 
-    if arg == "on":
+    if arg == "enable":
         AUTODEL_ENABLED_CHATS.add(chat.id)
         save_autodel_groups()
         return await update.message.reply_text("Auto delete asupan diaktifkan di grup ini.")
 
-    if arg == "off":
+    if arg == "disable":
         AUTODEL_ENABLED_CHATS.discard(chat.id)
         save_autodel_groups()
         return await update.message.reply_text("Auto delete asupan dimatikan di grup ini.")
@@ -484,8 +484,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type != "private":
         if not is_asupan_enabled(chat.id):
             return await update.message.reply_text(
-                "🚫 Fitur asupan tidak tersedia di grup ini.\n"
-                "Pm <code>@hirohitokiyoshi</code> untuk mengaktifkan",
+                "🚫 Fitur asupan tidak tersedia di grup ini.",
                 parse_mode="HTML"
             )
 
