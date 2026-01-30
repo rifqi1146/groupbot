@@ -14,8 +14,7 @@ if not API_ID or not API_HASH:
     print("[!] API_ID atau API_HASH belum diset")
     sys.exit(1)
 
-TGDATA_DIR = "project/groupbot/tgdata"
-
+TGDATA_DIR = "tgdata"
 os.makedirs(TGDATA_DIR, exist_ok=True)
 
 BOT_API_CMD = [
