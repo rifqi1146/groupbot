@@ -14,6 +14,25 @@ def help_main_keyboard():
             InlineKeyboardButton("🔐 Privacy", callback_data="help:privacy"),
         ],
         [
+            InlineKeyboardButton("⚙️ Settings", callback_data="help:settings"),
+        ],
+        [
+            InlineKeyboardButton("❌ Close", callback_data="help:close"),
+        ],
+    ])
+
+def help_settings_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🍜 Asupan", callback_data="help:asupan"),
+            InlineKeyboardButton("🗑️ AutoDel", callback_data="help:autodel"),
+        ],
+        [
+            InlineKeyboardButton("⬇️ AutoDL", callback_data="help:autodl"),
+            InlineKeyboardButton("😍 Caca", callback_data="help:cacaa"),
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="help:menu"),
             InlineKeyboardButton("❌ Close", callback_data="help:close"),
         ],
     ])
@@ -24,6 +43,12 @@ def help_back_keyboard():
         [InlineKeyboardButton("❌ Close", callback_data="help:close")],
     ])
 
+def help_settings_back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Back", callback_data="help:settings")],
+        [InlineKeyboardButton("❌ Close", callback_data="help:close")],
+    ])
+    
 HELP_TEXT = {
     "help:menu": (
         "📖 <b>Help Menu</b>\n"
@@ -78,6 +103,42 @@ HELP_TEXT = {
     ),
 }
 
+HELP_TEXT.update({
+    "help:settings": (
+        "⚙️ <b>Bot Settings</b>\n\n"
+        "Pengaturan berikut hanya dapat digunakan oleh <b>Admin Grup</b>.\n\n"
+        "Pilih menu di bawah untuk melihat detail per fitur."
+    ),
+
+    "help:asupan": (
+        "🍜 <b>Asupan Settings</b>\n\n"
+        "• <code>/asupann enable</code> — Aktifkan asupan di grup\n"
+        "• <code>/asupann disable</code> — Matikan asupan di grup\n"
+        "• <code>/asupann status</code> — Cek status asupan\n\n"
+    ),
+
+    "help:autodel": (
+        "🗑️ <b>Auto Delete Asupan</b>\n\n"
+        "• <code>/autodel on</code> — Aktifkan auto delete asupan\n"
+        "• <code>/autodel off</code> — Matikan auto delete asupan\n"
+        "• <code>/autodel status</code> — Cek status auto delete\n\n"
+    ),
+
+    "help:autodl": (
+        "⬇️ <b>Auto Download Link</b>\n\n"
+        "• <code>/autodl enable</code> — Aktifkan auto-detect link\n"
+        "• <code>/autodl disable</code> — Matikan auto-detect link\n"
+        "• <code>/autodl status</code> — Cek status auto-detect\n\n"
+    ),
+
+    "help:cacaa": (
+        "😍 <b>Caca Settings</b>\n\n"
+        "• <code>/cacaa enable</code> — Aktifkan Caca di grup\n"
+        "• <code>/cacaa disable</code> — Matikan Caca di grup\n"
+        "• <code>/cacaa status</code> — Cek status Caca\n\n"
+    ),
+})
+
 #cmd
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -116,13 +177,27 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         return
-
-    #category 
+    
+    if data == "help:settings":
+        await q.edit_message_text(
+            HELP_TEXT["help:settings"],
+            reply_markup=help_settings_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+        
+    #category  
     text = HELP_TEXT.get(data)
     if text:
+        if data.startswith("help:asupan") or data.startswith("help:autodel") \
+           or data.startswith("help:autodl") or data.startswith("help:cacaa"):
+            kb = help_settings_back_keyboard()
+        else:
+            kb = help_back_keyboard()
+    
         await q.edit_message_text(
             text,
-            reply_markup=help_back_keyboard(),
+            reply_markup=kb,
             parse_mode="HTML"
         )
 
