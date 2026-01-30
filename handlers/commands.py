@@ -69,9 +69,7 @@ COMMAND_HANDLERS = [
     ("asupan", asupan_cmd, False),
     ("asupann", asupann_cmd, False),
     ("generate", pollinations_generate_nsfw, False),
-    ("enablensfw", enablensfw_cmd, True),
-    ("disablensfw", disablensfw_cmd, True),
-    ("nsfwlist", nsfwlist_cmd, True),
+    ("nsfw", nsfw_cmd, False),
     ("restart", restart_cmd, False),
 ]
 

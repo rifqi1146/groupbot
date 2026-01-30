@@ -31,58 +31,95 @@ def is_nsfw_allowed(chat_id: int, chat_type: str) -> bool:
     data = _load_nsfw()
     return chat_id in data["groups"]
     
+async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id in OWNER_ID:
+        return True
+
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
+        
 #nsfw
-async def enablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-
-    if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
 
     if chat.type == "private":
-        return await update.message.reply_text("ℹ️ NSFW selalu aktif di PM.")
+        return
 
     data = _load_nsfw()
-    if chat.id not in data["groups"]:
-        data["groups"].append(chat.id)
-        _save_nsfw(data)
+    arg = context.args[0].lower() if context.args else ""
 
-    await update.message.reply_text("🔞 NSFW diaktifkan di grup ini.")
-    
-async def disablensfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    user = update.effective_user
+    if arg == "list":
+        if user.id not in OWNER_ID:
+            return
 
-    if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+        if not data["groups"]:
+            return await update.message.reply_text(
+                "📭 Tidak ada grup NSFW aktif.",
+                parse_mode="HTML"
+            )
 
-    data = _load_nsfw()
-    if chat.id in data["groups"]:
-        data["groups"].remove(chat.id)
-        _save_nsfw(data)
+        lines = ["🔞 <b>Grup NSFW Aktif</b>\n"]
+        for gid in data["groups"]:
+            try:
+                c = await context.bot.get_chat(gid)
+                title = html.escape(c.title or str(gid))
+                lines.append(f"• {title}")
+            except:
+                lines.append(f"• <code>{gid}</code>")
 
-    await update.message.reply_text("🚫 NSFW dimatikan di grup ini.")
-    
-async def nsfwlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+        return await update.message.reply_text(
+            "\n".join(lines),
+            parse_mode="HTML"
+        )
 
-    data = _load_nsfw()
-    if not data["groups"]:
-        return await update.message.reply_text("📭 Tidak ada grup NSFW.")
+    if not await is_admin_or_owner(update, context):
+        return
 
-    lines = ["🔞 <b>NSFW Whitelisted Groups</b>\n"]
+    if arg == "enable":
+        if chat.id not in data["groups"]:
+            data["groups"].append(chat.id)
+            _save_nsfw(data)
 
-    for gid in data["groups"]:
-        try:
-            chat = await context.bot.get_chat(gid)
-            title = chat.title or chat.username or "Unknown Group"
-            lines.append(f"• {html.escape(title)}")
-        except Exception:
-            lines.append("• <i>Unknown / Bot not in group</i>")
+        return await update.message.reply_text(
+            "🔞 NSFW <b>AKTIF</b> di grup ini.",
+            parse_mode="HTML"
+        )
 
-    text = "\n".join(lines)
-    await update.message.reply_text(text, parse_mode="HTML")
+    if arg == "disable":
+        if chat.id in data["groups"]:
+            data["groups"].remove(chat.id)
+            _save_nsfw(data)
+
+        return await update.message.reply_text(
+            "🚫 NSFW <b>DIMATIKAN</b> di grup ini.",
+            parse_mode="HTML"
+        )
+
+    if arg == "status":
+        status = "AKTIF" if chat.id in data["groups"] else "NONAKTIF"
+        return await update.message.reply_text(
+            f"📌 Status NSFW di grup ini: <b>{status}</b>",
+            parse_mode="HTML"
+        )
+
+    return await update.message.reply_text(
+        "⚙️ <b>NSFW Settings</b>\n\n"
+        "<code>/nsfw enable</code>\n"
+        "<code>/nsfw disable</code>\n"
+        "<code>/nsfw status</code>\n"
+        "<code>/nsfw list</code>",
+        parse_mode="HTML"
+    )
     
 async def pollinations_generate_nsfw(update, context):
     """
@@ -104,7 +141,7 @@ async def pollinations_generate_nsfw(update, context):
     prompt = _extract_prompt_from_update(update, context)
     if not prompt:
         return await msg.reply_text(
-            f"{em} {bold('Contoh:')} {code('/nsfw waifu anime')}",
+            f"{em} {bold('Contoh:')} {code('/generate waifu anime')}",
             parse_mode="HTML"
         )
 
@@ -114,7 +151,7 @@ async def pollinations_generate_nsfw(update, context):
 
     try:
         status_msg = await msg.reply_text(
-            bold("🔞 Generating image..."),
+            bold("🖼️ Generating image..."),
             parse_mode="HTML"
         )
     except Exception:
