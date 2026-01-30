@@ -32,6 +32,7 @@ ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_KEYWORD_CACHE = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
+ASUPAN_ENABLED_CHATS = set()
 ASUPAN_DELETE_JOBS = {}
 ASUPAN_AUTO_DELETE_SEC = 300
 ASUPAN_COOLDOWN = {}
@@ -90,33 +91,8 @@ def save_asupan_groups():
             indent=2
         )
 
-
 def is_asupan_enabled(chat_id: int) -> bool:
     return chat_id in ASUPAN_ENABLED_CHATS
-
-
-async def enable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    chat = update.effective_chat
-
-    if user.id not in OWNER_ID:
-        return
-
-    ASUPAN_ENABLED_CHATS.add(chat.id)
-    save_asupan_groups()
-    await update.message.reply_text("Asupan diaktifkan di grup ini.")
-
-
-async def disable_asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    chat = update.effective_chat
-
-    if user.id not in OWNER_ID:
-        return
-
-    ASUPAN_ENABLED_CHATS.discard(chat.id)
-    save_asupan_groups()
-    await update.message.reply_text("Asupan dimatikan di grup ini.")
 
 def load_asupan_groups():
     global ASUPAN_ENABLED_CHATS
@@ -131,31 +107,6 @@ def load_asupan_groups():
     except Exception:
         ASUPAN_ENABLED_CHATS = set()
         
-async def asupanlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    bot = context.bot
-
-    if user.id not in OWNER_ID:
-        return
-
-    if not ASUPAN_ENABLED_CHATS:
-        return await update.message.reply_text("Belum ada grup yang diizinkan asupan.")
-
-    lines = ["<b>Grup Asupan Aktif</b>\n"]
-
-    for cid in ASUPAN_ENABLED_CHATS:
-        try:
-            chat = await bot.get_chat(cid)
-            title = chat.title or chat.username or "Unknown"
-            lines.append(f"• {html.escape(title)}")
-        except Exception:
-            lines.append(f"• <code>{cid}</code>")
-
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="HTML"
-    )
-    
 async def _expire_asupan_notice(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     try:
