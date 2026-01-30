@@ -151,34 +151,43 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.text and msg.text.startswith("/cacaa"):
         if not await _is_admin_or_owner(update, context):
             return
-
+    
         groups = _load_groups()
         cmd = (context.args[0].lower() if context.args else "")
-
+    
+        if not cmd:
+            return await msg.reply_text(
+                "<b>⚙️ Caca Group Control</b>\n\n"
+                "<code>/cacaa enable</code> — aktifkan di grup\n"
+                "<code>/cacaa disable</code> — matikan di grup\n"
+                "<code>/cacaa status</code> — cek status",
+                parse_mode="HTML"
+            )
+    
         if cmd == "enable":
             if chat.type == "private":
                 return await msg.reply_text("Group Only")
             groups.add(chat.id)
             _save_groups(groups)
             return await msg.reply_text("Caca diaktifkan di grup ini.")
-
+    
         if cmd == "disable":
             groups.discard(chat.id)
             _save_groups(groups)
             return await msg.reply_text("Caca dimatikan di grup ini.")
-
+    
         if cmd == "status":
             if chat.id in groups:
                 return await msg.reply_text("Caca AKTIF di grup ini.")
             return await msg.reply_text("Caca TIDAK aktif di grup ini.")
-
+    
         if cmd == "list":
             if user_id not in OWNER_ID:
                 return
-        
+    
             if not groups:
                 return await msg.reply_text("Belum ada grup aktif.")
-        
+    
             text = ["📋 Grup Caca Aktif:\n"]
             for gid in groups:
                 try:
@@ -186,9 +195,9 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text.append(f"• {c.title}")
                 except:
                     text.append(f"• {gid}")
-        
+    
             return await msg.reply_text("\n".join(text))
-
+    
         return
 
     if chat.type in ("group", "supergroup"):
