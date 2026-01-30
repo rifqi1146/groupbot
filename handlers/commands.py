@@ -12,7 +12,7 @@ from handlers.help import help_cmd
 from handlers.speedtest import speedtest_cmd
 from handlers.ping import ping_cmd
 from handlers.weather import weather_cmd
-from handlers.dl import dl_cmd
+from handlers.dl import dl_cmd, autodl_cmd
 from handlers.helpowner import helpowner_cmd
 from handlers.welcome import wlc_cmd
 from fun.ship import ship_cmd
@@ -37,6 +37,7 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("music", music_cmd, False),
+    ("autodl", autodl_cmd, False),
     ("groups", groups_cmd, False),
     ("waifu", waifu_cmd, False),
     ("caca", meta_query, False),

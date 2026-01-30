@@ -27,6 +27,8 @@ COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
 TMP_DIR = "downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 
+AUTO_DL_FILE = "data/auto_dl_groups.json"
+
 MAX_TG_SIZE = 1900 * 1024 * 1024
 
 #format
@@ -155,13 +157,89 @@ def is_invalid_video(path: str) -> bool:
         return duration < 1.5 or width == 0 or height == 0
     except Exception:
         return True
-        
+ 
+def _load_auto_dl() -> set[int]:
+    if not os.path.exists(AUTO_DL_FILE):
+        return set()
+    try:
+        with open(AUTO_DL_FILE, "r") as f:
+            return set(json.load(f).get("groups", []))
+    except Exception:
+        return set()
+
+def _save_auto_dl(groups: set[int]):
+    os.makedirs("data", exist_ok=True)
+    with open(AUTO_DL_FILE, "w") as f:
+        json.dump({"groups": list(groups)}, f, indent=2)
+
+async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id in context.bot_data.get("OWNER_ID", []):
+        return True
+
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    member = await context.bot.get_chat_member(chat.id, user.id)
+    return member.status in ("administrator", "creator")
+          
+async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    msg = update.message
+
+    if chat.type == "private":
+        return await msg.reply_text("ℹ️ Autodetect selalu aktif di private chat.")
+
+    if not await _is_admin_or_owner(update, context):
+        return await msg.reply_text("❌ Admin atau owner aja.")
+
+    groups = _load_auto_dl()
+    arg = context.args[0].lower() if context.args else ""
+
+    if arg == "enable":
+        groups.add(chat.id)
+        _save_auto_dl(groups)
+        return await msg.reply_text("✅ Auto-detect link **AKTIF** di grup ini.")
+
+    if arg == "disable":
+        groups.discard(chat.id)
+        _save_auto_dl(groups)
+        return await msg.reply_text("❌ Auto-detect link **DIMATIKAN** di grup ini.")
+
+    if arg == "status":
+        if chat.id in groups:
+            return await msg.reply_text("📡 Auto-detect: **AKTIF**")
+        return await msg.reply_text("📴 Auto-detect: **NONAKTIF**")
+
+    if arg == "list":
+        if not groups:
+            return await msg.reply_text("📭 Belum ada grup dengan auto-detect aktif.")
+        lines = ["📋 Grup Auto-detect Aktif:\n"]
+        for gid in groups:
+            try:
+                c = await context.bot.get_chat(gid)
+                lines.append(f"• {c.title}")
+            except:
+                pass
+        return await msg.reply_text("\n".join(lines))
+
+    return await msg.reply_text(
+        "⚙️ Usage:\n"
+        "/autodl enable\n"
+        "/autodl disable\n"
+        "/autodl status\n"
+        "/autodl list"
+    )
+    
 #auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
         return
 
+    chat = update.effective_chat
     text = normalize_url(msg.text)
 
     if text.startswith("/"):
@@ -169,6 +247,11 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_supported_platform(text):
         return
+
+    if chat.type in ("group", "supergroup"):
+        groups = _load_auto_dl()
+        if chat.id not in groups:
+            return
 
     dl_id = uuid.uuid4().hex[:8]
 
