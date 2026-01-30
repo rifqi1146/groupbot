@@ -32,6 +32,9 @@ def help_settings_keyboard():
             InlineKeyboardButton("😍 Caca", callback_data="help:cacaa"),
         ],
         [
+            InlineKeyboardButton("🔞 NSFW", callback_data="help:nsfw"),
+        ],
+        [
             InlineKeyboardButton("🔙 Back", callback_data="help:menu"),
             InlineKeyboardButton("❌ Close", callback_data="help:close"),
         ],
@@ -136,6 +139,15 @@ HELP_TEXT.update({
         "• <code>/cacaa enable</code> — Aktifkan Caca di grup\n"
         "• <code>/cacaa disable</code> — Matikan Caca di grup\n"
         "• <code>/cacaa status</code> — Cek status Caca\n\n"
+    ),
+})
+
+HELP_TEXT.update({
+    "help:nsfw": (
+        "🔞 <b>NSFW Settings</b>\n\n"
+        "• <code>/nsfw enable</code> — Aktifkan NSFW di grup\n"
+        "• <code>/nsfw disable</code> — Matikan NSFW di grup\n"
+        "• <code>/nsfw status</code> — Cek status NSFW\n\n"
     ),
 })
 
