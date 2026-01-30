@@ -40,6 +40,22 @@ AUTODEL_FILE = "data/autodel_groups.json"
 AUTODEL_ENABLED_CHATS = set()
 
 
+async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id in OWNER_ID:
+        return True
+
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
+        
 def load_autodel_groups():
     global AUTODEL_ENABLED_CHATS
     if not os.path.exists(AUTODEL_FILE):
@@ -192,7 +208,10 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     bot = context.bot
 
-    if user.id not in OWNER_ID:
+    if chat.type == "private":
+        return
+
+    if not await is_admin_or_owner(update, context):
         return
 
     if not context.args:
@@ -219,15 +238,23 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if sub == "status":
         if chat.id in ASUPAN_ENABLED_CHATS:
-            return await update.message.reply_text("Asupan <b>AKTIF</b> di grup ini.", parse_mode="HTML")
-        return await update.message.reply_text("Asupan <b>TIDAK AKTIF</b> di grup ini.", parse_mode="HTML")
+            return await update.message.reply_text(
+                "Asupan <b>AKTIF</b> di grup ini.",
+                parse_mode="HTML"
+            )
+        return await update.message.reply_text(
+            "Asupan <b>TIDAK AKTIF</b> di grup ini.",
+            parse_mode="HTML"
+        )
 
     if sub == "list":
+        if user.id not in OWNER_ID:
+            return
+
         if not ASUPAN_ENABLED_CHATS:
             return await update.message.reply_text("Belum ada grup yang diizinkan asupan.")
 
         lines = ["<b>Grup Asupan Aktif</b>\n"]
-
         for cid in ASUPAN_ENABLED_CHATS:
             try:
                 c = await bot.get_chat(cid)
@@ -240,26 +267,25 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "\n".join(lines),
             parse_mode="HTML"
         )
-
-    return await update.message.reply_text("Command tidak dikenal.")
     
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id not in OWNER_ID:
-        return
-        
     if chat.type == "private":
-        return await update.message.reply_text("Auto delete tidak berlaku di private chat.")
+        return
+
+    if not await is_admin_or_owner(update, context):
+        return
 
     if not context.args:
         return await update.message.reply_text(
-            "Gunakan:\n"
-            "/autodel on\n"
-            "/autodel off\n"
-            "/autodel status\n"
-            "/autodel list"
+            "<b>🗑 Auto Delete Asupan</b>\n\n"
+            "• <code>/autodel on</code>\n"
+            "• <code>/autodel off</code>\n"
+            "• <code>/autodel status</code>\n"
+            "• <code>/autodel list</code>",
+            parse_mode="HTML"
         )
 
     arg = context.args[0].lower()
@@ -277,13 +303,18 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "status":
         status = "AKTIF" if is_autodel_enabled(chat.id) else "NONAKTIF"
         return await update.message.reply_text(
-            f"📌 Status auto delete asupan di grup ini: <b>{status}</b>",
+            f"📌 Status auto delete asupan: <b>{status}</b>",
             parse_mode="HTML"
         )
 
     if arg == "list":
+        if user.id not in OWNER_ID:
+            return
+
         if not AUTODEL_ENABLED_CHATS:
-            return await update.message.reply_text("Tidak ada grup dengan auto delete asupan aktif.")
+            return await update.message.reply_text(
+                "Tidak ada grup dengan auto delete asupan aktif."
+            )
 
         lines = ["<b>Grup Auto Delete Asupan Aktif</b>\n"]
         for cid in AUTODEL_ENABLED_CHATS:
@@ -292,11 +323,12 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 name = c.title or c.username or "Unknown"
                 lines.append(f"• {html.escape(name)}")
             except Exception:
-                pass
+                lines.append(f"• <code>{cid}</code>")
 
-        return await update.message.reply_text("\n".join(lines), parse_mode="HTML")
-
-    await update.message.reply_text("Argumen tidak dikenali.")
+        return await update.message.reply_text(
+            "\n".join(lines),
+            parse_mode="HTML"
+        )
     
 
 #inline keyboard
