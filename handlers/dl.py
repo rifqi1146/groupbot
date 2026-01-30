@@ -177,14 +177,17 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id in context.bot_data.get("OWNER_ID", []):
+    if user.id in OWNER_ID:
         return True
 
     if chat.type not in ("group", "supergroup"):
         return False
 
-    member = await context.bot.get_chat_member(chat.id, user.id)
-    return member.status in ("administrator", "creator")
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        return member.status in ("administrator", "creator")
+    except:
+        return False
           
 async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
