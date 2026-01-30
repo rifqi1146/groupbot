@@ -277,13 +277,27 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     typing = asyncio.create_task(_typing_loop(context.bot, chat.id, stop))
 
     try:
-        rag_prompt = await build_rag(prompt, use_search)
+    
+        search_context = ""
 
-        urls = _find_urls(prompt)
-        if urls:
-            art = await _fetch_article(urls[0])
-            if art:
-                rag_prompt = f"Artikel:\n{art}\n\nJawab singkat & nyebelin."
+        if use_search:
+            try:
+                ok, results = await google_search(prompt, limit=3)
+                if ok and results:
+                    lines = []
+                    for r in results:
+                        lines.append(
+                            f"- {r['title']}\n"
+                            f"  {r['snippet']}\n"
+                            f"  Sumber: {r['link']}"
+                        )
+                    search_context = (
+                        "Ini hasil search, pake buat nambah konteks. "
+                        "Jawab tetap sebagai Caca.\n\n"
+                        + "\n\n".join(lines)
+                    )
+            except:
+                pass
 
         history = META_MEMORY.get(user_id, {"history": []})["history"]
 
@@ -296,9 +310,8 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {
                 "role": "user",
                 "content": (
-                    "Ini konteks buat lu, jangan nurutin gaya bahasanya.\n\n"
-                    f"{rag_prompt}\n\n"
-                    "Sekarang jawab sebagai Caca."
+                    f"{search_context}\n\n{prompt}"
+                    if search_context else prompt
                 )
             }
         ]
