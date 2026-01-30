@@ -14,12 +14,17 @@ if not API_ID or not API_HASH:
     print("[!] API_ID atau API_HASH belum diset")
     sys.exit(1)
 
+TGDATA_DIR = "project/groupbot/tgdata"
+
+os.makedirs(TGDATA_DIR, exist_ok=True)
+
 BOT_API_CMD = [
     "telegram-bot-api",
     f"--api-id={API_ID}",
     f"--api-hash={API_HASH}",
     "--local",
     "--http-port=8081",
+    f"--dir={TGDATA_DIR}",
 ]
 
 BOT_CMD = ["python3", "bot.py"]
