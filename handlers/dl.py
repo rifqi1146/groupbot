@@ -8,6 +8,7 @@ import shutil
 import asyncio
 import subprocess
 import aiohttp
+from utils.config import OWNER_ID
 
 from telegram import (
     Update,
