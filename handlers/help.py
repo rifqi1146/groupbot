@@ -199,8 +199,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #category  
     text = HELP_TEXT.get(data)
     if text:
-        if data.startswith("help:asupan") or data.startswith("help:autodel") \
-           or data.startswith("help:autodl") or data.startswith("help:cacaa"):
+        if data.startswith(("help:asupan", "help:autodel", "help:autodl", "help:cacaa", "help:nsfw")):
             kb = help_settings_back_keyboard()
         else:
             kb = help_back_keyboard()
