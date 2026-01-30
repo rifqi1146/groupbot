@@ -68,6 +68,7 @@ HELP_TEXT = {
         "• 📃 <code>/trlist</code> — List supported languages\n"
         "• 💝 <code>/ship</code> — Choose couple\n"
         "• 🧭 <code>/reminder</code> — Schedule reminder\n"
+        "• 💝 <code>/waifu</code> — Get waifu\n"
     ),
 
     "help:ai": (
