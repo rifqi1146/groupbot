@@ -119,8 +119,8 @@ HELP_TEXT.update({
 
     "help:autodel": (
         "🗑️ <b>Auto Delete Asupan</b>\n\n"
-        "• <code>/autodel on</code> — Aktifkan auto delete asupan\n"
-        "• <code>/autodel off</code> — Matikan auto delete asupan\n"
+        "• <code>/autodel enable</code> — Aktifkan auto delete asupan\n"
+        "• <code>/autodel disable</code> — Matikan auto delete asupan\n"
         "• <code>/autodel status</code> — Cek status auto delete\n\n"
     ),
 

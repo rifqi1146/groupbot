@@ -96,8 +96,7 @@ async def pollinations_generate_nsfw(update, context):
 
     if not is_nsfw_allowed(chat.id, chat.type):
         return await msg.reply_text(
-            "🚫 NSFW tidak tersedia di grup ini.\n"
-            "PM bot atau hubungi @hirohitokiyoshi untuk mengaktifkan."
+            "🚫 NSFW tidak tersedia di grup ini."
         )
 
     em = _emo()
