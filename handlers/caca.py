@@ -45,6 +45,22 @@ def _emo():
 def _can(uid: int) -> bool:
     return True
 
+async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id in OWNER_ID:
+        return True
+
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
+        
 def _cleanup_memory():
     now = time.time()
     expired = [
@@ -56,11 +72,19 @@ def _cleanup_memory():
         _META_ACTIVE_USERS.pop(uid, None)
 
 def _load_groups() -> set[int]:
-    if not os.path.exists(CACA_GROUP_FILE):
+    if not os.path.isfile(CACA_GROUP_FILE):
         return set()
+
     try:
         with open(CACA_GROUP_FILE, "r") as f:
-            return set(json.load(f).get("groups", []))
+            data = json.load(f)
+
+        groups = data.get("groups", [])
+        if not isinstance(groups, list):
+            return set()
+
+        return {int(g) for g in groups if isinstance(g, int) or str(g).isdigit()}
+
     except Exception:
         return set()
 
@@ -125,7 +149,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     em = _emo()
 
     if msg.text and msg.text.startswith("/cacaa"):
-        if user_id not in OWNER_ID:
+        if not await _is_admin_or_owner(update, context):
             return
 
         groups = _load_groups()
@@ -149,15 +173,20 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text("Caca TIDAK aktif di grup ini.")
 
         if cmd == "list":
+            if user_id not in OWNER_ID:
+                return
+        
             if not groups:
                 return await msg.reply_text("Belum ada grup aktif.")
+        
             text = ["📋 Grup Caca Aktif:\n"]
             for gid in groups:
                 try:
                     c = await context.bot.get_chat(gid)
                     text.append(f"• {c.title}")
                 except:
-                    pass
+                    text.append(f"• {gid}")
+        
             return await msg.reply_text("\n".join(text))
 
         return
