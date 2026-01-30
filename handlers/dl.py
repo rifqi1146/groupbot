@@ -188,12 +188,19 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     msg = update.message
+    user_id = msg.from_user.id
 
     if chat.type == "private":
-        return await msg.reply_text("ℹ️ Autodetect selalu aktif di private chat.")
+        return await msg.reply_text(
+            "ℹ️ Auto-detect selalu <b>AKTIF</b> di private chat.",
+            parse_mode="HTML"
+        )
 
     if not await _is_admin_or_owner(update, context):
-        return await msg.reply_text("❌ Admin atau owner aja.")
+        return await msg.reply_text(
+            "❌ <b>Anda bukan admin</b>",
+            parse_mode="HTML"
+        )
 
     groups = _load_auto_dl()
     arg = context.args[0].lower() if context.args else ""
@@ -201,36 +208,61 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "enable":
         groups.add(chat.id)
         _save_auto_dl(groups)
-        return await msg.reply_text("✅ Auto-detect link **AKTIF** di grup ini.")
+        return await msg.reply_text(
+            "✅ Auto-detect link <b>AKTIF</b> di grup ini.",
+            parse_mode="HTML"
+        )
 
     if arg == "disable":
         groups.discard(chat.id)
         _save_auto_dl(groups)
-        return await msg.reply_text("❌ Auto-detect link **DIMATIKAN** di grup ini.")
+        return await msg.reply_text(
+            "❌ Auto-detect link <b>DIMATIKAN</b> di grup ini.",
+            parse_mode="HTML"
+        )
 
     if arg == "status":
         if chat.id in groups:
-            return await msg.reply_text("📡 Auto-detect: **AKTIF**")
-        return await msg.reply_text("📴 Auto-detect: **NONAKTIF**")
+            return await msg.reply_text(
+                "📡 Status Auto-detect: <b>AKTIF</b>",
+                parse_mode="HTML"
+            )
+        return await msg.reply_text(
+            "📴 Status Auto-detect: <b>NONAKTIF</b>",
+            parse_mode="HTML"
+        )
 
     if arg == "list":
+        if user_id not in OWNER_ID:
+            return
+
         if not groups:
-            return await msg.reply_text("📭 Belum ada grup dengan auto-detect aktif.")
-        lines = ["📋 Grup Auto-detect Aktif:\n"]
+            return await msg.reply_text(
+                "📭 Belum ada grup dengan auto-detect aktif.",
+                parse_mode="HTML"
+            )
+
+        lines = ["📋 <b>Grup dengan Auto-detect Aktif:</b>\n"]
         for gid in groups:
             try:
                 c = await context.bot.get_chat(gid)
-                lines.append(f"• {c.title}")
+                title = html.escape(c.title or str(gid))
+                lines.append(f"• {title}")
             except:
-                pass
-        return await msg.reply_text("\n".join(lines))
+                lines.append(f"• <code>{gid}</code>")
+
+        return await msg.reply_text(
+            "\n".join(lines),
+            parse_mode="HTML"
+        )
 
     return await msg.reply_text(
-        "⚙️ Usage:\n"
-        "/autodl enable\n"
-        "/autodl disable\n"
-        "/autodl status\n"
-        "/autodl list"
+        "⚙️ <b>Usage:</b>\n"
+        "<code>/autodl enable</code>\n"
+        "<code>/autodl disable</code>\n"
+        "<code>/autodl status</code>\n"
+        "<code>/autodl list</code>",
+        parse_mode="HTML"
     )
     
 #auto detect
