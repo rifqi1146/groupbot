@@ -68,12 +68,28 @@ def verify_keyboard(user_id: int):
         ]
     ])
     
+async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if user.id in OWNER_ID:
+        return True
+
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
+        
 async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if user.id not in OWNER_ID:
-        return await update.message.reply_text("❌ Owner only.")
+    if not await is_admin_or_owner(update, context):
+        return await update.message.reply_text("❌ Admin only.")
 
     if not context.args:
         return await update.message.reply_text(
@@ -94,8 +110,11 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_welcome_chats()
         await update.message.reply_text("🚫 Welcome message dimatikan.")
     else:
-        await update.message.reply_text("❌ Gunakan <code>on</code> atau <code>off</code>.", parse_mode="HTML")
-          
+        await update.message.reply_text(
+            "❌ Gunakan <code>enable</code> atau <code>disable</code>.",
+            parse_mode="HTML"
+        )
+        
 async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
