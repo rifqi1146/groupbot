@@ -111,7 +111,6 @@ HELP_TEXT = {
 HELP_TEXT.update({
     "help:settings": (
         "⚙️ <b>Bot Settings</b>\n\n"
-        "Pengaturan berikut hanya dapat digunakan oleh <b>Admin Grup</b>.\n\n"
         "Pilih menu di bawah untuk melihat detail per fitur."
     ),
 
