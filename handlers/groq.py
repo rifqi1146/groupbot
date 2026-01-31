@@ -85,14 +85,9 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     em = _emo()
 
     prompt = ""
-    use_search = False
 
     if msg.text and msg.text.startswith("/groq"):
-        if context.args and context.args[0].lower() == "search":
-            use_search = True
-            prompt = " ".join(context.args[1:]).strip()
-        else:
-            prompt = " ".join(context.args).strip()
+        prompt = " ".join(context.args).strip()
 
         GROQ_MEMORY.pop(user_id, None)
         _GROQ_ACTIVE_USERS.pop(user_id, None)
@@ -101,7 +96,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
                 "/groq <pertanyaan>\n"
-                "/groq search <pertanyaan>\n"
                 "atau reply jawaban Groq"
             )
 
@@ -154,10 +148,9 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {
             "model": GROQ_MODEL,
             "messages": messages,
-            "temperature": 0.9 if use_search else 0.7,
+            "temperature": 0.7,
             "top_p": 0.95,
             "max_tokens": 4096,
-
             "compound_custom": {
                 "tools": {
                     "enabled_tools": [
@@ -169,9 +162,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
             }
         }
-
-        if use_search:
-            payload["reasoning_effort"] = "medium"
 
         session = await get_http_session()
         async with session.post(
