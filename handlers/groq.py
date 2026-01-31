@@ -54,32 +54,18 @@ def _can(uid: int) -> bool:
     return True
         
 #helper
-async def build_groq_rag_prompt(
-    user_prompt: str,
-    use_search: bool = False
-) -> str:
-    # ambil konteks lokal
+async def build_groq_rag_prompt(user_prompt: str) -> str:
     contexts = await retrieve_context(
         user_prompt,
         LOCAL_CONTEXTS,
         top_k=3
     )
 
-    # optional google search
-    if use_search:
-        try:
-            ok, results = await google_search(user_prompt, limit=5)
-            if ok and results:
-                web_ctx = [
-                    f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
-                    for r in results
-                ]
-                contexts += web_ctx
-        except Exception:
-            pass
+    if contexts:
+        ctx = "\n\n".join(contexts)
+        return f"{ctx}\n\n{user_prompt}"
 
-    # build final RAG prompt
-    return build_rag_prompt(user_prompt, contexts)
+    return user_prompt
 
 #helper url
 _URL_RE = re.compile(
@@ -247,7 +233,8 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
-        rag_prompt = await build_groq_rag_prompt(prompt, use_search)
+
+        rag_prompt = await build_groq_rag_prompt(prompt)
 
         history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
 
@@ -296,7 +283,17 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
             data = await resp.json()
+
+            if "choices" not in data or not data["choices"]:
+                raise RuntimeError("Groq response kosong")
+
             raw = data["choices"][0]["message"]["content"]
+
+        # ===== CLEAN OUTPUT (FIX KARAKTER ANEH & CITATION) =====
+        raw = sanitize_ai_output(raw)
+        raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
+        raw = re.sub(r"[ꦀ-꧿]+", "", raw)
+        raw = raw.strip()
 
         history += [
             {"role": "user", "content": prompt},
@@ -309,7 +306,7 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         typing.cancel()
 
         sent = await msg.reply_text(
-            split_message(sanitize_ai_output(raw), 4000)[0],
+            split_message(raw, 4000)[0],
             parse_mode="HTML"
         )
 
