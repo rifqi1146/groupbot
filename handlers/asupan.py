@@ -297,6 +297,8 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "tante holic",
         "cewe cantik",
         "cewe sma",
+        "rerereyaaa",
+        "cewe smp",
         "cewe tanktop",
         "#tanteholic",
         "shsshlla",
