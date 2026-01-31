@@ -16,7 +16,6 @@ from telegram.ext import ContextTypes
 from rag.retriever import retrieve_context
 from rag.prompt import build_rag_prompt
 from rag.loader import load_local_contexts
-from handlers.gsearch import google_search
 
 LOCAL_CONTEXTS = load_local_contexts()
 
@@ -66,113 +65,6 @@ async def build_groq_rag_prompt(user_prompt: str) -> str:
         return f"{ctx}\n\n{user_prompt}"
 
     return user_prompt
-
-#helper url
-_URL_RE = re.compile(
-    r"(https?://[^\s'\"<>]+)", re.IGNORECASE
-)
-
-def _find_urls(text: str) -> List[str]:
-    if not text:
-        return []
-    return _URL_RE.findall(text)
-
-async def _fetch_and_extract_article(
-    url: str,
-    timeout: int = 15
-) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Fetch url and return (title, cleaned_text) or (None, None) on failure.
-    Cleans common ad/irrelevant elements.
-    """
-    try:
-        session = await get_http_session()
-        async with session.get(
-            url,
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as resp:
-            if resp.status != 200:
-                return None, None
-            html_text = await resp.text(errors="ignore")
-
-        soup = BeautifulSoup(html_text, "html.parser")
-
-        for tag in soup(["script", "style", "noscript", "iframe", "svg", "canvas", "picture"]):
-            tag.decompose()
-
-        ad_indicators = [
-            "ad", "ads", "advert", "sponsor", "cookie", "consent", "subscription",
-            "subscribe", "paywall", "related", "promo", "banner", "popup", "overlay"
-        ]
-        for tag in soup.find_all(True):
-            try:
-                idv = (tag.get("id") or "").lower()
-                clsv = " ".join(tag.get("class") or []).lower()
-                role = (tag.get("role") or "").lower()
-                aria = (tag.get("aria-label") or "").lower()
-                combined = " ".join([idv, clsv, role, aria])
-                if any(ind in combined for ind in ad_indicators):
-                    tag.decompose()
-            except Exception:
-                continue
-
-        title = None
-        try:
-            if soup.title and soup.title.string:
-                title = soup.title.string.strip()
-        except Exception:
-            title = None
-
-        article_node = soup.find("article") or soup.find("main")
-
-        if not article_node:
-            candidates = soup.find_all(["div", "section"], limit=40)
-            best = None
-            best_count = 0
-            for cand in candidates:
-                try:
-                    pcount = len(cand.find_all("p"))
-                    if pcount > best_count:
-                        best_count = pcount
-                        best = cand
-                except Exception:
-                    continue
-            if best_count >= 2:
-                article_node = best
-
-        paragraphs = []
-        if article_node:
-            for p in article_node.find_all("p"):
-                txt = p.get_text(separator=" ", strip=True)
-                if txt and len(txt) > 20:
-                    paragraphs.append(txt)
-        else:
-            for p in soup.find_all("p"):
-                txt = p.get_text(separator=" ", strip=True)
-                if txt and len(txt) > 20:
-                    paragraphs.append(txt)
-
-        if not paragraphs:
-            meta_desc = (
-                soup.find("meta", attrs={"name": "description"})
-                or soup.find("meta", attrs={"property": "og:description"})
-            )
-            if meta_desc and meta_desc.get("content"):
-                paragraphs = [meta_desc.get("content").strip()]
-
-        article_text = "\n\n".join(paragraphs).strip()
-        if not article_text:
-            return title, None
-
-        if len(article_text) > 12000:
-            article_text = article_text[:12000].rsplit("\n", 1)[0]
-
-        article_text = re.sub(r"\s{2,}", " ", article_text).strip()
-
-        return title, article_text
-
-    except Exception:
-        return None, None
 
 async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
     try:
@@ -289,7 +181,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             raw = data["choices"][0]["message"]["content"]
 
-        # ===== CLEAN OUTPUT (FIX KARAKTER ANEH & CITATION) =====
         raw = sanitize_ai_output(raw)
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
         raw = re.sub(r"[ꦀ-꧿]+", "", raw)
