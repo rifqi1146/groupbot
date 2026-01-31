@@ -4,6 +4,9 @@ from telegram.ext import ContextTypes
 from utils.http import get_http_session
 
 
+ECB_SOURCE_URL = "https://data.ecb.europa.eu/currency-converter"
+
+
 async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
@@ -27,11 +30,15 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for code, name in sorted(data.items()):
                 lines.append(f"• <b>{code}</b> — {name}")
 
-            lines.append("\n🌐 Sumber: <b>Frankfurter API (European Central Bank)</b>")
+            lines.append(
+                "\n🌐 Sumber data: "
+                f"<a href=\"{ECB_SOURCE_URL}\">European Central Bank</a>"
+            )
 
             return await msg.reply_text(
                 "\n".join(lines),
-                parse_mode="HTML"
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
 
         except Exception as e:
@@ -61,18 +68,15 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         return await msg.reply_text("❌ Format salah.")
 
-    url = "https://api.frankfurter.app/latest"
-    params = {
-        "from": from_cur,
-        "to": to_cur,
-        "amount": amount
-    }
-
     try:
         session = await get_http_session()
         async with session.get(
-            url,
-            params=params,
+            "https://api.frankfurter.app/latest",
+            params={
+                "from": from_cur,
+                "to": to_cur,
+                "amount": amount
+            },
             timeout=aiohttp.ClientTimeout(total=10)
         ) as r:
             if r.status != 200:
@@ -90,8 +94,10 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💱 <b>Kurs Mata Uang</b>\n\n"
             f"{amount:g} <b>{from_cur}</b> ≈ <b>{rate:,.2f} {to_cur}</b>\n\n"
             f"📅 Tanggal: <code>{date}</code>\n"
-            "🌐 Sumber: <b>European Central Bank</b>",
-            parse_mode="HTML"
+            "🌐 Sumber data: "
+            f"<a href=\"{ECB_SOURCE_URL}\">European Central Bank</a>",
+            parse_mode="HTML",
+            disable_web_page_preview=True
         )
 
     except Exception as e:
