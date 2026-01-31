@@ -94,7 +94,7 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💱 <b>Kurs Mata Uang</b>\n\n"
             f"{amount:g} <b>{from_cur}</b> ≈ <b>{rate:,.2f} {to_cur}</b>\n\n"
             f"📅 Tanggal: <code>{date}</code>\n"
-            "🌐 Sumber data: "
+            "🌐 Sumber: "
             f"<a href=\"{ECB_SOURCE_URL}\">European Central Bank</a>",
             parse_mode="HTML",
             disable_web_page_preview=True
