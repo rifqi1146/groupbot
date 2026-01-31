@@ -33,7 +33,7 @@ def help_settings_keyboard():
         ],
         [
             InlineKeyboardButton("🔞 NSFW", callback_data="help:nsfw"),
-            InlineKeyboardButton("🛖 Welcome,", callback_data="help:wlc"),
+            InlineKeyboardButton("🛖 Welcome", callback_data="help:wlc"),
         ],
         [
             InlineKeyboardButton("🔙 Back", callback_data="help:menu"),
