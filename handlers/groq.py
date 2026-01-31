@@ -125,7 +125,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
-
         rag_prompt = await build_groq_rag_prompt(prompt)
 
         history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
@@ -158,10 +157,20 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "temperature": 0.9 if use_search else 0.7,
             "top_p": 0.95,
             "max_tokens": 4096,
+
+            "compound_custom": {
+                "tools": {
+                    "enabled_tools": [
+                        "web_search",
+                        "code_interpreter",
+                        "visit_website",
+                        "browser_automation"
+                    ]
+                }
+            }
         }
 
         if use_search:
-            payload["tools"] = [{"type": "browser_search"}]
             payload["reasoning_effort"] = "medium"
 
         session = await get_http_session()
