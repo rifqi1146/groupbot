@@ -11,6 +11,32 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
 
+    if args and args[0].lower() == "list":
+        try:
+            session = await get_http_session()
+            async with session.get(
+                "https://api.frankfurter.app/currencies",
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as r:
+                if r.status != 200:
+                    return await msg.reply_text("❌ Gagal ambil daftar mata uang.")
+
+                data = await r.json()
+
+            lines = ["💱 <b>Daftar Mata Uang</b>\n"]
+            for code, name in sorted(data.items()):
+                lines.append(f"• <b>{code}</b> — {name}")
+
+            lines.append("\n🌐 Sumber: <b>Frankfurter API (European Central Bank)</b>")
+
+            return await msg.reply_text(
+                "\n".join(lines),
+                parse_mode="HTML"
+            )
+
+        except Exception as e:
+            return await msg.reply_text(f"❌ Error: {e}")
+
     if len(args) < 2:
         return await msg.reply_text(
             "💱 <b>Kurs Mata Uang</b>\n\n"
@@ -19,7 +45,7 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Contoh:\n"
             "<code>/kurs USD IDR</code>\n"
             "<code>/kurs 10 USD IDR</code>\n"
-            "<code>/kurs 10000 IDR USD</code>",
+            "<code>/kurs list</code>",
             parse_mode="HTML"
         )
 
