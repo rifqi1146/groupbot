@@ -26,7 +26,7 @@ from fun.waifu import waifu_cmd
 from handlers.update import update_cmd
 from handlers.groups import groups_cmd
 from handlers.music import music_cmd
-
+from handlers.kurs import kurs_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -36,6 +36,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("kurs", kurs_cmd, False),
     ("music", music_cmd, False),
     ("autodl", autodl_cmd, False),
     ("groups", groups_cmd, False),
