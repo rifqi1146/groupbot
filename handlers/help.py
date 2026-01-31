@@ -70,6 +70,7 @@ HELP_TEXT = {
         "• 💝 <code>/ship</code> — Choose couple\n"
         "• 🧭 <code>/reminder</code> — Schedule reminder\n"
         "• 💝 <code>/waifu</code> — Get waifu\n"
+        "• 💸 <code>/kurs</code> — Currency conversion\n"
     ),
 
     "help:ai": (
