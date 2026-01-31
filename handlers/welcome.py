@@ -78,18 +78,18 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text(
             "Gunakan:\n"
-            "<code>/wlc on</code>\n"
-            "<code>/wlc off</code>",
+            "<code>/wlc enable</code>\n"
+            "<code>/wlc disable</code>",
             parse_mode="HTML"
         )
 
     mode = context.args[0].lower()
 
-    if mode == "on":
+    if mode == "enable":
         WELCOME_ENABLED_CHATS.add(chat.id)
         save_welcome_chats()
         await update.message.reply_text("✅ Welcome message diaktifkan.")
-    elif mode == "off":
+    elif mode == "disable":
         WELCOME_ENABLED_CHATS.discard(chat.id)
         save_welcome_chats()
         await update.message.reply_text("🚫 Welcome message dimatikan.")

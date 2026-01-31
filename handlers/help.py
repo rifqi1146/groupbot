@@ -33,6 +33,7 @@ def help_settings_keyboard():
         ],
         [
             InlineKeyboardButton("🔞 NSFW", callback_data="help:nsfw"),
+            InlineKeyboardButton("🛖 Welcome,", callback_data="help:wlc"),
         ],
         [
             InlineKeyboardButton("🔙 Back", callback_data="help:menu"),
@@ -148,6 +149,12 @@ HELP_TEXT.update({
         "• <code>/nsfw disable</code> — Matikan NSFW di grup\n"
         "• <code>/nsfw status</code> — Cek status NSFW\n\n"
     ),
+    
+    "help:wlc": (
+        "🛖 <b>Welcome Settings</b>\n\n"
+        "• <code>wlc enable</code> — Aktifkan Welcome\n"
+        "• <code>wlc disable</code> — Matikan Welcome\n\n"
+    ),
 })
 
 #cmd
@@ -200,7 +207,7 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #category  
     text = HELP_TEXT.get(data)
     if text:
-        if data.startswith(("help:asupan", "help:autodel", "help:autodl", "help:cacaa", "help:nsfw")):
+        if data.startswith(("help:asupan", "help:autodel", "help:autodl", "help:cacaa", "help:nsfw","help:wlc")):
             kb = help_settings_back_keyboard()
         else:
             kb = help_back_keyboard()
