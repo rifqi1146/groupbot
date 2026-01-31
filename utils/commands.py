@@ -6,4 +6,5 @@ BOT_COMMANDS = {
     "enableasupan","disableasupan","asupanlist","asupan",
     "wlc","restart","ai","setmodeai","groq","nsfw","autodel",
     "ship","reminder","glm","meta","waifu","asupann","caca",
+    "cacaa","asupann","kurs","autodel","autodl","nsfw",
 }
