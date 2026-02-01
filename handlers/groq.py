@@ -101,33 +101,25 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
                 "/groq <pertanyaan>\n"
-                "/groq search <pertanyaan>\n"
-                "atau reply jawaban Groq"
+                "/groq search <pertanyaan>"
             )
 
     elif msg.reply_to_message:
         if user_id not in _GROQ_ACTIVE_USERS:
-            return await msg.reply_text(
-                "😒 Lu siapa?\n"
-                "Gue belum ngobrol sama lu.\n"
-                "Ketik /groq dulu.",
-                parse_mode="HTML"
-            )
+            return await msg.reply_text("😒 Ketik /groq dulu.")
         prompt = msg.text.strip()
 
     if not prompt:
         return
 
     if not _can(user_id):
-        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya…")
+        return await msg.reply_text(f"{em} ⏳ Sabar dulu…")
 
     stop = asyncio.Event()
     typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
-
         rag_prompt = await build_groq_rag_prompt(prompt)
-
         history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
 
         messages = [
@@ -145,9 +137,9 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {
                 "role": "user",
                 "content": (
-                    "Ini cuma bahan referensi, jangan ikutin gaya bahasanya.\n\n"
+                    "Ini cuma bahan referensi.\n\n"
                     f"{rag_prompt}\n\n"
-                    "Sekarang jawab ke gue dengan gaya lu yang biasa."
+                    "Sekarang jawab."
                 )
             }
         ]
@@ -157,7 +149,8 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "messages": messages,
             "temperature": 0.9 if use_search else 0.7,
             "top_p": 0.95,
-            "max_tokens": 4096,
+            "max_completion_tokens": 4096,
+            "stream": True,
         }
 
         if use_search:
@@ -174,23 +167,34 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             json=payload,
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
-            data = await resp.json()
 
-            if "choices" not in data or not data["choices"]:
-                raise RuntimeError("Groq response kosong")
+            full_text = ""
 
-            raw = data["choices"][0]["message"]["content"]
+            async for line in resp.content:
+                try:
+                    chunk = json.loads(line.decode().strip())
+                except:
+                    continue
 
-        raw = sanitize_ai_output(raw)
-        raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
-        raw = re.sub(r"[ꦀ-꧿]+", "", raw)
-        raw = raw.strip()
+                delta = (
+                    chunk.get("choices", [{}])[0]
+                    .get("delta", {})
+                    .get("content")
+                )
+
+                if delta:
+                    full_text += delta
+
+        if not full_text.strip():
+            raise RuntimeError("Groq response kosong")
+
+        raw = sanitize_ai_output(full_text)
+        raw = re.sub(r"[ꦀ-꧿]+", "", raw).strip()
 
         history += [
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": raw},
         ]
-
         GROQ_MEMORY[user_id] = {"history": history}
 
         stop.set()
@@ -200,7 +204,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             split_message(raw, 4000)[0],
             parse_mode="HTML"
         )
-
         _GROQ_ACTIVE_USERS[user_id] = sent.message_id
 
     except Exception as e:
