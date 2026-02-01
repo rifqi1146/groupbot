@@ -150,7 +150,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "temperature": 0.9 if use_search else 0.7,
             "top_p": 0.95,
             "max_completion_tokens": 4096,
-            "stream": True,
         }
 
         if use_search:
@@ -172,49 +171,17 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             print("[GROQ] HTTP status:", resp.status, flush=True)
 
-            full_text = ""
+            data = await resp.json()
 
-            async for raw_line in resp.content:
-                line = raw_line.decode("utf-8", errors="ignore").strip()
-                if not line or not line.startswith("data:"):
-                    continue
-
-                data_part = line[5:].strip()
-
-                if data_part == "[DONE]":
-                    print("[GROQ] Stream finished", flush=True)
-                    break
-
-                try:
-                    chunk = json.loads(data_part)
-                except Exception as e:
-                    print("[GROQ] JSON parse error:", e, flush=True)
-                    continue
-
-                choice = chunk.get("choices", [{}])[0]
-                delta = choice.get("delta", {})
-
-                if "executed_tools" in delta:
-                    print("[GROQ] Tool chunk skipped", flush=True)
-                    continue
-
-                content = delta.get("content")
-                if isinstance(content, str):
-                    full_text += content
-
-        if not full_text.strip():
-            final_msg = None
-            try:
-                final_msg = data.get("choices", [{}])[0].get("message", {}).get("content")
-            except Exception:
-                pass
-        
-            if isinstance(final_msg, str) and final_msg.strip():
-                full_text = final_msg
-            else:
+            if "choices" not in data or not data["choices"]:
                 raise RuntimeError("Groq response kosong")
 
-        raw = sanitize_ai_output(full_text)
+            raw = data["choices"][0]["message"].get("content")
+
+            if not raw or not raw.strip():
+                raise RuntimeError("Groq response kosong")
+
+        raw = sanitize_ai_output(raw)
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
         raw = re.sub(r"\[\d+†L\d+-L\d+\]", "", raw)
         raw = re.sub(r"[ꦀ-꧿]+", "", raw)
