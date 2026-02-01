@@ -157,6 +157,8 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             payload["tools"] = [{"type": "browser_search"}]
             payload["reasoning_effort"] = "medium"
 
+        print("[GROQ] Payload:", payload, flush=True)
+
         session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
@@ -168,12 +170,31 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
         ) as resp:
 
+            print("[GROQ] HTTP status:", resp.status, flush=True)
+
             full_text = ""
 
-            async for line in resp.content:
+            async for raw_line in resp.content:
+                line = raw_line.decode("utf-8", errors="ignore").strip()
+
+                if not line:
+                    continue
+
+                print("[GROQ STREAM]", line, flush=True)
+
+                if not line.startswith("data:"):
+                    continue
+
+                data_part = line[5:].strip()
+
+                if data_part == "[DONE]":
+                    print("[GROQ] Stream done", flush=True)
+                    break
+
                 try:
-                    chunk = json.loads(line.decode().strip())
-                except:
+                    chunk = json.loads(data_part)
+                except Exception as e:
+                    print("[GROQ] JSON error:", e, flush=True)
                     continue
 
                 delta = (
@@ -211,4 +232,5 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         typing.cancel()
         GROQ_MEMORY.pop(user_id, None)
         _GROQ_ACTIVE_USERS.pop(user_id, None)
+        print("[GROQ ERROR]", e, flush=True)
         await msg.reply_text(f"{em} ❌ Error: {html.escape(str(e))}")
