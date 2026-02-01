@@ -120,7 +120,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         rag_prompt = await build_groq_rag_prompt(prompt)
-
         history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
 
         messages = [
@@ -145,15 +144,25 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         ]
 
+        session = await get_http_session()
+
         payload = {
             "model": GROQ_MODEL,
             "messages": messages,
             "temperature": 0.8,
             "top_p": 0.95,
             "max_tokens": 4096,
+            "compound_custom": {
+                "tools": {
+                    "enabled_tools": [
+                        "web_search",
+                        "visit_website",
+                        "browser_automation"
+                    ]
+                }
+            }
         }
 
-        session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
             headers={
@@ -165,13 +174,52 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ) as resp:
             data = await resp.json()
 
+        if "choices" not in data or not data["choices"]:
+            raise RuntimeError("Groq response kosong")
+
+        msg_obj = data["choices"][0]["message"]
+        raw = msg_obj.get("content")
+
+        if not raw and msg_obj.get("tool_calls"):
+            tool_outputs = []
+
+            for tool in msg_obj["tool_calls"]:
+                name = tool.get("name")
+                args = tool.get("arguments")
+
+                if isinstance(args, dict):
+                    args = json.dumps(args)
+
+                tool_outputs.append(
+                    f"[{name} RESULT]\n{args}"
+                )
+
+            messages.append(msg_obj)
+            messages.append({
+                "role": "tool",
+                "content": "\n\n".join(tool_outputs)
+            })
+
+            payload["messages"] = messages
+
+            async with session.post(
+                f"{GROQ_BASE}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
+            ) as resp:
+                data = await resp.json()
+
             if "choices" not in data or not data["choices"]:
                 raise RuntimeError("Groq response kosong")
 
-            raw = data["choices"][0]["message"]["content"]
+            raw = data["choices"][0]["message"].get("content")
 
-            if not raw:
-                raise RuntimeError("Groq response kosong")
+        if not raw:
+            raise RuntimeError("Groq response kosong")
 
         raw = sanitize_ai_output(raw)
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
