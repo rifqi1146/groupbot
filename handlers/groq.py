@@ -151,16 +151,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "temperature": 0.8,
             "top_p": 0.95,
             "max_tokens": 4096,
-            "compound_custom": {
-                "tools": {
-                    "enabled_tools": [
-                        "web_search",
-                        "code_interpreter",
-                        "visit_website",
-                        "browser_automation"
-                    ]
-                }
-            }
         }
 
         session = await get_http_session()
@@ -178,20 +168,8 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if "choices" not in data or not data["choices"]:
                 raise RuntimeError("Groq response kosong")
 
-            choice = data["choices"][0]["message"]
+            raw = data["choices"][0]["message"]["content"]
 
-            raw = choice.get("content")
-            
-            if not raw:
-                tool_calls = choice.get("tool_calls")
-                if tool_calls:
-                    outputs = []
-                    for t in tool_calls:
-                        out = t.get("output") or t.get("arguments")
-                        if isinstance(out, str):
-                            outputs.append(out)
-                    raw = "\n\n".join(outputs)
-            
             if not raw:
                 raise RuntimeError("Groq response kosong")
 
