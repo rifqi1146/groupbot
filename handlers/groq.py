@@ -203,7 +203,16 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     full_text += content
 
         if not full_text.strip():
-            raise RuntimeError("Groq response kosong")
+            final_msg = None
+            try:
+                final_msg = data.get("choices", [{}])[0].get("message", {}).get("content")
+            except Exception:
+                pass
+        
+            if isinstance(final_msg, str) and final_msg.strip():
+                full_text = final_msg
+            else:
+                raise RuntimeError("Groq response kosong")
 
         raw = sanitize_ai_output(full_text)
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
