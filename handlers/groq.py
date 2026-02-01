@@ -203,7 +203,12 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise RuntimeError("Groq response kosong")
 
         raw = sanitize_ai_output(full_text)
-        raw = re.sub(r"[ꦀ-꧿]+", "", raw).strip()
+
+        raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
+        raw = re.sub(r"\[\d+†L\d+-L\d+\]", "", raw)
+        
+        raw = re.sub(r"[ꦀ-꧿]+", "", raw)
+        raw = raw.strip()
 
         history += [
             {"role": "user", "content": prompt},
