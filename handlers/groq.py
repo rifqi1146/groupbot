@@ -181,8 +181,6 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 data_part = line[5:].strip()
 
-                print("[GROQ STREAM]", data_part, flush=True)
-
                 if data_part == "[DONE]":
                     print("[GROQ] Stream finished", flush=True)
                     break
@@ -193,9 +191,14 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     print("[GROQ] JSON parse error:", e, flush=True)
                     continue
 
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                content = delta.get("content")
+                choice = chunk.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
 
+                if "executed_tools" in delta:
+                    print("[GROQ] Tool chunk skipped", flush=True)
+                    continue
+
+                content = delta.get("content")
                 if isinstance(content, str):
                     full_text += content
 
@@ -203,10 +206,8 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise RuntimeError("Groq response kosong")
 
         raw = sanitize_ai_output(full_text)
-
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
         raw = re.sub(r"\[\d+†L\d+-L\d+\]", "", raw)
-        
         raw = re.sub(r"[ꦀ-꧿]+", "", raw)
         raw = raw.strip()
 
