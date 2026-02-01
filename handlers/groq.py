@@ -150,7 +150,7 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "messages": messages,
             "temperature": 0.8,
             "top_p": 0.95,
-            "max_tokens": 8000,
+            "max_tokens": 4096,
             "compound_custom": {
                 "tools": {
                     "enabled_tools": [
@@ -178,7 +178,22 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if "choices" not in data or not data["choices"]:
                 raise RuntimeError("Groq response kosong")
 
-            raw = data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]["message"]
+
+            raw = choice.get("content")
+            
+            if not raw:
+                tool_calls = choice.get("tool_calls")
+                if tool_calls:
+                    outputs = []
+                    for t in tool_calls:
+                        out = t.get("output") or t.get("arguments")
+                        if isinstance(out, str):
+                            outputs.append(out)
+                    raw = "\n\n".join(outputs)
+            
+            if not raw:
+                raise RuntimeError("Groq response kosong")
 
         raw = sanitize_ai_output(raw)
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
