@@ -157,7 +157,7 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             payload["tools"] = [{"type": "browser_search"}]
             payload["reasoning_effort"] = "medium"
 
-        print("[GROQ] Payload:", payload, flush=True)
+        print("[GROQ] Payload sent", flush=True)
 
         session = await get_http_session()
         async with session.post(
@@ -176,35 +176,28 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             async for raw_line in resp.content:
                 line = raw_line.decode("utf-8", errors="ignore").strip()
-
-                if not line:
-                    continue
-
-                print("[GROQ STREAM]", line, flush=True)
-
-                if not line.startswith("data:"):
+                if not line or not line.startswith("data:"):
                     continue
 
                 data_part = line[5:].strip()
 
+                print("[GROQ STREAM]", data_part, flush=True)
+
                 if data_part == "[DONE]":
-                    print("[GROQ] Stream done", flush=True)
+                    print("[GROQ] Stream finished", flush=True)
                     break
 
                 try:
                     chunk = json.loads(data_part)
                 except Exception as e:
-                    print("[GROQ] JSON error:", e, flush=True)
+                    print("[GROQ] JSON parse error:", e, flush=True)
                     continue
 
-                delta = (
-                    chunk.get("choices", [{}])[0]
-                    .get("delta", {})
-                    .get("content")
-                )
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content")
 
-                if delta:
-                    full_text += delta
+                if isinstance(content, str):
+                    full_text += content
 
         if not full_text.strip():
             raise RuntimeError("Groq response kosong")
