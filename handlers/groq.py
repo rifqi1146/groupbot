@@ -85,9 +85,14 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     em = _emo()
 
     prompt = ""
+    use_search = False
 
     if msg.text and msg.text.startswith("/groq"):
-        prompt = " ".join(context.args).strip()
+        if context.args and context.args[0].lower() == "search":
+            use_search = True
+            prompt = " ".join(context.args[1:]).strip()
+        else:
+            prompt = " ".join(context.args).strip()
 
         GROQ_MEMORY.pop(user_id, None)
         _GROQ_ACTIVE_USERS.pop(user_id, None)
@@ -96,6 +101,7 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text(
                 f"{em} Gunakan:\n"
                 "/groq <pertanyaan>\n"
+                "/groq search <pertanyaan>\n"
                 "atau reply jawaban Groq"
             )
 
@@ -119,7 +125,9 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
+
         rag_prompt = await build_groq_rag_prompt(prompt)
+
         history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
 
         messages = [
@@ -144,25 +152,19 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         ]
 
-        session = await get_http_session()
-
         payload = {
             "model": GROQ_MODEL,
             "messages": messages,
-            "temperature": 0.8,
+            "temperature": 0.9 if use_search else 0.7,
             "top_p": 0.95,
             "max_tokens": 4096,
-            "compound_custom": {
-                "tools": {
-                    "enabled_tools": [
-                        "web_search",
-                        "visit_website",
-                        "browser_automation"
-                    ]
-                }
-            }
         }
 
+        if use_search:
+            payload["tools"] = [{"type": "browser_search"}]
+            payload["reasoning_effort"] = "medium"
+
+        session = await get_http_session()
         async with session.post(
             f"{GROQ_BASE}/chat/completions",
             headers={
@@ -174,52 +176,10 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ) as resp:
             data = await resp.json()
 
-        if "choices" not in data or not data["choices"]:
-            raise RuntimeError("Groq response kosong")
-
-        msg_obj = data["choices"][0]["message"]
-        raw = msg_obj.get("content")
-
-        if not raw and msg_obj.get("tool_calls"):
-            tool_outputs = []
-
-            for tool in msg_obj["tool_calls"]:
-                name = tool.get("name")
-                args = tool.get("arguments")
-
-                if isinstance(args, dict):
-                    args = json.dumps(args)
-
-                tool_outputs.append(
-                    f"[{name} RESULT]\n{args}"
-                )
-
-            messages.append(msg_obj)
-            messages.append({
-                "role": "tool",
-                "content": "\n\n".join(tool_outputs)
-            })
-
-            payload["messages"] = messages
-
-            async with session.post(
-                f"{GROQ_BASE}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
-            ) as resp:
-                data = await resp.json()
-
             if "choices" not in data or not data["choices"]:
                 raise RuntimeError("Groq response kosong")
 
-            raw = data["choices"][0]["message"].get("content")
-
-        if not raw:
-            raise RuntimeError("Groq response kosong")
+            raw = data["choices"][0]["message"]["content"]
 
         raw = sanitize_ai_output(raw)
         raw = re.sub(r"【\d+†L\d+-L\d+】", "", raw)
