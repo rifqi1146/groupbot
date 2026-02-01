@@ -148,9 +148,9 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {
             "model": GROQ_MODEL,
             "messages": messages,
-            "temperature": 0.7,
+            "temperature": 0.8,
             "top_p": 0.95,
-            "max_tokens": 4096,
+            "max_tokens": 8000,
             "compound_custom": {
                 "tools": {
                     "enabled_tools": [
