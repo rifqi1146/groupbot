@@ -183,8 +183,6 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not q:
         return
 
-    await q.answer()
-
     chat = q.message.chat
     user = q.from_user
     data = q.data
@@ -195,7 +193,7 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = int(data.split(":")[1])
 
     if user.id != target_id:
-        return await q.answer("❌ Ini bukan tombol kamu.", show_alert=True)
+        return await q.answer("❌ Bukan tombol lu dongo.", show_alert=True)
 
     VERIFIED_USERS.setdefault(chat.id, set()).add(user.id)
     save_verified()
@@ -216,6 +214,11 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             can_send_voice_notes=True,
         )
     )
+
+    try:
+        await q.message.delete()
+    except Exception:
+        pass
 
     await q.answer("✅ Verifikasi berhasil!", show_alert=True)
     
