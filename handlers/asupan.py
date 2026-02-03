@@ -29,7 +29,6 @@ log = logging.getLogger(__name__)
 ASUPAN_GROUP_FILE = "data/asupan_groups.json"
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
-ASUPAN_KEYWORD_PREFETCH_SIZE = 1
 ASUPAN_KEYWORD_CACHE = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
@@ -349,11 +348,11 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
     kw = keyword.lower().strip()
     cache = ASUPAN_KEYWORD_CACHE.setdefault(kw, [])
 
-    if len(cache) >= ASUPAN_KEYWORD_PREFETCH_SIZE:
+    if len(cache) >= ASUPAN_PREFETCH_SIZE:
         return
 
     try:
-        while len(cache) < ASUPAN_KEYWORD_PREFETCH_SIZE:
+        while len(cache) < ASUPAN_PREFETCH_SIZE:
             url = await fetch_asupan_tikwm(kw)
 
             msg = await bot.send_video(
@@ -448,13 +447,6 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         data = await get_asupan_fast(context.bot, keyword)
 
-        if keyword:
-            await warm_keyword_asupan_cache(context.bot, keyword)
-        else:
-            context.application.create_task(
-                warm_asupan_cache(context.bot)
-            )
-
         sent = await chat.send_video(
             video=data["file_id"],
             reply_to_message_id=update.message.message_id,
@@ -480,6 +472,12 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ASUPAN_DELETE_JOBS[sent.message_id] = job
 
         await msg.delete()
+
+        context.application.create_task(warm_asupan_cache(context.bot))
+        if keyword:
+            context.application.create_task(
+                warm_keyword_asupan_cache(context.bot, keyword)
+            )
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
