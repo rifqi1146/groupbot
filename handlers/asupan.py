@@ -313,8 +313,6 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "zaraxhel",
         "verllyyaling",
         "eunicetjoaa",
-        "nasi kfc",
-        "fakebody",
     ]
 
     query = keyword.strip() if keyword else random.choice(default_keywords)
