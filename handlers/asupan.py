@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 ASUPAN_GROUP_FILE = "data/asupan_groups.json"
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_KEYWORD_PREFETCH_SIZE = 2
 ASUPAN_KEYWORD_CACHE = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
@@ -348,11 +349,11 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
     kw = keyword.lower().strip()
     cache = ASUPAN_KEYWORD_CACHE.setdefault(kw, [])
 
-    if len(cache) >= ASUPAN_PREFETCH_SIZE:
+    if len(cache) >= ASUPAN_KEYWORD_PREFETCH_SIZE:
         return
 
     try:
-        while len(cache) < ASUPAN_PREFETCH_SIZE:
+        while len(cache) < ASUPAN_KEYWORD_PREFETCH_SIZE:
             url = await fetch_asupan_tikwm(kw)
 
             msg = await bot.send_video(
