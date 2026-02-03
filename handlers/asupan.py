@@ -445,16 +445,12 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
-        if keyword:
-            context.application.create_task(
-                warm_keyword_asupan_cache(context.bot, keyword)
-            )
-        else:
-            context.application.create_task(
-                warm_asupan_cache(context.bot)
-            )
-
         data = await get_asupan_fast(context.bot, keyword)
+
+        if keyword:
+            await warm_keyword_asupan_cache(context.bot, keyword)
+        else:
+            await warm_asupan_cache(context.bot)
 
         sent = await chat.send_video(
             video=data["file_id"],
