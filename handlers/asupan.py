@@ -445,6 +445,15 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("😋 Nyari asupan...")
 
     try:
+        if keyword:
+            context.application.create_task(
+                warm_keyword_asupan_cache(context.bot, keyword)
+            )
+        else:
+            context.application.create_task(
+                warm_asupan_cache(context.bot)
+            )
+
         data = await get_asupan_fast(context.bot, keyword)
 
         sent = await chat.send_video(
@@ -472,12 +481,6 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ASUPAN_DELETE_JOBS[sent.message_id] = job
 
         await msg.delete()
-
-        context.application.create_task(warm_asupan_cache(context.bot))
-        if keyword:
-            context.application.create_task(
-                warm_keyword_asupan_cache(context.bot, keyword)
-            )
 
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
