@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 #asupan grup
 ASUPAN_GROUP_FILE = "data/asupan_groups.json"
 ASUPAN_CACHE = []
-ASUPAN_PREFETCH_SIZE = 2
+ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_KEYWORD_CACHE = {}
 ASUPAN_MESSAGE_KEYWORD = {}
 ASUPAN_FETCHING = False
@@ -450,7 +450,9 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if keyword:
             await warm_keyword_asupan_cache(context.bot, keyword)
         else:
-            await warm_asupan_cache(context.bot)
+            context.application.create_task(
+                warm_asupan_cache(context.bot)
+            )
 
         sent = await chat.send_video(
             video=data["file_id"],
