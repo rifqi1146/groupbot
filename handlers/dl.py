@@ -393,8 +393,45 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
 
     out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
 
+    async def run(cmd):
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        last = 0
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+
+            raw = line.decode(errors="ignore").strip()
+            if "|" not in raw:
+                continue
+
+            head = raw.split("|", 1)[0].replace("%", "")
+            if not head.replace(".", "", 1).isdigit():
+                continue
+
+            pct = float(head)
+            if time.time() - last >= 1.2:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text=(
+                        "🚀 <b>yt-dlp download...</b>\n\n"
+                        f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                    ),
+                    parse_mode="HTML"
+                )
+                last = time.time()
+
+        await proc.wait()
+        return proc.returncode
+
     if fmt_key == "mp3":
-        cmd = [
+        code = await run([
             YT_DLP,
             "--js-runtime", "node",
             "--cookies", COOKIES_PATH,
@@ -408,9 +445,12 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url
-        ]
+        ])
+        if code != 0:
+            return None
+
     else:
-        cmd = [
+        code = await run([
             YT_DLP,
             "--js-runtime", "node",
             "--cookies", COOKIES_PATH,
@@ -424,45 +464,23 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url
-        ]
+        ])
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    last = 0
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-
-        raw = line.decode(errors="ignore").strip()
-        if "|" in raw:
-            head = raw.split("|", 1)[0].replace("%", "")
-            if head.replace(".", "", 1).isdigit():
-                pct = float(head)
-                if time.time() - last >= 1.2:
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=status_msg_id,
-                        text=(
-                            "🚀 <b>yt-dlp download...</b>\n\n"
-                            f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
-                        ),
-                        parse_mode="HTML"
-                    )
-                    last = time.time()
-
-    await proc.wait()
-
-    stderr = await proc.stderr.read()
-    if stderr:
-        print(stderr.decode(errors="ignore"))
-
-    if proc.returncode != 0:
-        return None
+        if code != 0:
+            code = await run([
+                YT_DLP,
+                "--js-runtime", "node",
+                "--cookies", COOKIES_PATH,
+                "--no-playlist",
+                "-f", "best",
+                "--newline",
+                "--progress-template",
+                "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+                "-o", out_tpl,
+                url
+            ])
+            if code != 0:
+                return None
 
     def media_priority(p):
         p = p.lower()
