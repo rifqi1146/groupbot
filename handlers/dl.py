@@ -475,7 +475,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             return None
 
     else:
-    
+
         code = await run([
             YT_DLP,
             "--cookies", COOKIES_PATH,
@@ -490,27 +490,12 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         ])
     
         if code != 0:
-            print("[YTDLP] video failed → trying auto format")
+            print("[YTDLP] video failed → trying bestimage")
             code = await run([
                 YT_DLP,
                 "--cookies", COOKIES_PATH,
                 "--no-playlist",
-                "--newline",
-                "--progress-template",
-                "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-                "-o", out_tpl,
-                url
-            ])
-    
-        if code != 0:
-            print("[YTDLP] auto failed → trying image-only")
-            code = await run([
-                YT_DLP,
-                "--cookies", COOKIES_PATH,
-                "--no-playlist",
-                "--skip-download",
-                "--write-thumbnail",
-                "--write-all-thumbnails",
+                "-f", "bestimage",
                 "-o", out_tpl,
                 url
             ])
