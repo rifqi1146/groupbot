@@ -457,15 +457,13 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             "--no-playlist",
             "-f", "bestvideo*+bestaudio/best",
             "--merge-output-format", "mp4",
-            "--write-thumbnail",
-            "--convert-thumbnails", "jpg",
             "--newline",
             "--progress-template",
             "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url
         ])
-
+    
         if code != 0:
             code = await run([
                 YT_DLP,
