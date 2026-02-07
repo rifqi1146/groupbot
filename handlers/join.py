@@ -14,9 +14,10 @@ async def is_joined_support_group(
             user_id
         )
         return member.status in ("member", "administrator", "creator")
+
     except Exception as e:
         print("[JOIN CHECK ERROR]", e)
-        return False
+        return True
 
 def join_required_keyboard():
     return InlineKeyboardMarkup([
