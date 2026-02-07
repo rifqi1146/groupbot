@@ -4,10 +4,7 @@ from telegram.ext import ContextTypes
 SUPPORT_GROUP_ID = -1003707701162
 SUPPORT_GROUP_LINK = "https://t.me/kiyoshibot"
 
-async def is_joined_support_group(
-    user_id: int,
-    context: ContextTypes.DEFAULT_TYPE
-) -> bool:
+async def is_joined_support_group(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
         member = await context.bot.get_chat_member(
             SUPPORT_GROUP_ID,
@@ -17,7 +14,7 @@ async def is_joined_support_group(
 
     except Exception as e:
         print("[JOIN CHECK ERROR]", e)
-        return True
+        return False   # ⬅️ INI FIX UTAMA
 
 def join_required_keyboard():
     return InlineKeyboardMarkup([
@@ -29,15 +26,7 @@ def join_required_keyboard():
         ]
     ])
 
-async def require_join_or_block(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-) -> bool:
-    """
-    Return True  -> boleh lanjut
-    Return False -> diblok (belum join)
-    """
-    
+async def require_join_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if update.callback_query:
         user = update.callback_query.from_user
         reply_target = update.callback_query.message
@@ -53,7 +42,7 @@ async def require_join_or_block(
     joined = await is_joined_support_group(user.id, context)
     if joined:
         return True
-        
+
     text = (
         "<b>Untuk menggunakan fitur download</b>\n\n"
         "kamu wajib join dulu ke grup support.\n\n"
