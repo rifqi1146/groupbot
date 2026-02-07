@@ -1,7 +1,7 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 
-SUPPORT_GROUP_ID = -1002754607311
+SUPPORT_GROUP_ID = -1003707701162
 SUPPORT_GROUP_LINK = "https://t.me/kiyoshibot"
 
 async def is_joined_support_group(
@@ -22,7 +22,7 @@ def join_required_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "🔔 Join Support Group",
+                "Join Support Group",
                 url=SUPPORT_GROUP_LINK
             )
         ]
@@ -55,7 +55,7 @@ async def require_join_or_block(
         
     text = (
         "<b>Untuk menggunakan fitur download</b>\n\n"
-        "kamu wajib join dulu ke grup support bot.\n\n"
+        "kamu wajib join dulu ke grup support.\n\n"
         "📢 <b>Support Group</b>\n"
     )
 
