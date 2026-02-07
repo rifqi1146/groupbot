@@ -9,6 +9,7 @@ import asyncio
 import subprocess
 import aiohttp
 from utils.config import OWNER_ID
+from handlers.join import require_join_or_block
 
 from telegram import (
     Update,
@@ -271,6 +272,10 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 #auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    
+    if not await require_join_or_block(update, context):
+        return
+        
     msg = update.message
     if not msg or not msg.text:
         return
@@ -314,6 +319,9 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 #ask callback
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update, context):
+        return
+        
     q = update.callback_query
     await q.answer()
 
@@ -766,6 +774,9 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 
 #dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update, context):
+        return
+        
     if not context.args:
         return await update.message.reply_text("❌ Kirim link TikTok / Platform Yt-dlp Support")
 
@@ -786,6 +797,9 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 #dl callback
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update, context):
+        return
+        
     q = update.callback_query
     await q.answer()
 
