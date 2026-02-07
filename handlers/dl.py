@@ -272,10 +272,6 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 #auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    
-    if not await require_join_or_block(update, context):
-        return
-        
     msg = update.message
     if not msg or not msg.text:
         return
@@ -285,7 +281,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text.startswith("/"):
         return
-
+        
     if not is_supported_platform(text):
         return
 
@@ -293,6 +289,9 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         groups = _load_auto_dl()
         if chat.id not in groups:
             return
+
+    if not await require_join_or_block(update, context):
+        return
 
     dl_id = uuid.uuid4().hex[:8]
 
