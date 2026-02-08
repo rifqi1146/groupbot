@@ -92,7 +92,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _WAIFU_LAST_TAG[chat.id] = tag
     _cleanup(chat.id)
 
-    params = {"is_nsfw": "true"}
+    params = {"is_nsfw": True}
     if tag:
         params["included_tags"] = tag
 
@@ -106,7 +106,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text(f"❌ API Error ({resp.status})")
         data = await resp.json()
 
-    images = data.get("images")
+    images = data.get("items")
     if not images:
         return await msg.reply_text("❌ Waifu tidak ditemukan 😭")
 
@@ -128,13 +128,13 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(chat_id)
     tag = _WAIFU_LAST_TAG.get(chat_id)
 
-    params = {"is_nsfw": "true"}
+    params = {"is_nsfw": True}
     if tag:
         params["included_tags"] = tag
 
     session = await get_http_session()
     async with session.get(
-        "https://api.waifu.im/search",
+        "https://api.waifu.im/images",
         params=params,
         timeout=aiohttp.ClientTimeout(total=15)
     ) as resp:
@@ -142,7 +142,7 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await q.answer("API error 😭", show_alert=True)
         data = await resp.json()
 
-    images = data.get("images")
+    images = data.get("items")
     if not images:
         return await q.answer("Waifu kosong 😭", show_alert=True)
 
