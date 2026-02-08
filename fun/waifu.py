@@ -98,7 +98,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = await get_http_session()
     async with session.get(
-        "https://api.waifu.im/search",
+        "https://api.waifu.im/images",
         params=params,
         timeout=aiohttp.ClientTimeout(total=15)
     ) as resp:
