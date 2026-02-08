@@ -90,7 +90,7 @@ def generate_math_question(user_id: int, chat_id: int):
     ]
 
     text = (
-        "Jawab soal Matetika berikut 👇\n\n"
+        "Jawab soal Matematika berikut 👇\n\n"
         f"<b>{a} - {b} = ?</b>\n\n"
     )
 
@@ -283,4 +283,4 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
         except Exception:
             pass
 
-    await q.message.edit_text("✅ Verifikasi berhasil. Balik ke grup.")
+    await q.message.edit_text("Verifikasi berhasil. Anda dapat kembali ke grup.")
