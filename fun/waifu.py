@@ -93,11 +93,12 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(chat.id)
 
     params = {
-    "is_nsfw": "true",
-    "gif": "false"
+    "IsNsfw": "All",
+    "Gif": "False"
     }
+    
     if tag:
-        params["included_tags"] = tag
+        params["IncludedTags"] = tag
 
     session = await get_http_session()
     async with session.get(
@@ -132,11 +133,12 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tag = _WAIFU_LAST_TAG.get(chat_id)
 
     params = {
-    "is_nsfw": "true",
-    "gif": "false"
+    "IsNsfw": "All",
+    "Gif": "False"
     }
+    
     if tag:
-        params["included_tags"] = tag
+        params["IncludedTags"] = tag
 
     session = await get_http_session()
     async with session.get(
