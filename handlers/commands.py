@@ -36,6 +36,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("start", start_verify_pm, False),
     ("kurs", kurs_cmd, False),
     ("music", music_cmd, False),
     ("autodl", autodl_cmd, False),
@@ -80,3 +81,4 @@ def register_commands(app):
             CommandHandler(name, handler, block=blocking),
             group=-1
         )
+        

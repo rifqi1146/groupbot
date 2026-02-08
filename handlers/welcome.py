@@ -1,6 +1,6 @@
 import os
 import json
-import html 
+import random
 
 from telegram import (
     Update,
@@ -12,12 +12,14 @@ from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
 
-#welcome 
 WELCOME_ENABLED_CHATS = set()
 WELCOME_FILE = "data/welcome_chats.json"
 
 VERIFY_FILE = "data/verified_users.json"
 VERIFIED_USERS = {}
+
+PENDING_VERIFY = {}
+WELCOME_MESSAGES = {}  
 
 def load_verified():
     global VERIFIED_USERS
@@ -27,11 +29,10 @@ def load_verified():
     try:
         with open(VERIFY_FILE, "r") as f:
             data = json.load(f)
-            VERIFIED_USERS = {
-                int(k): set(v) for k, v in data.items()
-            }
+            VERIFIED_USERS = {int(k): set(v) for k, v in data.items()}
     except Exception:
         VERIFIED_USERS = {}
+
 
 def save_verified():
     os.makedirs("data", exist_ok=True)
@@ -41,7 +42,8 @@ def save_verified():
             f,
             indent=2
         )
-        
+
+
 def load_welcome_chats():
     global WELCOME_ENABLED_CHATS
     if not os.path.exists(WELCOME_FILE):
@@ -54,20 +56,22 @@ def load_welcome_chats():
     except Exception:
         WELCOME_ENABLED_CHATS = set()
 
+
 def save_welcome_chats():
+    os.makedirs("data", exist_ok=True)
     with open(WELCOME_FILE, "w") as f:
         json.dump({"chats": list(WELCOME_ENABLED_CHATS)}, f, indent=2)
-      
-def verify_keyboard(user_id: int):
+
+def verify_keyboard(user_id: int, chat_id: int, bot_username: str):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "Klik Untuk Verifikasi",
-                callback_data=f"verify:{user_id}"
+                "Verifikasi",
+                url=f"https://t.me/{bot_username}?start=verify_{chat_id}_{user_id}"
             )
         ]
     ])
-    
+
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
     chat = update.effective_chat
@@ -83,13 +87,12 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return member.status in ("administrator", "creator")
     except Exception:
         return False
-        
+
 async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
     chat = update.effective_chat
 
     if not await is_admin_or_owner(update, context):
-        return await update.message.reply_text("❌ Admin only.")
+        return
 
     if not context.args:
         return await update.message.reply_text(
@@ -114,7 +117,7 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Gunakan <code>enable</code> atau <code>disable</code>.",
             parse_mode="HTML"
         )
-        
+
 async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
@@ -123,14 +126,11 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     for user in msg.new_chat_members:
-
         try:
             await context.bot.restrict_chat_member(
                 chat_id=chat.id,
                 user_id=user.id,
-                permissions=ChatPermissions(
-                    can_send_messages=False
-                )
+                permissions=ChatPermissions(can_send_messages=False)
             )
         except Exception:
             pass
@@ -150,57 +150,103 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            photos = await context.bot.get_user_profile_photos(
-                user_id=user.id,
-                limit=1
-            )
-
+            photos = await context.bot.get_user_profile_photos(user_id=user.id, limit=1)
             if photos.total_count > 0:
-                await context.bot.send_photo(
+                sent = await context.bot.send_photo(
                     chat_id=chat.id,
                     photo=photos.photos[0][-1].file_id,
                     caption=caption,
-                    reply_markup=verify_keyboard(user.id),
+                    reply_markup=verify_keyboard(user.id, chat.id, context.bot.username),
                     parse_mode="HTML"
                 )
             else:
-                await msg.reply_text(
+                sent = await msg.reply_text(
                     caption,
-                    reply_markup=verify_keyboard(user.id),
+                    reply_markup=verify_keyboard(user.id, chat.id, context.bot.username),
                     parse_mode="HTML"
                 )
-
         except Exception:
-            # fallback
-            await msg.reply_text(
+            sent = await msg.reply_text(
                 caption,
-                reply_markup=verify_keyboard(user.id),
+                reply_markup=verify_keyboard(user.id, chat.id, context.bot.username),
                 parse_mode="HTML"
             )
 
-async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        WELCOME_MESSAGES[user.id] = (chat.id, sent.message_id)
+
+async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return
+
+    arg = context.args[0]
+    if not arg.startswith("verify_"):
+        return
+
+    _, chat_id, user_id = arg.split("_")
+    chat_id = int(chat_id)
+    user_id = int(user_id)
+
+    if update.effective_user.id != user_id:
+        return
+        
+    if user_id in PENDING_VERIFY:
+        return
+        
+    a = random.randint(20, 99)
+    b = random.randint(1, 50)
+    if b > a:
+        a, b = b, a
+
+    answer = a - b
+
+    wrong = set()
+    while len(wrong) < 3:
+        x = random.randint(answer - 30, answer + 30)
+        if x != answer and x > 0:
+            wrong.add(x)
+
+    options = list(wrong) + [answer]
+    random.shuffle(options)
+
+    PENDING_VERIFY[user_id] = {
+        "chat_id": chat_id,
+        "answer": answer
+    }
+
+    buttons = [
+        [InlineKeyboardButton(str(o), callback_data=f"verify_ans:{chat_id}:{user_id}:{o}")]
+        for o in options
+    ]
+
+    await update.message.reply_text(
+        f"<b>Verifikasi</b>\n\n"
+        f"<b>{a} - {b} = ?</b>",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode="HTML"
+    )
+
+async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if not q:
-        return
+    await q.answer()
 
-    chat = q.message.chat
-    user = q.from_user
-    data = q.data
+    _, chat_id, user_id, chosen = q.data.split(":")
+    chat_id = int(chat_id)
+    user_id = int(user_id)
+    chosen = int(chosen)
 
-    if not data.startswith("verify:"):
-        return
+    if q.from_user.id != user_id:
+        return await q.answer("❌ Bukan tombol lu.", show_alert=True)
 
-    target_id = int(data.split(":")[1])
+    pending = PENDING_VERIFY.get(user_id)
+    if not pending or pending["chat_id"] != chat_id:
+        return await q.answer("❌ Verifikasi invalid.", show_alert=True)
 
-    if user.id != target_id:
-        return await q.answer("❌ Bukan tombol lu dongo.", show_alert=True)
-
-    VERIFIED_USERS.setdefault(chat.id, set()).add(user.id)
-    save_verified()
+    if chosen != pending["answer"]:
+        return await q.answer("❌ Salah.", show_alert=True)
 
     await context.bot.restrict_chat_member(
-        chat_id=chat.id,
-        user_id=user.id,
+        chat_id=chat_id,
+        user_id=user_id,
         permissions=ChatPermissions(
             can_invite_users=True,
             can_send_audios=True,
@@ -215,10 +261,15 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
-    try:
-        await q.message.delete()
-    except Exception:
-        pass
+    VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
+    save_verified()
+    PENDING_VERIFY.pop(user_id, None)
 
-    await q.answer("✅ Verifikasi berhasil!", show_alert=True)
-    
+    if user_id in WELCOME_MESSAGES:
+        g_chat_id, msg_id = WELCOME_MESSAGES.pop(user_id)
+        try:
+            await context.bot.delete_message(g_chat_id, msg_id)
+        except Exception:
+            pass
+
+    await q.message.edit_text("✅ Verifikasi berhasil. Balik ke grup.")
