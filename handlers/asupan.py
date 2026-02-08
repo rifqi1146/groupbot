@@ -296,6 +296,8 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
     default_keywords = [
         "tante holic",
         "araasshr",
+        "dimpledtataww",
+        "lvme4awaa",
         "liveid63",
         "urvelsyn",
         "cewe cantik",

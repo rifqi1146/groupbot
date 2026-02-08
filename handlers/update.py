@@ -4,12 +4,30 @@ import asyncio
 import subprocess
 import html
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
 from utils.config import OWNER_ID
+
+
+def _get_changelog():
+
+    try:
+        log = subprocess.run(
+            ["git", "log", "HEAD..origin/main", "--pretty=format:%s"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        if not log.stdout.strip():
+            return None
+
+        lines = log.stdout.strip().splitlines()
+        return "\n".join(f"• {html.escape(line)}" for line in lines)
+
+    except Exception:
+        return None
+
 
 async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -20,16 +38,23 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status = await msg.reply_text("🔄 Cek update...")
 
-    subprocess.run(["git", "fetch"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "fetch"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
 
     check = subprocess.run(
         ["git", "status", "-uno"],
         stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         text=True
     )
 
     if "behind" not in check.stdout:
         return await status.edit_text("✅ Bot sudah versi terbaru.")
+
+    changelog = _get_changelog()
 
     pull = subprocess.run(
         ["git", "pull"],
@@ -40,9 +65,19 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if pull.returncode != 0:
         return await status.edit_text(
-            f"❌ Git pull gagal:\n<code>{pull.stderr}</code>",
+            f"❌ Git pull gagal:\n<code>{html.escape(pull.stderr)}</code>",
             parse_mode="HTML"
         )
+
+    text = "✅ <b>Update berhasil!</b>\n\n"
+
+    if changelog:
+        text += "📝 <b>Changelog:</b>\n"
+        text += changelog + "\n\n"
+    else:
+        text += "📝 <i>Tidak ada changelog.</i>\n\n"
+
+    text += "Restart bot sekarang?"
 
     kb = InlineKeyboardMarkup([
         [
@@ -52,8 +87,7 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     await status.edit_text(
-        "✅ <b>Update ditemukan & berhasil di-pull.</b>\n\n"
-        "Restart bot sekarang?",
+        text,
         parse_mode="HTML",
         reply_markup=kb
     )
@@ -79,5 +113,5 @@ async def update_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await asyncio.sleep(1)
-
         os.execv(sys.executable, [sys.executable] + sys.argv)
+        
