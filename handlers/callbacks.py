@@ -23,5 +23,4 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(verify_answer_callback, pattern="^verify_ans:"))
     app.add_handler(CallbackQueryHandler(waifu_pref_cb, pattern="^waifu_pref$"))
     app.add_handler(CallbackQueryHandler(update_cb, pattern="^update_"))
-    app.add_handler(CallbackQueryHandler(verify_callback, pattern=r"^verify:"))
     app.add_handler(CallbackQueryHandler(music_callback, pattern="^music_download:"))
