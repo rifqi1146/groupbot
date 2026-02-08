@@ -62,6 +62,42 @@ def save_welcome_chats():
     with open(WELCOME_FILE, "w") as f:
         json.dump({"chats": list(WELCOME_ENABLED_CHATS)}, f, indent=2)
 
+def generate_math_question(user_id: int, chat_id: int):
+    a = random.randint(20, 99)
+    b = random.randint(1, 50)
+    if b > a:
+        a, b = b, a
+
+    answer = a - b
+
+    wrong = set()
+    while len(wrong) < 3:
+        x = random.randint(answer - 30, answer + 30)
+        if x != answer and x > 0:
+            wrong.add(x)
+
+    options = list(wrong) + [answer]
+    random.shuffle(options)
+
+    PENDING_VERIFY[user_id] = {
+        "chat_id": chat_id,
+        "answer": answer
+    }
+
+    buttons = [
+        [InlineKeyboardButton(str(o), callback_data=f"verify_ans:{chat_id}:{user_id}:{o}")]
+        for o in options
+    ]
+
+    text = (
+        "🧠 <b>Verifikasi Manusia</b>\n\n"
+        "Jawab soal berikut 👇\n\n"
+        f"<b>{a} - {b} = ?</b>\n\n"
+        "❗ Salah = soal baru"
+    )
+
+    return text, InlineKeyboardMarkup(buttons)
+    
 def verify_keyboard(user_id: int, chat_id: int, bot_username: str):
     return InlineKeyboardMarkup([
         [
@@ -188,40 +224,12 @@ async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_user.id != user_id:
         return
-        
-    if user_id in PENDING_VERIFY:
-        return
-        
-    a = random.randint(20, 99)
-    b = random.randint(1, 50)
-    if b > a:
-        a, b = b, a
 
-    answer = a - b
-
-    wrong = set()
-    while len(wrong) < 3:
-        x = random.randint(answer - 30, answer + 30)
-        if x != answer and x > 0:
-            wrong.add(x)
-
-    options = list(wrong) + [answer]
-    random.shuffle(options)
-
-    PENDING_VERIFY[user_id] = {
-        "chat_id": chat_id,
-        "answer": answer
-    }
-
-    buttons = [
-        [InlineKeyboardButton(str(o), callback_data=f"verify_ans:{chat_id}:{user_id}:{o}")]
-        for o in options
-    ]
+    text, keyboard = generate_math_question(user_id, chat_id)
 
     await update.message.reply_text(
-        f"<b>Verifikasi</b>\n\n"
-        f"<b>{a} - {b} = ?</b>",
-        reply_markup=InlineKeyboardMarkup(buttons),
+        text,
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
 
@@ -242,7 +250,12 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
         return await q.answer("❌ Verifikasi invalid.", show_alert=True)
 
     if chosen != pending["answer"]:
-        return await q.answer("❌ Salah.", show_alert=True)
+        text, keyboard = generate_math_question(user_id, chat_id)
+        return await q.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
 
     await context.bot.restrict_chat_member(
         chat_id=chat_id,
