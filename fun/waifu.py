@@ -71,7 +71,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton(
                     "🏷️ Daftar Tag Waifu",
-                    url="https://docs.waifu.im/tags"
+                    url="https://www.waifu.im/tags"
                 )
             ]
         ])
