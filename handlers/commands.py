@@ -14,7 +14,7 @@ from handlers.ping import ping_cmd
 from handlers.weather import weather_cmd
 from handlers.dl import dl_cmd, autodl_cmd
 from handlers.helpowner import helpowner_cmd
-from handlers.welcome import wlc_cmd
+from handlers.welcome import wlc_cmd, start_verify_pm
 from fun.ship import ship_cmd
 from fun.reminder import reminder_cmd
 from handlers.gemini import ai_cmd
