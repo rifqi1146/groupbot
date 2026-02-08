@@ -314,7 +314,6 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "tobrut",
         "tanktopstyle",
         "tanktop",
-        "geolgeol",
         "zaraxhel",
         "verllyyaling",
         "eunicetjoaa",
