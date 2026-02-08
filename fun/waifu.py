@@ -92,7 +92,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _WAIFU_LAST_TAG[chat.id] = tag
     _cleanup(chat.id)
 
-    params = {"is_nsfw": True}
+    params = {"is_nsfw": "true"}
     if tag:
         params["included_tags"] = tag
 
@@ -128,7 +128,7 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(chat_id)
     tag = _WAIFU_LAST_TAG.get(chat_id)
 
-    params = {"is_nsfw": True}
+    params = {"is_nsfw": "true"}
     if tag:
         params["included_tags"] = tag
 
