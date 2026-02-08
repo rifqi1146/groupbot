@@ -90,10 +90,8 @@ def generate_math_question(user_id: int, chat_id: int):
     ]
 
     text = (
-        "🧠 <b>Verifikasi Manusia</b>\n\n"
-        "Jawab soal berikut 👇\n\n"
+        "Jawab soal Matetika berikut 👇\n\n"
         f"<b>{a} - {b} = ?</b>\n\n"
-        "❗ Salah = soal baru"
     )
 
     return text, InlineKeyboardMarkup(buttons)
