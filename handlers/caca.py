@@ -284,10 +284,21 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cmd == "list":
             if not _CACA_APPROVED:
                 return await msg.reply_text("Belum ada user approved.")
+        
+            lines = []
+            for uid in _CACA_APPROVED:
+                try:
+                    u = await context.bot.get_chat(uid)
+                    name = html.escape(u.full_name)
+                except:
+                    name = "Unknown User"
+        
+                lines.append(f"• <a href=\"tg://user?id={uid}\">{name}</a>")
+        
             return await msg.reply_text(
-                "👑 <b>User Approved:</b>\n"
-                + "\n".join(f"• <code>{u}</code>" for u in _CACA_APPROVED),
-                parse_mode="HTML"
+                "👑 <b>User Approved:</b>\n" + "\n".join(lines),
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
 
         return
