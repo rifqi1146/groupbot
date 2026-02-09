@@ -265,8 +265,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             uid = int(context.args[1])
             _CACA_APPROVED.add(uid)
             _save_approved(_CACA_APPROVED)
-            return await 
-                msg.reply_text(f"✅ User <code>{uid}</code> di-approve."
+            return await msg.reply_text(f"✅ User <code>{uid}</code> di-approve."               
                 parse_mode="HTML"
             )
 
@@ -276,8 +275,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _CACA_MODE.pop(uid, None)
             META_MEMORY.pop(uid, None)
             _save_approved(_CACA_APPROVED)
-            return await 
-                msg.reply_text(f"❎ User <code>{uid}</code> dihapus."
+            return await msg.reply_text(f"❎ User <code>{uid}</code> dihapus."
                 parse_mode="HTML"
             )
 
@@ -305,7 +303,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🎭 Mode sekarang: <b>{cur}</b>\n\n"
                 "Mode tersedia:\n"
                 "• default\n"
-                "• bokep",
+                "• fun",
                 parse_mode="HTML"
             )
 
