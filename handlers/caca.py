@@ -113,9 +113,25 @@ PERSONAS = {
 }
 
 CACA_APPROVED_FILE = "data/caca_approved.json"
-
 _CACA_APPROVED = set()
-_CACA_MODE = {}
+CACA_MODE_FILE = "data/caca_mode.json"
+
+def _load_modes():
+    if not os.path.isfile(CACA_MODE_FILE):
+        return {}
+    try:
+        with open(CACA_MODE_FILE, "r") as f:
+            data = json.load(f)
+        return {int(k): v for k, v in data.get("modes", {}).items()}
+    except Exception:
+        return {}
+
+def _save_modes(modes: dict[int, str]):
+    os.makedirs("data", exist_ok=True)
+    with open(CACA_MODE_FILE, "w") as f:
+        json.dump({"modes": modes}, f, indent=2)
+        
+_CACA_MODE = _load_modes()
 
 def _load_approved():
     if not os.path.isfile(CACA_APPROVED_FILE):
@@ -274,6 +290,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             uid = int(context.args[1])
             _CACA_APPROVED.discard(uid)
             _CACA_MODE.pop(uid, None)
+            _save_modes(_CACA_MODE)
             META_MEMORY.pop(uid, None)
             _save_approved(_CACA_APPROVED)
             return await msg.reply_text(
@@ -325,6 +342,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text("❌ Mode tidak dikenal.")
 
         _CACA_MODE[user_id] = mode
+        _save_modes(_CACA_MODE)
         META_MEMORY.pop(user_id, None)
 
         return await msg.reply_text(
