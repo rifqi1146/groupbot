@@ -295,8 +295,8 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.text and msg.text.startswith("/mode"):
         if user_id not in _CACA_APPROVED:
             return await msg.reply_text(
-                "❌ Mode persona hanya untuk user donator.\n"
-                "Hubungi owner kalau mau unlock 💖"
+                "❌ Mode persona hanya untuk user donatur.\n"
+                "Selain donatur dilarang ngatur 😤"
             )
 
         if not context.args:
@@ -305,7 +305,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🎭 Mode sekarang: <b>{cur}</b>\n\n"
                 "Mode tersedia:\n"
                 "• default\n"
-                "• fun",
+                "• bokep",
                 parse_mode="HTML"
             )
 
