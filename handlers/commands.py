@@ -44,6 +44,8 @@ COMMAND_HANDLERS = [
     ("waifu", waifu_cmd, False),
     ("caca", meta_query, False),
     ("cacaa", meta_query, False),
+    ("mode", meta_query, False),
+    ("cacamode", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
     ("update", update_cmd, False),
