@@ -78,7 +78,6 @@ HELP_TEXT = {
         "• 💬 <code>/ai</code> — Chat with AI Gemini\n"
         "• 🧠 <code>/ask</code> — ChatGPT\n"
         "• ⚡ <code>/groq</code> — Groq\n"
-        "• 🍌 <code>/meta</code> — Meta AI\n"
         "• 😍 <code>/caca</code> — Caca Chat Bot\n"
     ),
 
