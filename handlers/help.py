@@ -6,51 +6,51 @@ from utils.text import bold, code, italic, underline, link, mono
 def help_main_keyboard():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Features", callback_data="help:features"),
-            InlineKeyboardButton("AI Chat", callback_data="help:ai"),
+            InlineKeyboardButton("✨ Features", callback_data="help:features"),
+            InlineKeyboardButton("🤐 AI Chat", callback_data="help:ai"),
         ],
         [
-            InlineKeyboardButton("Utilities", callback_data="help:utils"),
-            InlineKeyboardButton("Privacy", callback_data="help:privacy"),
+            InlineKeyboardButton("🧠 Utilities", callback_data="help:utils"),
+            InlineKeyboardButton("🔐 Privacy", callback_data="help:privacy"),
         ],
         [
-            InlineKeyboardButton("Settings", callback_data="help:settings"),
+            InlineKeyboardButton("⚙️ Settings", callback_data="help:settings"),
         ],
         [
-            InlineKeyboardButton("Close", callback_data="help:close"),
+            InlineKeyboardButton("❌ Close", callback_data="help:close"),
         ],
     ])
 
 def help_settings_keyboard():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Asupan", callback_data="help:asupan"),
-            InlineKeyboardButton("AutoDel", callback_data="help:autodel"),
+            InlineKeyboardButton("🍜 Asupan", callback_data="help:asupan"),
+            InlineKeyboardButton("🗑️ AutoDel", callback_data="help:autodel"),
         ],
         [
-            InlineKeyboardButton("AutoDL", callback_data="help:autodl"),
-            InlineKeyboardButton("Caca", callback_data="help:cacaa"),
+            InlineKeyboardButton("⬇️ AutoDL", callback_data="help:autodl"),
+            InlineKeyboardButton("😍 Caca", callback_data="help:cacaa"),
         ],
         [
-            InlineKeyboardButton("NSFW", callback_data="help:nsfw"),
-            InlineKeyboardButton("Welcome", callback_data="help:wlc"),
+            InlineKeyboardButton("🔞 NSFW", callback_data="help:nsfw"),
+            InlineKeyboardButton("🛖 Welcome", callback_data="help:wlc"),
         ],
         [
-            InlineKeyboardButton("Back", callback_data="help:menu"),
-            InlineKeyboardButton("Close", callback_data="help:close"),
+            InlineKeyboardButton("🔙 Back", callback_data="help:menu"),
+            InlineKeyboardButton("❌ Close", callback_data="help:close"),
         ],
     ])
 
 def help_back_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Back", callback_data="help:menu")],
-        [InlineKeyboardButton("Close", callback_data="help:close")],
+        [InlineKeyboardButton("🔙 Back", callback_data="help:menu")],
+        [InlineKeyboardButton("❌ Close", callback_data="help:close")],
     ])
 
 def help_settings_back_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Back", callback_data="help:settings")],
-        [InlineKeyboardButton("Close", callback_data="help:close")],
+        [InlineKeyboardButton("🔙 Back", callback_data="help:settings")],
+        [InlineKeyboardButton("❌ Close", callback_data="help:close")],
     ])
     
 HELP_TEXT = {
