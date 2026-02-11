@@ -6,6 +6,7 @@ import asyncio
 import random
 import html
 from typing import List, Optional
+import sqlite3
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -39,11 +40,121 @@ CACA_GROUP_FILE = "data/caca_groups.json"
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 _last_req = {}
 
+META_DB_PATH = "data/meta_memory.sqlite3"
+META_MAX_TURNS = 50
 
 CACA_APPROVED_FILE = "data/caca_approved.json"
 _CACA_APPROVED = set()
 CACA_MODE_FILE = "data/caca_mode.json"
 
+def _meta_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS meta_memory (
+                user_id INTEGER PRIMARY KEY,
+                history_json TEXT NOT NULL,
+                last_used REAL NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+def _meta_db_get(user_id: int) -> tuple[list, float] | None:
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        cur = con.execute(
+            "SELECT history_json, last_used FROM meta_memory WHERE user_id=?",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        history = json.loads(row[0]) if row[0] else []
+        last_used = float(row[1])
+        if not isinstance(history, list):
+            history = []
+        return history, last_used
+    finally:
+        con.close()
+
+def _meta_db_set(user_id: int, history: list):
+    if META_MAX_TURNS and META_MAX_TURNS > 0:
+        max_msgs = META_MAX_TURNS * 2
+        if len(history) > max_msgs:
+            history = history[-max_msgs:]
+
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        con.execute(
+            """
+            INSERT INTO meta_memory (user_id, history_json, last_used)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              history_json=excluded.history_json,
+              last_used=excluded.last_used
+            """,
+            (user_id, json.dumps(history, ensure_ascii=False), time.time()),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+def _meta_db_touch(user_id: int):
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        con.execute(
+            "UPDATE meta_memory SET last_used=? WHERE user_id=?",
+            (time.time(), user_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+def _meta_db_clear(user_id: int):
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        con.execute("DELETE FROM meta_memory WHERE user_id=?", (user_id,))
+        con.commit()
+    finally:
+        con.close()
+
+def _meta_db_cleanup(expire_seconds: int):
+    cutoff = time.time() - expire_seconds
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        con.execute("DELETE FROM meta_memory WHERE last_used < ?", (cutoff,))
+        con.commit()
+    finally:
+        con.close()
+
+async def meta_db_init():
+    await asyncio.to_thread(_meta_db_init)
+
+async def meta_db_get(user_id: int) -> list:
+    res = await asyncio.to_thread(_meta_db_get, user_id)
+    if not res:
+        return []
+    history, last_used = res
+    return history
+
+async def meta_db_set(user_id: int, history: list):
+    await asyncio.to_thread(_meta_db_set, user_id, history)
+
+async def meta_db_clear(user_id: int):
+    await asyncio.to_thread(_meta_db_clear, user_id)
+
+async def meta_db_cleanup():
+    await asyncio.to_thread(_meta_db_cleanup, MEMORY_EXPIRE)
+
+asyncio.get_event_loop().create_task(meta_db_init())
+    
 def _load_modes():
     if not os.path.isfile(CACA_MODE_FILE):
         return {}
@@ -104,14 +215,11 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return False
         
 def _cleanup_memory():
-    now = time.time()
-    expired = [
-        uid for uid, v in META_MEMORY.items()
-        if now - v["last_used"] > MEMORY_EXPIRE
-    ]
-    for uid in expired:
-        META_MEMORY.pop(uid, None)
-        _META_ACTIVE_USERS.pop(uid, None)
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(meta_db_cleanup())
+    except Exception:
+        pass
 
 def _load_groups() -> set[int]:
     if not os.path.isfile(CACA_GROUP_FILE):
@@ -219,7 +327,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _CACA_APPROVED.discard(uid)
             _CACA_MODE.pop(uid, None)
             _save_modes(_CACA_MODE)
-            META_MEMORY.pop(uid, None)
+            await meta_db_clear(uid)
             _save_approved(_CACA_APPROVED)
             return await msg.reply_text(
                 f"❎ User <code>{uid}</code> dihapus.",
@@ -271,7 +379,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         _CACA_MODE[user_id] = mode
         _save_modes(_CACA_MODE)
-        META_MEMORY.pop(user_id, None)
+        await meta_db_clear(user_id)
 
         return await msg.reply_text(
             f"🎭 Persona diubah ke <b>{mode}</b> ✨",
@@ -346,7 +454,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = " ".join(context.args[1:])
         else:
             prompt = " ".join(context.args)
-            META_MEMORY.pop(user_id, None)
+            await meta_db_clear(user_id)
             _META_ACTIVE_USERS.pop(user_id, None)
 
         if not prompt.strip():
@@ -358,7 +466,8 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif msg.reply_to_message:
-        if user_id not in META_MEMORY:
+        history = await meta_db_get(user_id)
+        if not history:
             return await msg.reply_text(
                 "😒 Gue ga inget ngobrol sama lu.\n"
                 "Ketik /caca dulu."
@@ -393,7 +502,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
 
-        history = META_MEMORY.get(user_id, {"history": []})["history"]
+        history = await meta_db_get(user_id)
 
         mode = _CACA_MODE.get(user_id, "default")
         system_prompt = PERSONAS.get(mode, PERSONAS["default"])
@@ -433,10 +542,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"role": "assistant", "content": raw},
         ]
 
-        META_MEMORY[user_id] = {
-            "history": history,
-            "last_used": time.time(),
-        }
+        await meta_db_set(user_id, history)
 
         stop.set()
         typing.cancel()
@@ -456,6 +562,6 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         stop.set()
         typing.cancel()
-        META_MEMORY.pop(user_id, None)
+        await meta_db_clear(user_id)
         _META_ACTIVE_USERS.pop(user_id, None)
         await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
