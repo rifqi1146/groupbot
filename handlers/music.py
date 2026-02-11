@@ -31,14 +31,11 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "no_warnings": True,
             "noplaylist": True,
             "skip_download": True,
-            "cookies": COOKIES_PATH,
+        
+            "cookiefile": COOKIES_PATH,
         
             "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
             "extractor_args": {"youtube": {"player_client": ["web", "tv", "android"]}},
-        
-            "sleep_interval_requests": 1,
-            "sleep_interval": 2,
-            "max_sleep_interval": 5,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -110,14 +107,11 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-            "cookies": COOKIES_PATH,
+        
+            "cookiefile": COOKIES_PATH,
         
             "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
             "extractor_args": {"youtube": {"player_client": ["web", "tv", "android"]}},
-        
-            "sleep_interval_requests": 1,
-            "sleep_interval": 2,
-            "max_sleep_interval": 5,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
