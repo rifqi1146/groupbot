@@ -156,6 +156,9 @@ def _meta_db_cleanup(expire_seconds: int):
     finally:
         con.close()
 
+async def meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
+    await asyncio.to_thread(_meta_db_set_last_message_id, user_id, last_message_id)
+    
 async def meta_db_init():
     await asyncio.to_thread(_meta_db_init)
 
