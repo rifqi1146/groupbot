@@ -99,10 +99,10 @@ def main():
         .base_url("http://127.0.0.1:8081/bot")
         .base_file_url("http://127.0.0.1:8081/file/bot")
         .job_queue(JobQueue())
-        .connect_timeout(20)
-        .read_timeout(60)
-        .write_timeout(60)
-        .pool_timeout(20)
+        .connect_timeout(30)
+        .read_timeout(60 * 20)
+        .write_timeout(60 * 20)
+        .pool_timeout(60)
         .build()
     )
 
@@ -112,7 +112,7 @@ def main():
     register_commands(app)
     register_messages(app)
     register_callbacks(app)
-
+    
     banner = r"""
  ／l、
 （ﾟ､ ｡ ７   < Nya~ Master! Bot waking up…
@@ -121,6 +121,7 @@ def main():
                • Injecting kawaii into memory…
  💖 Ready to serve!
 """
+
     print(banner)
 
     log.info("Handlers registered")
