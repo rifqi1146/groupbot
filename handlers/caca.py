@@ -35,7 +35,6 @@ META_MEMORY = {}
 _META_ACTIVE_USERS = {}
 
 MEMORY_EXPIRE = 60 * 60 * 24
-CACA_GROUP_FILE = "data/caca_groups.json"
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 _last_req = {}
@@ -43,9 +42,10 @@ _last_req = {}
 META_DB_PATH = "data/meta_memory.sqlite3"
 META_MAX_TURNS = 50
 
-CACA_APPROVED_FILE = "data/caca_approved.json"
+CACA_DB_PATH = "data/caca.sqlite3"
+
 _CACA_APPROVED = set()
-CACA_MODE_FILE = "data/caca_mode.json"
+_CACA_MODE = {}
 
 def _meta_db_init():
     os.makedirs("data", exist_ok=True)
@@ -106,17 +106,6 @@ def _meta_db_set(user_id: int, history: list):
     finally:
         con.close()
 
-def _meta_db_touch(user_id: int):
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute(
-            "UPDATE meta_memory SET last_used=? WHERE user_id=?",
-            (time.time(), user_id),
-        )
-        con.commit()
-    finally:
-        con.close()
-
 def _meta_db_clear(user_id: int):
     con = sqlite3.connect(META_DB_PATH)
     try:
@@ -153,44 +142,179 @@ async def meta_db_clear(user_id: int):
 async def meta_db_cleanup():
     await asyncio.to_thread(_meta_db_cleanup, MEMORY_EXPIRE)
 
-asyncio.get_event_loop().create_task(meta_db_init())
-    
-def _load_modes():
-    if not os.path.isfile(CACA_MODE_FILE):
-        return {}
+def _caca_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(CACA_DB_PATH)
     try:
-        with open(CACA_MODE_FILE, "r") as f:
-            data = json.load(f)
-        return {int(k): v for k, v in data.get("modes", {}).items()}
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS caca_approved (
+                user_id INTEGER PRIMARY KEY,
+                added_at REAL NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS caca_mode (
+                user_id INTEGER PRIMARY KEY,
+                mode TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS caca_groups (
+                chat_id INTEGER PRIMARY KEY,
+                added_at REAL NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+def _caca_db_load_approved() -> set[int]:
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        cur = con.execute("SELECT user_id FROM caca_approved")
+        rows = cur.fetchall()
+        return {int(r[0]) for r in rows if r and r[0] is not None}
+    finally:
+        con.close()
+
+def _caca_db_load_modes() -> dict[int, str]:
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        cur = con.execute("SELECT user_id, mode FROM caca_mode")
+        rows = cur.fetchall()
+        out = {}
+        for uid, mode in rows:
+            try:
+                out[int(uid)] = str(mode)
+            except Exception:
+                pass
+        return out
+    finally:
+        con.close()
+
+def _caca_db_load_groups() -> set[int]:
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        cur = con.execute("SELECT chat_id FROM caca_groups")
+        rows = cur.fetchall()
+        return {int(r[0]) for r in rows if r and r[0] is not None}
+    finally:
+        con.close()
+
+def _caca_db_save_approved(s: set[int]):
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        con.execute("BEGIN")
+        if not s:
+            con.execute("DELETE FROM caca_approved")
+        else:
+            placeholders = ",".join(["?"] * len(s))
+            con.execute(f"DELETE FROM caca_approved WHERE user_id NOT IN ({placeholders})", tuple(s))
+        now = time.time()
+        con.executemany(
+            "INSERT OR IGNORE INTO caca_approved (user_id, added_at) VALUES (?, ?)",
+            [(int(uid), now) for uid in s],
+        )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
+
+def _caca_db_save_modes(modes: dict[int, str]):
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        con.execute("BEGIN")
+        keys = list(modes.keys())
+        if not keys:
+            con.execute("DELETE FROM caca_mode")
+        else:
+            placeholders = ",".join(["?"] * len(keys))
+            con.execute(f"DELETE FROM caca_mode WHERE user_id NOT IN ({placeholders})", tuple(keys))
+        now = time.time()
+        con.executemany(
+            """
+            INSERT INTO caca_mode (user_id, mode, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              mode=excluded.mode,
+              updated_at=excluded.updated_at
+            """,
+            [(int(uid), str(modes[uid]), now) for uid in keys],
+        )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
+
+def _caca_db_save_groups(groups: set[int]):
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        con.execute("BEGIN")
+        if not groups:
+            con.execute("DELETE FROM caca_groups")
+        else:
+            placeholders = ",".join(["?"] * len(groups))
+            con.execute(f"DELETE FROM caca_groups WHERE chat_id NOT IN ({placeholders})", tuple(groups))
+        now = time.time()
+        con.executemany(
+            "INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)",
+            [(int(gid), now) for gid in groups],
+        )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
+
+async def caca_db_init():
+    await asyncio.to_thread(_caca_db_init)
+
+def _load_modes():
+    try:
+        return _caca_db_load_modes()
     except Exception:
         return {}
 
 def _save_modes(modes: dict[int, str]):
-    os.makedirs("data", exist_ok=True)
-    with open(CACA_MODE_FILE, "w") as f:
-        json.dump({"modes": modes}, f, indent=2)
-        
-_CACA_MODE = _load_modes()
+    _caca_db_save_modes(modes)
 
 def _load_approved():
-    if not os.path.isfile(CACA_APPROVED_FILE):
-        return set()
     try:
-        with open(CACA_APPROVED_FILE, "r") as f:
-            data = json.load(f)
-        return {int(x) for x in data.get("approved", [])}
+        return _caca_db_load_approved()
     except Exception:
         return set()
 
 def _save_approved(s: set[int]):
-    os.makedirs("data", exist_ok=True)
-    with open(CACA_APPROVED_FILE, "w") as f:
-        json.dump({"approved": list(s)}, f, indent=2)
+    _caca_db_save_approved(s)
 
 def _is_approved(user_id: int) -> bool:
     return user_id in _CACA_APPROVED
-    
+
 _CACA_APPROVED = _load_approved()
+_CACA_MODE = _load_modes()
 
 def _emo():
     return random.choice(_EMOS)
@@ -213,7 +337,7 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return member.status in ("administrator", "creator")
     except Exception:
         return False
-        
+
 def _cleanup_memory():
     try:
         loop = asyncio.get_event_loop()
@@ -222,26 +346,13 @@ def _cleanup_memory():
         pass
 
 def _load_groups() -> set[int]:
-    if not os.path.isfile(CACA_GROUP_FILE):
-        return set()
-
     try:
-        with open(CACA_GROUP_FILE, "r") as f:
-            data = json.load(f)
-
-        groups = data.get("groups", [])
-        if not isinstance(groups, list):
-            return set()
-
-        return {int(g) for g in groups if isinstance(g, int) or str(g).isdigit()}
-
+        return _caca_db_load_groups()
     except Exception:
         return set()
 
 def _save_groups(groups: set[int]):
-    os.makedirs("data", exist_ok=True)
-    with open(CACA_GROUP_FILE, "w") as f:
-        json.dump({"groups": list(groups)}, f, indent=2)
+    _caca_db_save_groups(groups)
 
 async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     try:
@@ -283,7 +394,7 @@ async def build_rag(prompt: str, use_search: bool) -> str:
                     f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
                     for r in results
                 ]
-        except:
+        except Exception:
             pass
     return build_rag_prompt(prompt, ctx)
 
@@ -343,7 +454,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     u = await context.bot.get_chat(uid)
                     name = html.escape(u.full_name)
-                except:
+                except Exception:
                     name = "Unknown User"
         
                 lines.append(f"• <a href=\"tg://user?id={uid}\">{name}</a>")
@@ -431,7 +542,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     c = await context.bot.get_chat(gid)
                     text.append(f"• {c.title}")
-                except:
+                except Exception:
                     text.append(f"• {gid}")
 
             return await msg.reply_text("\n".join(text))
@@ -499,7 +610,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "Jawab tetap sebagai Caca.\n\n"
                         + "\n\n".join(lines)
                     )
-            except:
+            except Exception:
                 pass
 
         history = await meta_db_get(user_id)
@@ -565,3 +676,13 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await meta_db_clear(user_id)
         _META_ACTIVE_USERS.pop(user_id, None)
         await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
+
+try:
+    asyncio.get_event_loop().create_task(meta_db_init())
+except Exception:
+    pass
+
+try:
+    asyncio.get_event_loop().create_task(caca_db_init())
+except Exception:
+    pass
