@@ -33,12 +33,8 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "skip_download": True,
             "cookies": COOKIES_PATH,
         
-            "js_runtimes": {"deno": "/root/.deno/bin/deno"},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["web", "tv", "android"],
-                }
-            },
+            "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
+            "extractor_args": {"youtube": {"player_client": ["web", "tv", "android"]}},
         
             "sleep_interval_requests": 1,
             "sleep_interval": 2,
@@ -116,12 +112,8 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "noplaylist": True,
             "cookies": COOKIES_PATH,
         
-            "js_runtimes": {"deno": "/root/.deno/bin/deno"},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["web", "tv", "android"],
-                }
-            },
+            "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
+            "extractor_args": {"youtube": {"player_client": ["web", "tv", "android"]}},
         
             "sleep_interval_requests": 1,
             "sleep_interval": 2,
