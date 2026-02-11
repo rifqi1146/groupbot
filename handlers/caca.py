@@ -169,9 +169,27 @@ async def meta_db_get(user_id: int) -> list:
 async def meta_db_set(user_id: int, history: list, last_message_id: int | None = None):
     await asyncio.to_thread(_meta_db_set, user_id, history, last_message_id)
 
-async def meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
-    await asyncio.to_thread(_meta_db_set_last_message_id, user_id, last_message_id)
+def _meta_db_has_last_message_id(message_id: int) -> bool:
+    con = sqlite3.connect(META_DB_PATH)
+    try:
+        cur = con.execute(
+            "SELECT 1 FROM meta_memory WHERE last_message_id=? LIMIT 1",
+            (int(message_id),),
+        )
+        return cur.fetchone() is not None
+    finally:
+        con.close()
 
+async def meta_db_has_last_message_id(message_id: int) -> bool:
+    return await asyncio.to_thread(_meta_db_has_last_message_id, message_id)
+    
+async def meta_db_get_last_message_id(user_id: int) -> int | None:
+    res = await asyncio.to_thread(_meta_db_get, user_id)
+    if not res:
+        return None
+    history, last_used, last_message_id = res
+    return last_message_id
+    
 async def meta_db_clear_last_message_id(user_id: int):
     await asyncio.to_thread(_meta_db_clear_last_message_id, user_id)
 
