@@ -467,6 +467,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         code = await run([
             YT_DLP,
             "--cookies", COOKIES_PATH,
+            "--js-runtimes", "deno:/root/.deno/bin/deno",
             "--no-playlist",
             "-f", "bestaudio/best",
             "--extract-audio",
@@ -486,6 +487,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         code = await run([
             YT_DLP,
             "--cookies", COOKIES_PATH,
+            "--js-runtimes", "deno:/root/.deno/bin/deno",
             "--no-playlist",
             "-f", "bestvideo*+bestaudio/best",
             "--merge-output-format", "mp4",
