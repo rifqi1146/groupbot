@@ -27,11 +27,22 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
-            'skip_download': True,
-            'cookies': COOKIES_PATH,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "skip_download": True,
+            "cookies": COOKIES_PATH,
+        
+            "js_runtimes": {"deno": "/root/.deno/bin/deno"},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "tv", "android"],
+                }
+            },
+        
+            "sleep_interval_requests": 1,
+            "sleep_interval": 2,
+            "max_sleep_interval": 5,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -93,17 +104,28 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise Exception("FFmpeg tidak terpasang di sistem.")
 
         ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': 'downloads/%(title)s.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
+            "format": "bestaudio/best",
+            "outtmpl": "downloads/%(title)s.%(ext)s",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
             }],
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
-            'cookies': COOKIES_PATH,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "cookies": COOKIES_PATH,
+        
+            "js_runtimes": {"deno": "/root/.deno/bin/deno"},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "tv", "android"],
+                }
+            },
+        
+            "sleep_interval_requests": 1,
+            "sleep_interval": 2,
+            "max_sleep_interval": 5,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
