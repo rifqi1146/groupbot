@@ -513,11 +513,17 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stop.set()
         typing.cancel()
 
-        sent = await msg.reply_text(
-            split_message(sanitize_ai_output(raw), 4000)[0],
-            parse_mode="HTML",
-        )
-        _META_ACTIVE_USERS[user_id] = sent.message_id
+        chunks = split_message(sanitize_ai_output(raw), 4000)
+
+        sent = None
+        for i, chunk in enumerate(chunks):
+            if i == 0:
+                sent = await msg.reply_text(chunk, parse_mode="HTML")
+            else:
+                await msg.reply_text(chunk, parse_mode="HTML")
+
+        if sent:
+            _META_ACTIVE_USERS[user_id] = sent.message_id
 
     except Exception as e:
         stop.set()
