@@ -29,6 +29,16 @@ from utils.config import (
 )
 from utils.http import get_http_session
 
+from utils.premium import (
+    init_premium_db,
+    premium_add,
+    premium_del,
+    premium_list,
+    premium_load_set,
+    is_premium,
+    migrate_from_caca_approved,
+)
+
 LOCAL_CONTEXTS = load_local_contexts()
 
 MEMORY_EXPIRE = 60 * 60 * 24
@@ -41,8 +51,9 @@ META_MAX_TURNS = 50
 
 CACA_DB_PATH = "data/caca.sqlite3"
 
-_CACA_APPROVED = set()
 _CACA_MODE = {}
+
+_PREMIUM_USERS = set()
 
 def _meta_db_init():
     os.makedirs("data", exist_ok=True)
@@ -158,7 +169,7 @@ def _meta_db_cleanup(expire_seconds: int):
 
 async def meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
     await asyncio.to_thread(_meta_db_set_last_message_id, user_id, last_message_id)
-    
+
 async def meta_db_init():
     await asyncio.to_thread(_meta_db_init)
 
@@ -185,14 +196,14 @@ def _meta_db_has_last_message_id(message_id: int) -> bool:
 
 async def meta_db_has_last_message_id(message_id: int) -> bool:
     return await asyncio.to_thread(_meta_db_has_last_message_id, message_id)
-    
+
 async def meta_db_get_last_message_id(user_id: int) -> int | None:
     res = await asyncio.to_thread(_meta_db_get, user_id)
     if not res:
         return None
     history, last_used, last_message_id = res
     return last_message_id
-    
+
 async def meta_db_clear_last_message_id(user_id: int):
     await asyncio.to_thread(_meta_db_clear_last_message_id, user_id)
 
@@ -210,14 +221,6 @@ def _caca_db_init():
         con.execute("PRAGMA synchronous=NORMAL;")
         con.execute(
             """
-            CREATE TABLE IF NOT EXISTS caca_approved (
-                user_id INTEGER PRIMARY KEY,
-                added_at REAL NOT NULL
-            )
-            """
-        )
-        con.execute(
-            """
             CREATE TABLE IF NOT EXISTS caca_mode (
                 user_id INTEGER PRIMARY KEY,
                 mode TEXT NOT NULL,
@@ -233,16 +236,15 @@ def _caca_db_init():
             )
             """
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS caca_approved (
+                user_id INTEGER PRIMARY KEY,
+                added_at REAL NOT NULL
+            )
+            """
+        )
         con.commit()
-    finally:
-        con.close()
-
-def _caca_db_load_approved() -> set[int]:
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        cur = con.execute("SELECT user_id FROM caca_approved")
-        rows = cur.fetchall()
-        return {int(r[0]) for r in rows if r and r[0] is not None}
     finally:
         con.close()
 
@@ -267,30 +269,6 @@ def _caca_db_load_groups() -> set[int]:
         cur = con.execute("SELECT chat_id FROM caca_groups")
         rows = cur.fetchall()
         return {int(r[0]) for r in rows if r and r[0] is not None}
-    finally:
-        con.close()
-
-def _caca_db_save_approved(s: set[int]):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("BEGIN")
-        if not s:
-            con.execute("DELETE FROM caca_approved")
-        else:
-            placeholders = ",".join(["?"] * len(s))
-            con.execute(f"DELETE FROM caca_approved WHERE user_id NOT IN ({placeholders})", tuple(s))
-        now = time.time()
-        con.executemany(
-            "INSERT OR IGNORE INTO caca_approved (user_id, added_at) VALUES (?, ?)",
-            [(int(uid), now) for uid in s],
-        )
-        con.execute("COMMIT")
-    except Exception:
-        try:
-            con.execute("ROLLBACK")
-        except Exception:
-            pass
-        raise
     finally:
         con.close()
 
@@ -361,19 +339,15 @@ def _load_modes():
 def _save_modes(modes: dict[int, str]):
     _caca_db_save_modes(modes)
 
-def _load_approved():
+def _load_groups() -> set[int]:
     try:
-        return _caca_db_load_approved()
+        return _caca_db_load_groups()
     except Exception:
         return set()
 
-def _save_approved(s: set[int]):
-    _caca_db_save_approved(s)
+def _save_groups(groups: set[int]):
+    _caca_db_save_groups(groups)
 
-def _is_approved(user_id: int) -> bool:
-    return user_id in _CACA_APPROVED
-
-_CACA_APPROVED = _load_approved()
 _CACA_MODE = _load_modes()
 
 def _emo():
@@ -404,15 +378,6 @@ def _cleanup_memory():
         loop.create_task(meta_db_cleanup())
     except Exception:
         pass
-
-def _load_groups() -> set[int]:
-    try:
-        return _caca_db_load_groups()
-    except Exception:
-        return set()
-
-def _save_groups(groups: set[int]):
-    _caca_db_save_groups(groups)
 
 async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     try:
@@ -469,16 +434,17 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     em = _emo()
 
-    if msg.text and msg.text.startswith("/cacamode"):
+    if msg.text and msg.text.startswith("/premium"):
         if user_id not in OWNER_ID:
             return await msg.reply_text("❌ Owner only.")
 
         if not context.args:
             return await msg.reply_text(
-                "<b>⚙️ Caca Persona Control</b>\n\n"
-                "<code>/cacamode add &lt;user_id&gt;</code>\n"
-                "<code>/cacamode del &lt;user_id&gt;</code>\n"
-                "<code>/cacamode list</code>",
+                "<b>👑 Premium Control</b>\n\n"
+                "<code>/premium add &lt;user_id&gt;</code>\n"
+                "<code>/premium del &lt;user_id&gt;</code>\n"
+                "<code>/premium list</code>\n"
+                "<code>/premium migrate</code>",
                 parse_mode="HTML"
             )
 
@@ -486,52 +452,59 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if cmd == "add" and len(context.args) > 1:
             uid = int(context.args[1])
-            _CACA_APPROVED.add(uid)
-            _save_approved(_CACA_APPROVED)
+            await asyncio.to_thread(premium_add, uid)
+            _PREMIUM_USERS.add(uid)
             return await msg.reply_text(
-                f"✅ User <code>{uid}</code> di-approve.",
+                f"✅ Premium ditambah: <code>{uid}</code>",
                 parse_mode="HTML"
             )
 
         if cmd == "del" and len(context.args) > 1:
             uid = int(context.args[1])
-            _CACA_APPROVED.discard(uid)
+            await asyncio.to_thread(premium_del, uid)
+            _PREMIUM_USERS.discard(uid)
             _CACA_MODE.pop(uid, None)
             _save_modes(_CACA_MODE)
             await meta_db_clear(uid)
-            _save_approved(_CACA_APPROVED)
             return await msg.reply_text(
-                f"❎ User <code>{uid}</code> dihapus.",
+                f"❎ Premium dihapus: <code>{uid}</code>",
                 parse_mode="HTML"
             )
 
         if cmd == "list":
-            if not _CACA_APPROVED:
-                return await msg.reply_text("Belum ada user approved.")
-        
+            ids = await asyncio.to_thread(premium_list)
+            if not ids:
+                return await msg.reply_text("Belum ada user premium.")
             lines = []
-            for uid in _CACA_APPROVED:
+            for uid in ids[:200]:
                 try:
                     u = await context.bot.get_chat(uid)
                     name = html.escape(u.full_name)
                 except Exception:
                     name = "Unknown User"
-        
-                lines.append(f"• <a href=\"tg://user?id={uid}\">{name}</a>")
-        
+                lines.append(f"• <a href=\"tg://user?id={uid}\">{name}</a> <code>{uid}</code>")
             return await msg.reply_text(
-                "👑 <b>User Approved:</b>\n" + "\n".join(lines),
+                "👑 <b>User Premium:</b>\n" + "\n".join(lines),
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
 
+        if cmd == "migrate":
+            await asyncio.to_thread(migrate_from_caca_approved)
+            try:
+                _PREMIUM_USERS.clear()
+                _PREMIUM_USERS.update(await asyncio.to_thread(premium_load_set))
+            except Exception:
+                pass
+            return await msg.reply_text("✅ Migrated caca_approved → premium_users")
+
         return
 
     if msg.text and msg.text.startswith("/mode"):
-        if user_id not in _CACA_APPROVED:
+        if not is_premium(user_id, _PREMIUM_USERS):
             return await msg.reply_text(
-                "❌ Mode persona hanya untuk user donatur.\n"
-                "Selain donatur dilarang ngatur 😤"
+                "❌ Mode persona hanya untuk user premium.\n"
+                "Selain premium dilarang ngatur 😤"
             )
 
         if not context.args:
@@ -746,3 +719,9 @@ try:
     asyncio.get_event_loop().create_task(caca_db_init())
 except Exception:
     pass
+
+try:
+    init_premium_db()
+    _PREMIUM_USERS = premium_load_set()
+except Exception:
+    _PREMIUM_USERS = set()
