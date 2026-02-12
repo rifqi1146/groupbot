@@ -240,7 +240,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         text = (
-            "<b>🛰️ NET (All-in-one)</b>\n\n"
+            "<b>🛰️ NET</b>\n\n"
             "<b>Usage:</b>\n"
             "• <code>/net 8.8.8.8</code>\n"
             "• <code>/net google.com</code>\n"
@@ -337,7 +337,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         http_r = httpfp.get("http") or {}
 
         if https_r.get("ok"):
-            lines.append("<b>HTTPS:</b> ✅")
+            lines.append("<b>HTTPS:</b> <b>OK</b>")
             lines.append(f"<b>Status:</b> <code>{https_r.get('status')}</code>")
             lines.append(f"<b>Final URL:</b> <code>{html.escape(https_r.get('url',''))}</code>")
             if https_r.get("server"):
@@ -353,7 +353,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if http_r:
             if http_r.get("ok"):
                 lines.append("")
-                lines.append("<b>HTTP:</b> ✅")
+                lines.append("<b>HTTP:</b> <b>OK</b>")
                 lines.append(f"<b>Status:</b> <code>{http_r.get('status')}</code>")
                 lines.append(f"<b>Final URL:</b> <code>{html.escape(http_r.get('url',''))}</code>")
                 if http_r.get("server"):
