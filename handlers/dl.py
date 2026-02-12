@@ -184,6 +184,20 @@ def _is_premium_required(url: str) -> bool:
     
                     
 # platform check
+def is_pornhub(url: str) -> bool:
+    return any(x in url for x in (
+        "pornhub.com",
+        "www.pornhub.com",
+        "m.pornhub.com",
+    ))
+
+def is_xnxx(url: str) -> bool:
+    return any(x in url for x in (
+        "xnxx.com",
+        "www.xnxx.com",
+        "m.xnxx.com",
+    ))
+    
 def is_youtube(url: str) -> bool:
     return any(x in url for x in (
         "youtube.com",
@@ -232,6 +246,8 @@ def is_supported_platform(url: str) -> bool:
         is_facebook(url),
         is_twitter_x(url),
         is_reddit(url),
+        is_pornhub(url),
+        is_xnxx(url),
     ))
 
 # resolve tt
