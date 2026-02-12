@@ -78,17 +78,3 @@ def is_premium(user_id: int, cache: set[int] | None = None) -> bool:
         return cur.fetchone() is not None
     finally:
         con.close()
-
-def migrate_from_caca_approved():
-    init_premium_db()
-    con = _db()
-    try:
-        con.execute(
-            """
-            INSERT OR IGNORE INTO premium_users (user_id, added_at)
-            SELECT user_id, added_at FROM caca_approved
-            """
-        )
-        con.commit()
-    finally:
-        con.close()

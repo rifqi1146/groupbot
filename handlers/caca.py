@@ -36,7 +36,6 @@ from utils.premium import (
     premium_list,
     premium_load_set,
     is_premium,
-    migrate_from_caca_approved,
 )
 
 LOCAL_CONTEXTS = load_local_contexts()
@@ -436,15 +435,14 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if msg.text and msg.text.startswith("/premium"):
         if user_id not in OWNER_ID:
-            return await msg.reply_text("❌ Owner only.")
+            return
 
         if not context.args:
             return await msg.reply_text(
                 "<b>👑 Premium Control</b>\n\n"
                 "<code>/premium add &lt;user_id&gt;</code>\n"
                 "<code>/premium del &lt;user_id&gt;</code>\n"
-                "<code>/premium list</code>\n"
-                "<code>/premium migrate</code>",
+                "<code>/premium list</code>",
                 parse_mode="HTML"
             )
 
@@ -488,15 +486,6 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
-
-        if cmd == "migrate":
-            await asyncio.to_thread(migrate_from_caca_approved)
-            try:
-                _PREMIUM_USERS.clear()
-                _PREMIUM_USERS.update(await asyncio.to_thread(premium_load_set))
-            except Exception:
-                pass
-            return await msg.reply_text("✅ Migrated caca_approved → premium_users")
 
         return
 
