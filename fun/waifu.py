@@ -2,11 +2,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMe
 from telegram.ext import ContextTypes
 import aiohttp
 import time
+import os
+import sqlite3
 
 from utils.http import get_http_session
-from utils.storage import load_json_file
 
-NSFW_FILE = "data/nsfw_groups.json"
+NSFW_DB = "data/nsfw.sqlite3"
 
 _WAIFU_LAST_TAG = {}
 _WAIFU_HISTORY = {}
@@ -14,8 +15,43 @@ _WAIFU_TS = {}
 
 EXPIRE_SEC = 30 * 60
 
-def _load_nsfw():
-    return load_json_file(NSFW_FILE, {"groups": []})
+
+def _nsfw_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(NSFW_DB)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS nsfw_groups (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _is_nsfw_enabled(chat_id: int, chat_type: str) -> bool:
+    if chat_type == "private":
+        return True
+
+    _nsfw_db_init()
+    con = sqlite3.connect(NSFW_DB)
+    try:
+        cur = con.execute(
+            "SELECT enabled FROM nsfw_groups WHERE chat_id=?",
+            (int(chat_id),),
+        )
+        row = cur.fetchone()
+        return bool(row and int(row[0]) == 1)
+    finally:
+        con.close()
+
 
 def _cleanup(chat_id):
     now = time.time()
@@ -25,10 +61,12 @@ def _cleanup(chat_id):
         _WAIFU_LAST_TAG.pop(chat_id, None)
         _WAIFU_TS.pop(chat_id, None)
 
+
 def _push(chat_id, img):
     _cleanup(chat_id)
     _WAIFU_HISTORY.setdefault(chat_id, []).append(img)
     _WAIFU_TS[chat_id] = time.time()
+
 
 def _pop(chat_id):
     _cleanup(chat_id)
@@ -37,6 +75,7 @@ def _pop(chat_id):
         return None
     hist.pop()
     return hist[-1]
+
 
 def _build_caption(img, tag):
     cap = "💖 <b>Waifu</b>\n"
@@ -47,6 +86,7 @@ def _build_caption(img, tag):
         cap += f"🎨 Artist: <b>{artist['name']}</b>"
     return cap
 
+
 def _build_kb(img):
     rows = [[
         InlineKeyboardButton("⏪ Pref", callback_data="waifu_pref"),
@@ -56,14 +96,14 @@ def _build_kb(img):
         rows.append([InlineKeyboardButton("🔗 Source", url=img["source"])])
     return InlineKeyboardMarkup(rows)
 
+
 async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
     if not msg or not chat:
         return
 
-    nsfw = _load_nsfw()
-    if chat.type in ("group", "supergroup") and chat.id not in nsfw["groups"]:
+    if not _is_nsfw_enabled(chat.id, chat.type):
         return await msg.reply_text("❌ NSFW tidak diaktifkan di grup ini.")
 
     if not context.args:
@@ -75,7 +115,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             ]
         ])
-    
+
         return await msg.reply_text(
             "💖 <b>Waifu Command</b>\n\n"
             "• <code>/waifu random</code>\n"
@@ -93,10 +133,10 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(chat.id)
 
     params = {
-    "IsNsfw": "All",
-    "Gif": "False"
+        "IsNsfw": "All",
+        "Gif": "False"
     }
-    
+
     if tag:
         params["IncludedTags"] = tag
 
@@ -124,6 +164,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=_build_kb(img)
     )
 
+
 async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -133,10 +174,10 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tag = _WAIFU_LAST_TAG.get(chat_id)
 
     params = {
-    "IsNsfw": "All",
-    "Gif": "False"
+        "IsNsfw": "All",
+        "Gif": "False"
     }
-    
+
     if tag:
         params["IncludedTags"] = tag
 
@@ -166,6 +207,7 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=_build_kb(img)
     )
 
+
 async def waifu_pref_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -185,3 +227,9 @@ async def waifu_pref_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         reply_markup=_build_kb(img)
     )
+
+
+try:
+    _nsfw_db_init()
+except Exception:
+    pass
