@@ -28,6 +28,7 @@ def _wv_db_init():
     try:
         con.execute("PRAGMA journal_mode=WAL;")
         con.execute("PRAGMA synchronous=NORMAL;")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS welcome_chats (
@@ -37,6 +38,7 @@ def _wv_db_init():
             )
             """
         )
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS verified_users (
@@ -47,6 +49,19 @@ def _wv_db_init():
             )
             """
         )
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_welcome (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (chat_id, user_id)
+            )
+            """
+        )
+
         con.commit()
     finally:
         con.close()
@@ -111,16 +126,72 @@ def save_verified_user(chat_id: int, user_id: int):
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
+
         con.execute(
             """
             INSERT INTO verified_users (chat_id, user_id, verified_at)
             VALUES (?, ?, ?)
-            ON CONFLICT(chat_id, user_id) DO UPDATE SET
-              verified_at=excluded.verified_at
             """,
             (int(chat_id), int(user_id), now),
         )
+
         con.commit()
+    except sqlite3.IntegrityError:
+        try:
+            con.execute(
+                "UPDATE verified_users SET verified_at=? WHERE chat_id=? AND user_id=?",
+                (now, int(chat_id), int(user_id)),
+            )
+            con.commit()
+        finally:
+            pass
+    finally:
+        con.close()
+
+
+def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
+    _wv_db_init()
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
+    try:
+        now = time.time()
+        con.execute(
+            """
+            INSERT INTO pending_welcome (chat_id, user_id, message_id, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (int(chat_id), int(user_id), int(message_id), now),
+        )
+        con.commit()
+    except sqlite3.IntegrityError:
+        try:
+            con.execute(
+                "UPDATE pending_welcome SET message_id=?, created_at=? WHERE chat_id=? AND user_id=?",
+                (int(message_id), now, int(chat_id), int(user_id)),
+            )
+            con.commit()
+        finally:
+            pass
+    finally:
+        con.close()
+
+
+def pop_pending_welcome(chat_id: int, user_id: int) -> int | None:
+    _wv_db_init()
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
+    try:
+        cur = con.execute(
+            "SELECT message_id FROM pending_welcome WHERE chat_id=? AND user_id=?",
+            (int(chat_id), int(user_id)),
+        )
+        row = cur.fetchone()
+        con.execute(
+            "DELETE FROM pending_welcome WHERE chat_id=? AND user_id=?",
+            (int(chat_id), int(user_id)),
+        )
+        con.commit()
+        if not row:
+            return None
+        return int(row[0])
     finally:
         con.close()
 
@@ -274,6 +345,10 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         WELCOME_MESSAGES[user.id] = (chat.id, sent.message_id)
+        try:
+            save_pending_welcome(chat.id, user.id, sent.message_id)
+        except Exception:
+            pass
 
 
 async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -302,7 +377,6 @@ async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer()
 
     _, chat_id, user_id, chosen = q.data.split(":")
     chat_id = int(chat_id)
@@ -310,49 +384,84 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
     chosen = int(chosen)
 
     if q.from_user.id != user_id:
-        return await q.answer("❌ Bukan tombol lu.", show_alert=True)
+        await q.answer("❌ Bukan tombol lu.", show_alert=True)
+        return
 
     pending = PENDING_VERIFY.get(user_id)
     if not pending or pending["chat_id"] != chat_id:
-        return await q.answer("❌ Verifikasi invalid.", show_alert=True)
+        await q.answer("❌ Verifikasi invalid.", show_alert=True)
+        return
 
     if chosen != pending["answer"]:
+        await q.answer("❌ Salah. Coba lagi.", show_alert=False)
         text, keyboard = generate_math_question(user_id, chat_id)
-        return await q.message.edit_text(
-            text,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
+        try:
+            await q.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await q.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+        return
 
-    await context.bot.restrict_chat_member(
-        chat_id=chat_id,
-        user_id=user_id,
-        permissions=ChatPermissions(
-            can_invite_users=True,
-            can_send_audios=True,
-            can_send_documents=True,
-            can_send_messages=True,
-            can_send_other_messages=True,
-            can_send_photos=True,
-            can_send_polls=True,
-            can_send_video_notes=True,
-            can_send_videos=True,
-            can_send_voice_notes=True,
+    await q.answer("✅ Verifikasi berhasil!", show_alert=False)
+
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=chat_id,
+            user_id=user_id,
+            permissions=ChatPermissions(
+                can_invite_users=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_messages=True,
+                can_send_other_messages=True,
+                can_send_photos=True,
+                can_send_polls=True,
+                can_send_video_notes=True,
+                can_send_videos=True,
+                can_send_voice_notes=True,
+            )
         )
-    )
+    except Exception:
+        pass
 
     VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
-    save_verified_user(chat_id, user_id)
+    try:
+        save_verified_user(chat_id, user_id)
+    except Exception:
+        pass
+
     PENDING_VERIFY.pop(user_id, None)
 
+    msg_id = None
     if user_id in WELCOME_MESSAGES:
-        g_chat_id, msg_id = WELCOME_MESSAGES.pop(user_id)
         try:
-            await context.bot.delete_message(g_chat_id, msg_id)
+            g_chat_id, m_id = WELCOME_MESSAGES.pop(user_id)
+            if g_chat_id == chat_id:
+                msg_id = m_id
+        except Exception:
+            msg_id = None
+
+    if msg_id is None:
+        try:
+            msg_id = pop_pending_welcome(chat_id, user_id)
+        except Exception:
+            msg_id = None
+
+    if msg_id:
+        try:
+            await context.bot.delete_message(chat_id, msg_id)
         except Exception:
             pass
 
-    await q.message.edit_text("Verifikasi berhasil. Anda dapat kembali ke grup.")
+    try:
+        await q.message.edit_text("✅ Verifikasi berhasil. Anda dapat kembali ke grup.")
+    except Exception:
+        try:
+            await context.bot.send_message(
+                chat_id=q.message.chat_id,
+                text="✅ Verifikasi berhasil. Anda dapat kembali ke grup."
+            )
+        except Exception:
+            pass
 
 
 try:
@@ -369,4 +478,3 @@ try:
     load_verified()
 except Exception:
     pass
-    
