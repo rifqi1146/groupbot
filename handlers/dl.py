@@ -41,6 +41,13 @@ DL_FORMATS = {
 
 DL_CACHE = {}
 
+PREMIUM_DB = "data/premium.sqlite3"
+
+PREMIUM_ONLY_DOMAINS = {
+    "pornhub.com",
+    "xnxx.com",
+}
+
 # ux
 def progress_bar(percent: float, length: int = 12) -> str:
     try:
@@ -77,7 +84,7 @@ def detect_media_type(path: str) -> str:
         return "video"
     return "unknown"
 
-# sqlite (auto_dl)
+# sqlite
 def _auto_dl_db_init():
     os.makedirs("data", exist_ok=True)
     con = sqlite3.connect(AUTO_DL_DB)
@@ -136,6 +143,50 @@ def _save_auto_dl(groups: set[int]):
     finally:
         con.close()
 
+
+def _is_premium_user(user_id: int) -> bool:
+    if user_id in OWNER_ID:
+        return True
+
+    try:
+        con = sqlite3.connect(PREMIUM_DB)
+        cur = con.execute(
+            "SELECT 1 FROM premium_users WHERE user_id=? AND enabled=1 LIMIT 1",
+            (int(user_id),)
+        )
+        row = cur.fetchone()
+        con.close()
+        return row is not None
+    except Exception:
+        return False
+        
+        
+def _extract_domain(url: str) -> str:
+    u = (url or "").strip().lower()
+
+    if not u.startswith(("http://", "https://")):
+        u = "https://" + u
+
+    m = re.search(r"https?://([^/]+)", u)
+    if not m:
+        return ""
+    host = m.group(1)
+    host = host.split(":", 1)[0]
+    return host
+
+
+def _is_premium_required(url: str) -> bool:
+    host = _extract_domain(url)
+    if not host:
+        return False
+
+    for d in PREMIUM_ONLY_DOMAINS:
+        d = d.lower()
+        if host == d or host.endswith("." + d):
+            return True
+    return False
+    
+                    
 # platform check
 def is_youtube(url: str) -> bool:
     return any(x in url for x in (
@@ -337,7 +388,10 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await require_join_or_block(update, context):
         return
-
+    
+    if _is_premium_required(text) and not _is_premium_user(update.effective_user.id):
+        return await msg.reply_text("🔞 Link ini hanya bisa didownload user premium.")
+            
     dl_id = uuid.uuid4().hex[:8]
 
     DL_CACHE[dl_id] = {
@@ -818,6 +872,12 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Kirim link TikTok / Platform Yt-dlp Support")
 
     url = context.args[0]
+
+    if _is_premium_required(url):
+        if not _is_premium_user(update.effective_user.id):
+            return await update.message.reply_text(
+                "🔞 Download dari website ini khusus user premium"
+            )
 
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
