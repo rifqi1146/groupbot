@@ -1,19 +1,55 @@
-import json
 import os
+import sqlite3
 import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.error import RetryAfter
 from utils.config import OWNER_ID
 
-BROADCAST_FILE = "data/broadcast_chats.json"
+BROADCAST_DB = "data/broadcast.sqlite3"
 
 
-def _load():
-    if not os.path.exists(BROADCAST_FILE):
-        return {"users": [], "groups": []}
-    with open(BROADCAST_FILE, "r") as f:
-        return json.load(f)
+def _db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(BROADCAST_DB)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_users (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_groups (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+        """)
+        con.commit()
+    finally:
+        con.close()
+
+
+def _get_targets() -> list[int]:
+    _db_init()
+    con = sqlite3.connect(BROADCAST_DB)
+    try:
+        users = con.execute(
+            "SELECT chat_id FROM broadcast_users WHERE enabled=1"
+        ).fetchall()
+        groups = con.execute(
+            "SELECT chat_id FROM broadcast_groups WHERE enabled=1"
+        ).fetchall()
+        out = []
+        out.extend(int(r[0]) for r in users if r and r[0] is not None)
+        out.extend(int(r[0]) for r in groups if r and r[0] is not None)
+        return out
+    finally:
+        con.close()
 
 
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -30,13 +66,12 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return await msg.reply_text("❌ Message is empty.")
 
-    data = _load()
     sent = 0
     failed = 0
 
     status = await msg.reply_text("📣 Broadcasting...")
 
-    targets = data["users"] + data["groups"]
+    targets = _get_targets()
 
     for cid in targets:
         try:
@@ -72,3 +107,9 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"❌ Failed: <b>{failed}</b>",
         parse_mode="HTML"
     )
+
+
+try:
+    _db_init()
+except Exception:
+    pass
