@@ -1,12 +1,12 @@
 import os
 import re
-import json
 import time
 import html
 import uuid
 import shutil
 import asyncio
 import subprocess
+import sqlite3
 import aiohttp
 from utils.config import OWNER_ID
 from handlers.join import require_join_or_block
@@ -25,15 +25,15 @@ from utils.text import bold, code, italic, underline, link, mono
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
 
-#dl config
+# dl config
 TMP_DIR = "downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 
-AUTO_DL_FILE = "data/auto_dl_groups.json"
+AUTO_DL_DB = "data/auto_dl.sqlite3"
 
 MAX_TG_SIZE = 1900 * 1024 * 1024
 
-#format
+# format
 DL_FORMATS = {
     "video": {"label": "🎥 Video"},
     "mp3": {"label": "🎵 MP3"},
@@ -41,7 +41,7 @@ DL_FORMATS = {
 
 DL_CACHE = {}
 
-#ux
+# ux
 def progress_bar(percent: float, length: int = 12) -> str:
     try:
         p = max(0.0, min(100.0, float(percent)))
@@ -57,7 +57,7 @@ def sanitize_filename(name: str, max_len: int = 80) -> str:
     name = re.sub(r'[\\/:*?"<>|]', "", name)
     name = re.sub(r"\s+", " ", name)
     return name[:max_len] or "video"
-    
+
 def dl_keyboard(dl_id: str):
     return InlineKeyboardMarkup([
         [
@@ -76,7 +76,66 @@ def detect_media_type(path: str) -> str:
     if ext in (".mp4", ".mkv", ".webm"):
         return "video"
     return "unknown"
-    
+
+# sqlite (auto_dl)
+def _auto_dl_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(AUTO_DL_DB)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auto_dl_groups (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+def _auto_dl_db():
+    _auto_dl_db_init()
+    return sqlite3.connect(AUTO_DL_DB)
+
+def _load_auto_dl() -> set[int]:
+    con = _auto_dl_db()
+    try:
+        cur = con.execute("SELECT chat_id FROM auto_dl_groups WHERE enabled=1")
+        return {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
+    finally:
+        con.close()
+
+def _save_auto_dl(groups: set[int]):
+    con = _auto_dl_db()
+    try:
+        now = time.time()
+        con.execute("BEGIN")
+        con.execute("UPDATE auto_dl_groups SET enabled=0, updated_at=?", (float(now),))
+        if groups:
+            con.executemany(
+                """
+                INSERT INTO auto_dl_groups (chat_id, enabled, updated_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                  enabled=1,
+                  updated_at=excluded.updated_at
+                """,
+                [(int(cid), float(now)) for cid in groups],
+            )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
+
 # platform check
 def is_youtube(url: str) -> bool:
     return any(x in url for x in (
@@ -117,7 +176,7 @@ def is_reddit(url: str) -> bool:
         "reddit.com",
         "redd.it",
     ))
-        
+
 def is_supported_platform(url: str) -> bool:
     return any((
         is_tiktok(url),
@@ -127,14 +186,14 @@ def is_supported_platform(url: str) -> bool:
         is_twitter_x(url),
         is_reddit(url),
     ))
-    
-#resolve tt
+
+# resolve tt
 def normalize_url(text: str) -> str:
     text = text.strip()
     text = text.replace("\u200b", "")
     text = text.split("\n")[0]
     return text
-    
+
 def is_invalid_video(path: str) -> bool:
     try:
         p = subprocess.run(
@@ -149,7 +208,7 @@ def is_invalid_video(path: str) -> bool:
             capture_output=True,
             text=True
         )
-        info = json.loads(p.stdout)
+        info = __import__("json").loads(p.stdout)
         stream = info["streams"][0]
 
         duration = float(stream.get("duration", 0))
@@ -159,20 +218,6 @@ def is_invalid_video(path: str) -> bool:
         return duration < 1.5 or width == 0 or height == 0
     except Exception:
         return True
- 
-def _load_auto_dl() -> set[int]:
-    if not os.path.exists(AUTO_DL_FILE):
-        return set()
-    try:
-        with open(AUTO_DL_FILE, "r") as f:
-            return set(json.load(f).get("groups", []))
-    except Exception:
-        return set()
-
-def _save_auto_dl(groups: set[int]):
-    os.makedirs("data", exist_ok=True)
-    with open(AUTO_DL_FILE, "w") as f:
-        json.dump({"groups": list(groups)}, f, indent=2)
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -189,7 +234,7 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return member.status in ("administrator", "creator")
     except:
         return False
-          
+
 async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     msg = update.message
@@ -269,8 +314,8 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<code>/autodl list</code>",
         parse_mode="HTML"
     )
-    
-#auto detect
+
+# auto detect
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
@@ -281,7 +326,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text.startswith("/"):
         return
-        
+
     if not is_supported_platform(text):
         return
 
@@ -315,12 +360,11 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
     )
 
-
-#ask callback
+# ask callback
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
-        
+
     q = update.callback_query
     await q.answer()
 
@@ -337,14 +381,13 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DL_CACHE.pop(dl_id, None)
         return await q.message.delete()
 
-    # lanjut ke pilih format
     await q.edit_message_text(
         "📥 <b>Pilih format</b>",
         reply_markup=dl_keyboard(dl_id),
         parse_mode="HTML"
     )
 
-#douyin api
+# douyin api
 async def douyin_download(url, bot, chat_id, status_msg_id):
     session = await get_http_session()
 
@@ -392,7 +435,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
 
     return out_path
 
-#fallback ytdlp
+# fallback ytdlp
 async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
@@ -481,9 +524,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         ])
         if code != 0:
             return None
-
     else:
-
         code = await run([
             YT_DLP,
             "--cookies", COOKIES_PATH,
@@ -497,7 +538,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             "-o", out_tpl,
             url
         ])
-    
+
         if code != 0:
             print("[YTDLP] video failed → trying bestimage")
             code = await run([
@@ -508,7 +549,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
                 "-o", out_tpl,
                 url
             ])
-    
+
             if code != 0:
                 return None
 
@@ -535,10 +576,6 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
     return files[0] if files else None
 
 def reencode_mp3(src_path: str) -> str:
-    """
-    Force re-encode audio to clean MP3 for Telegram.
-    Return new file path.
-    """
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
 
     subprocess.run(
@@ -559,8 +596,8 @@ def reencode_mp3(src_path: str) -> str:
         raise RuntimeError("FFmpeg re-encode failed")
 
     return fixed_path
-    
-#worker
+
+# worker
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
     bot = app.bot
     path = None
@@ -687,7 +724,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
 
                 await bot.delete_message(chat_id, status_msg_id)
                 return
-
         else:
             path = await ytdlp_download(
                 raw_url,
@@ -772,12 +808,12 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 os.remove(path)
             except:
                 pass
-                
-#dl cmd
+
+# dl cmd
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
-        
+
     if not context.args:
         return await update.message.reply_text("❌ Kirim link TikTok / Platform Yt-dlp Support")
 
@@ -796,11 +832,11 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-#dl callback
+# dl callback
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
-        
+
     q = update.callback_query
     await q.answer()
 
@@ -835,3 +871,8 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
+try:
+    _auto_dl_db_init()
+except Exception:
+    pass
+    
