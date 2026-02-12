@@ -1,6 +1,7 @@
 import os
-import json
 import random
+import time
+import sqlite3
 
 from telegram import (
     Update,
@@ -12,55 +13,117 @@ from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
 
-WELCOME_ENABLED_CHATS = set()
-WELCOME_FILE = "data/welcome_chats.json"
+WELCOME_VERIFY_DB = "data/welcome_verify.sqlite3"
 
-VERIFY_FILE = "data/verified_users.json"
+WELCOME_ENABLED_CHATS = set()
 VERIFIED_USERS = {}
 
 PENDING_VERIFY = {}
-WELCOME_MESSAGES = {}  
-
-def load_verified():
-    global VERIFIED_USERS
-    if not os.path.exists(VERIFY_FILE):
-        VERIFIED_USERS = {}
-        return
-    try:
-        with open(VERIFY_FILE, "r") as f:
-            data = json.load(f)
-            VERIFIED_USERS = {int(k): set(v) for k, v in data.items()}
-    except Exception:
-        VERIFIED_USERS = {}
+WELCOME_MESSAGES = {}
 
 
-def save_verified():
+def _wv_db_init():
     os.makedirs("data", exist_ok=True)
-    with open(VERIFY_FILE, "w") as f:
-        json.dump(
-            {str(k): list(v) for k, v in VERIFIED_USERS.items()},
-            f,
-            indent=2
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS welcome_chats (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+            """
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS verified_users (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                verified_at REAL NOT NULL,
+                PRIMARY KEY (chat_id, user_id)
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
 
 
 def load_welcome_chats():
     global WELCOME_ENABLED_CHATS
-    if not os.path.exists(WELCOME_FILE):
-        WELCOME_ENABLED_CHATS = set()
-        return
+    _wv_db_init()
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
-        with open(WELCOME_FILE, "r") as f:
-            data = json.load(f)
-            WELCOME_ENABLED_CHATS = set(data.get("chats", []))
-    except Exception:
-        WELCOME_ENABLED_CHATS = set()
+        cur = con.execute("SELECT chat_id FROM welcome_chats WHERE enabled=1")
+        WELCOME_ENABLED_CHATS = {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
+    finally:
+        con.close()
 
 
 def save_welcome_chats():
-    os.makedirs("data", exist_ok=True)
-    with open(WELCOME_FILE, "w") as f:
-        json.dump({"chats": list(WELCOME_ENABLED_CHATS)}, f, indent=2)
+    _wv_db_init()
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
+    try:
+        now = time.time()
+        con.execute("BEGIN")
+        con.execute("UPDATE welcome_chats SET enabled=0, updated_at=?", (now,))
+        if WELCOME_ENABLED_CHATS:
+            con.executemany(
+                """
+                INSERT INTO welcome_chats (chat_id, enabled, updated_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                  enabled=1,
+                  updated_at=excluded.updated_at
+                """,
+                [(int(cid), now) for cid in WELCOME_ENABLED_CHATS],
+            )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
+
+
+def load_verified():
+    global VERIFIED_USERS
+    _wv_db_init()
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
+    try:
+        cur = con.execute("SELECT chat_id, user_id FROM verified_users")
+        tmp = {}
+        for chat_id, user_id in cur.fetchall():
+            tmp.setdefault(int(chat_id), set()).add(int(user_id))
+        VERIFIED_USERS = tmp
+    finally:
+        con.close()
+
+
+def save_verified_user(chat_id: int, user_id: int):
+    _wv_db_init()
+    con = sqlite3.connect(WELCOME_VERIFY_DB)
+    try:
+        now = time.time()
+        con.execute(
+            """
+            INSERT INTO verified_users (chat_id, user_id, verified_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+              verified_at=excluded.verified_at
+            """,
+            (int(chat_id), int(user_id), now),
+        )
+        con.commit()
+    finally:
+        con.close()
+
 
 def generate_math_question(user_id: int, chat_id: int):
     a = random.randint(20, 99)
@@ -95,7 +158,8 @@ def generate_math_question(user_id: int, chat_id: int):
     )
 
     return text, InlineKeyboardMarkup(buttons)
-    
+
+
 def verify_keyboard(user_id: int, chat_id: int, bot_username: str):
     return InlineKeyboardMarkup([
         [
@@ -105,6 +169,7 @@ def verify_keyboard(user_id: int, chat_id: int, bot_username: str):
             )
         ]
     ])
+
 
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -121,6 +186,7 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return member.status in ("administrator", "creator")
     except Exception:
         return False
+
 
 async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -151,6 +217,7 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Gunakan <code>enable</code> atau <code>disable</code>.",
             parse_mode="HTML"
         )
+
 
 async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -208,6 +275,7 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         WELCOME_MESSAGES[user.id] = (chat.id, sent.message_id)
 
+
 async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return
@@ -230,6 +298,7 @@ async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
+
 
 async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -273,7 +342,7 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
-    save_verified()
+    save_verified_user(chat_id, user_id)
     PENDING_VERIFY.pop(user_id, None)
 
     if user_id in WELCOME_MESSAGES:
@@ -284,3 +353,20 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
     await q.message.edit_text("Verifikasi berhasil. Anda dapat kembali ke grup.")
+
+
+try:
+    _wv_db_init()
+except Exception:
+    pass
+
+try:
+    load_welcome_chats()
+except Exception:
+    pass
+
+try:
+    load_verified()
+except Exception:
+    pass
+    
