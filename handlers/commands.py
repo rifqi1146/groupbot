@@ -27,6 +27,7 @@ from handlers.update import update_cmd
 from handlers.groups import groups_cmd
 from handlers.music import music_cmd
 from handlers.kurs import kurs_cmd
+from handlers.net import net_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -36,6 +37,7 @@ from handlers.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
+    ("net", net_cmd, False),
     ("start", start_verify_pm, False),
     ("kurs", kurs_cmd, False),
     ("music", music_cmd, False),
