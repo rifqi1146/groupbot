@@ -328,10 +328,7 @@ def _render_dashboard(stats):
 
     rx = stats["net"]["rx"]
     tx = stats["net"]["tx"]
-    d.text((sx0 + int(18 * S), sy0 + int(160 * S)), "Network", font=f, fill=text)
-    d.text((sx0 + int(18 * S), sy0 + int(184 * S)), f"RX: {humanize_bytes(rx)}", font=f_mono, fill=muted)
-    d.text((sx0 + int(18 * S), sy0 + int(206 * S)), f"TX: {humanize_bytes(tx)}", font=f_mono, fill=muted)
-
+    
     rx0, ry0, rx1, ry1 = res_card
     d.text((rx0 + int(18 * S), ry0 + int(16 * S)), "🧠 Memory + 💾 Disk", font=f_h, fill=text)
 
@@ -379,7 +376,7 @@ def _render_dashboard(stats):
             rxps = (rx1b - rx0b) / dt
             txps = (tx1b - tx0b) / dt
 
-            d.text((nx0 + int(18 * S), ny0 + int(120 * S)), "Speed (approx)", font=f, fill=text)
+            d.text((nx0 + int(18 * S), ny0 + int(120 * S)), "Speed", font=f, fill=text)
             d.text((nx0 + int(18 * S), ny0 + int(144 * S)), f"RX/s: {humanize_bytes(int(rxps))}/s", font=f_mono, fill=muted)
             d.text((nx0 + int(18 * S), ny0 + int(168 * S)), f"TX/s: {humanize_bytes(int(txps))}/s", font=f_mono, fill=muted)
 
