@@ -6,6 +6,7 @@ import random
 import asyncio
 import logging
 import aiohttp
+import sqlite3
 
 from telegram import (
     InlineKeyboardMarkup,
@@ -19,14 +20,12 @@ from telegram.ext import (
 from telegram import Update
 
 from utils.http import get_http_session
-
 from utils.config import OWNER_ID, LOG_CHAT_ID
 
-#asupannnnn
 log = logging.getLogger(__name__)
 
-#asupan grup
-ASUPAN_GROUP_FILE = "data/asupan_groups.json"
+ASUPAN_DB_PATH = "data/asupan.sqlite3"
+
 ASUPAN_CACHE = []
 ASUPAN_PREFETCH_SIZE = 5
 ASUPAN_KEYWORD_CACHE = {}
@@ -37,8 +36,77 @@ ASUPAN_DELETE_JOBS = {}
 ASUPAN_AUTO_DELETE_SEC = 300
 ASUPAN_COOLDOWN = {}
 ASUPAN_COOLDOWN_SEC = 5
-AUTODEL_FILE = "data/autodel_groups.json"
+
 AUTODEL_ENABLED_CHATS = set()
+
+
+def _asupan_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(ASUPAN_DB_PATH)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS asupan_groups (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS asupan_autodel (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _db_load_enabled(table: str) -> set[int]:
+    con = sqlite3.connect(ASUPAN_DB_PATH)
+    try:
+        cur = con.execute(f"SELECT chat_id FROM {table} WHERE enabled=1")
+        rows = cur.fetchall()
+        out = set()
+        for r in rows:
+            if not r:
+                continue
+            try:
+                out.add(int(r[0]))
+            except Exception:
+                pass
+        return out
+    finally:
+        con.close()
+
+
+def _db_set_enabled(table: str, s: set[int]):
+    con = sqlite3.connect(ASUPAN_DB_PATH)
+    try:
+        con.execute("BEGIN")
+        now = time.time()
+        con.execute(f"DELETE FROM {table}")
+        if s:
+            con.executemany(
+                f"INSERT INTO {table} (chat_id, enabled, updated_at) VALUES (?, 1, ?)",
+                [(int(cid), now) for cid in s],
+            )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
 
 
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -56,27 +124,23 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return member.status in ("administrator", "creator")
     except Exception:
         return False
-        
+
+
 def load_autodel_groups():
     global AUTODEL_ENABLED_CHATS
-    if not os.path.exists(AUTODEL_FILE):
-        AUTODEL_ENABLED_CHATS = set()
-        return
     try:
-        with open(AUTODEL_FILE, "r") as f:
-            data = json.load(f)
-            AUTODEL_ENABLED_CHATS = set(data.get("enabled_chats", []))
+        _asupan_db_init()
+        AUTODEL_ENABLED_CHATS = _db_load_enabled("asupan_autodel")
     except Exception:
         AUTODEL_ENABLED_CHATS = set()
 
 
 def save_autodel_groups():
-    with open(AUTODEL_FILE, "w") as f:
-        json.dump(
-            {"enabled_chats": list(AUTODEL_ENABLED_CHATS)},
-            f,
-            indent=2
-        )
+    try:
+        _asupan_db_init()
+        _db_set_enabled("asupan_autodel", AUTODEL_ENABLED_CHATS)
+    except Exception:
+        pass
 
 
 def is_autodel_enabled(chat_id: int) -> bool:
@@ -84,29 +148,26 @@ def is_autodel_enabled(chat_id: int) -> bool:
 
 
 def save_asupan_groups():
-    with open(ASUPAN_GROUP_FILE, "w") as f:
-        json.dump(
-            {"enabled_chats": list(ASUPAN_ENABLED_CHATS)},
-            f,
-            indent=2
-        )
+    try:
+        _asupan_db_init()
+        _db_set_enabled("asupan_groups", ASUPAN_ENABLED_CHATS)
+    except Exception:
+        pass
+
 
 def is_asupan_enabled(chat_id: int) -> bool:
     return chat_id in ASUPAN_ENABLED_CHATS
 
+
 def load_asupan_groups():
     global ASUPAN_ENABLED_CHATS
-    if not os.path.exists(ASUPAN_GROUP_FILE):
-        ASUPAN_ENABLED_CHATS = set()
-        return
-
     try:
-        with open(ASUPAN_GROUP_FILE, "r") as f:
-            data = json.load(f)
-            ASUPAN_ENABLED_CHATS = set(data.get("enabled_chats", []))
+        _asupan_db_init()
+        ASUPAN_ENABLED_CHATS = _db_load_enabled("asupan_groups")
     except Exception:
         ASUPAN_ENABLED_CHATS = set()
-        
+
+
 async def _expire_asupan_notice(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     try:
@@ -153,6 +214,7 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
 
     ASUPAN_DELETE_JOBS.pop(asupan_msg_id, None)
     ASUPAN_MESSAGE_KEYWORD.pop(asupan_msg_id, None)
+
 
 async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -218,7 +280,8 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "\n".join(lines),
             parse_mode="HTML"
         )
-    
+
+
 async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -280,9 +343,8 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "\n".join(lines),
             parse_mode="HTML"
         )
-    
 
-#inline keyboard
+
 def asupan_keyboard(owner_id: int):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
@@ -291,7 +353,7 @@ def asupan_keyboard(owner_id: int):
         )]
     ])
 
-#fetch
+
 async def fetch_asupan_tikwm(keyword: str | None = None):
     default_keywords = [
         "tante holic",
@@ -311,7 +373,7 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "shsshlla",
         "Seeazeee",
         "hi,its me tatut",
-        "billaazz",               
+        "billaazz",
         "innova.kasih.4",
         "tobrut",
         "tanktopstyle",
@@ -348,6 +410,7 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
 
     return random.choice(videos)["play"]
 
+
 async def warm_keyword_asupan_cache(bot, keyword: str):
     kw = keyword.lower().strip()
     cache = ASUPAN_KEYWORD_CACHE.setdefault(kw, [])
@@ -372,7 +435,8 @@ async def warm_keyword_asupan_cache(bot, keyword: str):
 
     except Exception as e:
         log.warning(f"[ASUPAN KEYWORD PREFETCH] {kw}: {e}")
-        
+
+
 async def warm_asupan_cache(bot):
     global ASUPAN_FETCHING
 
@@ -401,7 +465,7 @@ async def warm_asupan_cache(bot):
     finally:
         ASUPAN_FETCHING = False
 
-#get asupan
+
 async def get_asupan_fast(bot, keyword: str | None = None):
     if keyword is None:
         if ASUPAN_CACHE:
@@ -416,7 +480,7 @@ async def get_asupan_fast(bot, keyword: str | None = None):
         file_id = msg.video.file_id
         await msg.delete()
         return {"file_id": file_id}
-        
+
     kw = keyword.lower().strip()
     cache = ASUPAN_KEYWORD_CACHE.get(kw)
 
@@ -433,7 +497,7 @@ async def get_asupan_fast(bot, keyword: str | None = None):
     await msg.delete()
     return {"file_id": file_id}
 
-#cmd asupan
+
 async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -486,7 +550,7 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}")
 
-#asupan callback
+
 async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
@@ -513,7 +577,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         ASUPAN_COOLDOWN[user_id] = now
-        
+
     await q.answer()
 
     try:
@@ -539,7 +603,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if q.message.reply_to_message
                 else None
             )
-            
+
             job = context.application.job_queue.run_once(
                 _expire_asupan_job,
                 ASUPAN_AUTO_DELETE_SEC,
@@ -565,6 +629,7 @@ async def asupan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await q.answer("❌ Gagal ambil asupan", show_alert=True)
 
+
 async def send_asupan_once(bot):
     if not LOG_CHAT_ID:
         log.warning("[ASUPAN STARTUP] Chat_id is empty")
@@ -585,6 +650,22 @@ async def send_asupan_once(bot):
 
     except Exception as e:
         log.warning(f"[ASUPAN STARTUP] Failed: {e}")
+
+
+try:
+    _asupan_db_init()
+except Exception:
+    pass
+
+try:
+    load_asupan_groups()
+except Exception:
+    pass
+
+try:
+    load_autodel_groups()
+except Exception:
+    pass
 
 ## Credit 
 ## Special thanks to Pikachu for the inspiration behind the *asupan* feature.  
