@@ -1,13 +1,13 @@
 import os
-import json
 import random
-from telegram import Update
-from telegram.ext import ContextTypes
+import sqlite3
 import time
 
-DATA_FILE = "data/users.json"
+from telegram import Update
+from telegram.ext import ContextTypes
+
+SHIP_DB = "data/ship.sqlite3"
 SHIP_COOLDOWN = 60 * 60 * 24  # 24 jam
-SHIP_STATE_FILE = "data/ship_state.json"
 
 SHIP_MESSAGES = [
     "🥰 Kalian keliatan nyaman satu sama lain",
@@ -31,49 +31,109 @@ SHIP_ENDING = [
     "Enjoy the moment 🫶",
 ]
 
+
+def _ship_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(SHIP_DB)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (chat_id, user_id)
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ship_state (
+                chat_id INTEGER PRIMARY KEY,
+                last_time INTEGER NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _db():
+    _ship_db_init()
+    return sqlite3.connect(SHIP_DB)
+
+
 def tag(u):
     return f'<a href="tg://user?id={u["id"]}">{u["name"]}</a>'
 
-def load_users():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
 
-def save_users(data):
-    os.makedirs("data", exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def add_user(chat_id, user):
+def add_user(chat_id: int, user):
     if not user or user.is_bot:
         return
-    data = load_users()
-    cid = str(chat_id)
-    data.setdefault(cid, {})
-    data[cid][str(user.id)] = {
-        "id": user.id,
-        "name": user.first_name,
-    }
-    save_users(data)
 
-def load_ship_state():
-    if not os.path.exists(SHIP_STATE_FILE):
-        return {}
+    con = _db()
     try:
-        with open(SHIP_STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        now = time.time()
+        con.execute(
+            """
+            INSERT INTO users (chat_id, user_id, name, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+              name=excluded.name,
+              updated_at=excluded.updated_at
+            """,
+            (int(chat_id), int(user.id), str(user.first_name or ""), float(now)),
+        )
+        con.commit()
+    finally:
+        con.close()
 
 
-def save_ship_state(data):
-    os.makedirs("data", exist_ok=True)
-    with open(SHIP_STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+def get_ship_last_time(chat_id: int) -> int:
+    con = _db()
+    try:
+        cur = con.execute(
+            "SELECT last_time FROM ship_state WHERE chat_id=?",
+            (int(chat_id),),
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+    finally:
+        con.close()
+
+
+def set_ship_last_time(chat_id: int, last_time: int):
+    con = _db()
+    try:
+        con.execute(
+            """
+            INSERT INTO ship_state (chat_id, last_time)
+            VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+              last_time=excluded.last_time
+            """,
+            (int(chat_id), int(last_time)),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def get_users_pool(chat_id: int) -> list[dict]:
+    con = _db()
+    try:
+        cur = con.execute(
+            "SELECT user_id, name FROM users WHERE chat_id=?",
+            (int(chat_id),),
+        )
+        rows = cur.fetchall()
+        return [{"id": int(uid), "name": str(name)} for (uid, name) in rows if uid is not None]
+    finally:
+        con.close()
 
 
 def format_remaining(seconds: int) -> str:
@@ -81,19 +141,16 @@ def format_remaining(seconds: int) -> str:
     m = (seconds % 3600) // 60
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
-    
+
+
 async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
-
     if not msg or not chat:
         return
 
     now = int(time.time())
-    chat_id = str(chat.id)
-
-    state = load_ship_state()
-    last_time = state.get(chat_id, 0)
+    last_time = get_ship_last_time(chat.id)
 
     if now - last_time < SHIP_COOLDOWN:
         remain = SHIP_COOLDOWN - (now - last_time)
@@ -101,7 +158,7 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ <b>Ship masih cooldown</b>\n\n"
             f"Pasangan berikutnya bisa dipilih dalam:\n"
             f"<code>{format_remaining(remain)}</code>",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     add_user(chat.id, msg.from_user)
@@ -123,8 +180,7 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "name": ent.user.first_name,
             })
 
-    data = load_users().get(str(chat.id), {})
-    pool = list(data.values())
+    pool = get_users_pool(chat.id)
 
     if len(users) < 2:
         if len(pool) < 2:
@@ -149,8 +205,13 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(
         text,
         parse_mode="HTML",
-        disable_web_page_preview=True
+        disable_web_page_preview=True,
     )
 
-    state[chat_id] = now
-    save_ship_state(state)
+    set_ship_last_time(chat.id, now)
+
+
+try:
+    _ship_db_init()
+except Exception:
+    pass
