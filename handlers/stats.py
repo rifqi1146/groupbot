@@ -270,9 +270,7 @@ def _render_dashboard(stats):
     pad = int(28 * S)
     gap = int(18 * S)
 
-    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stats["ts"]))
     d.text((pad, int(pad - 2 * S)), "📈 System Stats", font=f_title, fill=text)
-    d.text((pad, pad + int(34 * S)), f"Updated: {ts}", font=f_small, fill=muted)
 
     x0 = pad
     y0 = pad + int(78 * S)
@@ -396,9 +394,6 @@ def _render_dashboard(stats):
             _bar(d, nx0 + int(58 * S), ny0 + int(234 * S), (nx1 - nx0) - int(76 * S), int(16 * S), txp, bar_bg, bar_fg2, border, r=int(8 * S))
         except Exception:
             pass
-
-    footer = f"PID: {os.getpid()}  •  Host: {platform.node() or 'N/A'}"
-    d.text((pad, H - int(24 * S) - 2), footer, font=f_small, fill=(120, 130, 150))
 
     bio = io.BytesIO()
     bio.name = "stats.png"
