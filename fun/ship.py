@@ -93,6 +93,15 @@ def add_user(chat_id: int, user):
         con.close()
 
 
+def _ship_state_has_updated_at(con) -> bool:
+    try:
+        cur = con.execute("PRAGMA table_info(ship_state)")
+        cols = {row[1] for row in cur.fetchall() if row and len(row) > 1}
+        return "updated_at" in cols
+    except Exception:
+        return False
+
+
 def get_ship_last_time(chat_id: int) -> int:
     con = _db()
     try:
@@ -109,15 +118,31 @@ def get_ship_last_time(chat_id: int) -> int:
 def set_ship_last_time(chat_id: int, last_time: int):
     con = _db()
     try:
-        con.execute(
-            """
-            INSERT INTO ship_state (chat_id, last_time)
-            VALUES (?, ?)
-            ON CONFLICT(chat_id) DO UPDATE SET
-              last_time=excluded.last_time
-            """,
-            (int(chat_id), int(last_time)),
-        )
+        now_ts = time.time()
+        has_updated_at = _ship_state_has_updated_at(con)
+
+        if has_updated_at:
+            con.execute(
+                """
+                INSERT INTO ship_state (chat_id, last_time, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                  last_time=excluded.last_time,
+                  updated_at=excluded.updated_at
+                """,
+                (int(chat_id), int(last_time), float(now_ts)),
+            )
+        else:
+            con.execute(
+                """
+                INSERT INTO ship_state (chat_id, last_time)
+                VALUES (?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                  last_time=excluded.last_time
+                """,
+                (int(chat_id), int(last_time)),
+            )
+
         con.commit()
     finally:
         con.close()
