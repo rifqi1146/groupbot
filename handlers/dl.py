@@ -41,7 +41,7 @@ DL_FORMATS = {
 
 DL_CACHE = {}
 
-PREMIUM_DB = "data/premium.sqlite3"
+PREMIUM_DB = "data/caca.sqlite3"
 
 PREMIUM_ONLY_DOMAINS = {
     "pornhub.com",
