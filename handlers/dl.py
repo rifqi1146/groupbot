@@ -543,7 +543,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             last_pct = pct
 
             now = time.time()
-            if now - last_edit >= 1.5:
+            if now - last_edit >= 6:
                 try:
                     await bot.edit_message_text(
                         chat_id=chat_id,
