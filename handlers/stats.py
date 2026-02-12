@@ -2,30 +2,38 @@ import os
 import time
 import html
 import shutil
-import asyncio
 import platform
+import io
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.dl import progress_bar
-from utils.text import bold, code, italic, underline, link, mono
 
-#stats
 try:
     import psutil
 except Exception:
     psutil = None
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except Exception:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+
 
 def humanize_bytes(n: int) -> str:
     try:
         f = float(n)
     except Exception:
         return "N/A"
-    for unit in ("B","KB","MB","GB","TB"):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
         if f < 1024 or unit == "TB":
             return f"{f:.1f}{unit}"
         f /= 1024.0
     return f"{f:.1f}B"
+
 
 def get_ram_info():
     try:
@@ -44,6 +52,7 @@ def get_ram_info():
         return {"total": total, "used": used, "free": free, "percent": percent}
     except Exception:
         return None
+
 
 def get_storage_info():
     try:
@@ -65,19 +74,6 @@ def get_storage_info():
     except Exception:
         return None
 
-def get_kernel_version():
-    try:
-        return platform.release() or "N/A"
-    except Exception:
-        return "N/A"
-
-def get_os_name():
-    try:
-        name = platform.system() or "Linux"
-        rel = platform.version() or platform.release() or ""
-        return f"{name} {rel}".strip()
-    except Exception:
-        return "N/A"
 
 def get_cpu_cores():
     try:
@@ -86,11 +82,6 @@ def get_cpu_cores():
     except Exception:
         return "N/A"
 
-def get_python_version():
-    try:
-        return platform.python_version()
-    except Exception:
-        return "N/A"
 
 def get_pretty_uptime():
     try:
@@ -142,22 +133,20 @@ def get_pretty_uptime():
         for piece in out.split(","):
             piece = piece.strip()
             if piece.endswith("days") or piece.endswith("day"):
-                n = piece.split()[0]; parts.append(f"{n}d")
+                n = piece.split()[0]
+                parts.append(f"{n}d")
             elif piece.endswith("hours") or piece.endswith("hour"):
-                n = piece.split()[0]; parts.append(f"{n}h")
+                n = piece.split()[0]
+                parts.append(f"{n}h")
             elif piece.endswith("minutes") or piece.endswith("minute"):
-                n = piece.split()[0]; parts.append(f"{n}m")
+                n = piece.split()[0]
+                parts.append(f"{n}m")
         return " ".join(parts) if parts else out
     except Exception:
         return "N/A"
 
-# cmd stats
-async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ram = get_ram_info()
-    storage = get_storage_info()
-    cpu_cores = get_cpu_cores()
-    uptime = get_pretty_uptime()
-    
+
+def _get_os_name():
     try:
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release") as f:
@@ -166,94 +155,174 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if "=" in line:
                         k, v = line.strip().split("=", 1)
                         os_info[k] = v.strip('"')
-            os_name = f"{os_info.get('NAME', 'Linux')} {os_info.get('VERSION', '')}".strip()
-        else:
-            os_name = platform.system() + " " + platform.release()
+            return f"{os_info.get('NAME', 'Linux')} {os_info.get('VERSION', '')}".strip()
+        return (platform.system() + " " + platform.release()).strip()
     except Exception:
-        os_name = "Linux"
+        return "Linux"
 
-    kernel = platform.release()
-    python_ver = platform.python_version()
+
+def _render_text_image(text: str):
+    if not Image or not ImageDraw or not ImageFont:
+        return None
+
+    def _load_font(size: int):
+        candidates = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
+        ]
+        for p in candidates:
+            try:
+                if os.path.exists(p):
+                    return ImageFont.truetype(p, size=size)
+            except Exception:
+                pass
+        try:
+            return ImageFont.load_default()
+        except Exception:
+            return None
+
+    font = _load_font(18)
+    title_font = _load_font(22) or font
+
+    lines = text.splitlines()
+    pad = 24
+    line_gap = 6
+
+    dummy = Image.new("RGB", (10, 10), (16, 18, 22))
+    d = ImageDraw.Draw(dummy)
+
+    max_w = 0
+    line_h = 0
+    for i, ln in enumerate(lines):
+        f = title_font if i == 0 else font
+        bbox = d.textbbox((0, 0), ln, font=f)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        if w > max_w:
+            max_w = w
+        if h > line_h:
+            line_h = h
+
+    width = max(720, max_w + pad * 2)
+    height = pad * 2 + len(lines) * (line_h + line_gap) + 10
+
+    img = Image.new("RGB", (width, height), (16, 18, 22))
+    draw = ImageDraw.Draw(img)
+
+    y = pad
+    for i, ln in enumerate(lines):
+        f = title_font if i == 0 else font
+        color = (235, 238, 243)
+        draw.text((pad, y), ln, font=f, fill=color)
+        y += line_h + line_gap
+
+    bio = io.BytesIO()
+    bio.name = "stats.png"
+    img.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
+
+
+def _build_stats_text():
+    ram = get_ram_info()
+    storage = get_storage_info()
+    cpu_cores = get_cpu_cores()
+    uptime = get_pretty_uptime()
+
+    os_name = _get_os_name()
+    kernel = platform.release() or "N/A"
+    python_ver = platform.python_version() or "N/A"
 
     try:
-        cpu_load = psutil.cpu_percent(interval=None)
+        cpu_load = psutil.cpu_percent(interval=None) if psutil else 0.0
     except Exception:
         cpu_load = 0.0
 
     try:
-        freq = psutil.cpu_freq()
+        freq = psutil.cpu_freq() if psutil else None
         cpu_freq = f"{freq.current:.0f} MHz" if freq else "N/A"
     except Exception:
         cpu_freq = "N/A"
 
-    swap_line = ""
+    swap_text = []
     try:
-        swap = psutil.swap_memory()
-        swap_line = (
-            f"\n<b>🧠 Swap</b>\n"
-            f"  {humanize_bytes(swap.used)} / {humanize_bytes(swap.total)} ({swap.percent:.1f}%)\n"
-            f"  {progress_bar(swap.percent)}"
-        ) if swap.total > 0 else ""
+        if psutil:
+            swap = psutil.swap_memory()
+            if getattr(swap, "total", 0) and swap.total > 0:
+                swap_text = [
+                    "",
+                    "🧠 Swap",
+                    f"  {humanize_bytes(swap.used)} / {humanize_bytes(swap.total)} ({swap.percent:.1f}%)",
+                    f"  {progress_bar(swap.percent)}",
+                ]
     except Exception:
         pass
 
-    net_line = ""
+    net_text = []
     try:
-        net = psutil.net_io_counters()
-        net_line = (
-            "\n<b>🌐 Network</b>\n"
-            f"  ⬇️ RX: {humanize_bytes(net.bytes_recv)}\n"
-            f"  ⬆️ TX: {humanize_bytes(net.bytes_sent)}"
-        )
+        if psutil:
+            net = psutil.net_io_counters()
+            net_text = [
+                "",
+                "🌐 Network",
+                f"  ⬇️ RX: {humanize_bytes(net.bytes_recv)}",
+                f"  ⬆️ TX: {humanize_bytes(net.bytes_sent)}",
+            ]
     except Exception:
         pass
 
     lines = []
-    lines.append("<b>📈 System Stats</b>\n")
-
-    lines.append("<b>⚙️ CPU</b>")
+    lines.append("📈 System Stats")
+    lines.append("")
+    lines.append("⚙️ CPU")
     lines.append(f"  Cores : {cpu_cores}")
     lines.append(f"  Load  : {cpu_load:.1f}%")
     lines.append(f"  Freq  : {cpu_freq}")
-    lines.append(f"  {progress_bar(cpu_load)}\n")
+    lines.append(f"  {progress_bar(cpu_load)}")
+    lines.append("")
 
     if ram:
-        lines.append("<b>🧠 RAM</b>")
-        lines.append(
-            f"  {humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])} ({ram['percent']:.1f}%)"
-        )
+        lines.append("🧠 RAM")
+        lines.append(f"  {humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])} ({ram['percent']:.1f}%)")
         lines.append(f"  {progress_bar(ram['percent'])}")
-        if swap_line:
-            lines.append(swap_line)
+        lines.extend(swap_text)
     else:
-        lines.append("<b>🧠 RAM</b> Info unavailable")
+        lines.append("🧠 RAM")
+        lines.append("  Info unavailable")
 
     lines.append("")
 
     if storage and "/" in storage:
         v = storage["/"]
         pct = (v["used"] / v["total"] * 100) if v["total"] else 0.0
-        lines.append("<b>💾 Disk (/)</b>")
-        lines.append(
-            f"  {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])} ({pct:.1f}%)"
-        )
-        lines.append(f"  {progress_bar(pct)}\n")
+        lines.append("💾 Disk (/)")
+        lines.append(f"  {humanize_bytes(v['used'])} / {humanize_bytes(v['total'])} ({pct:.1f}%)")
+        lines.append(f"  {progress_bar(pct)}")
+        lines.append("")
 
-    lines.append("<b>🖥️ System</b>")
-    lines.append(f"  OS     : {html.escape(os_name)}")
-    lines.append(f"  Kernel : {html.escape(kernel)}")
-    lines.append(f"  Python : {html.escape(python_ver)}")
-    lines.append(f"  Uptime : {html.escape(uptime)}")
+    lines.append("🖥️ System")
+    lines.append(f"  OS     : {os_name}")
+    lines.append(f"  Kernel : {kernel}")
+    lines.append(f"  Python : {python_ver}")
+    lines.append(f"  Uptime : {uptime}")
 
-    if net_line:
-        lines.append(net_line)
+    lines.extend(net_text)
 
-    out = "\n".join(lines)
+    return "\n".join(lines)
 
-    sent = await update.message.reply_text(out, parse_mode="HTML")
 
-    await asyncio.sleep(15)
-    try:
-        await sent.delete()
-    except Exception:
-        pass
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    if not msg:
+        return
+
+    text = _build_stats_text()
+
+    bio = _render_text_image(text)
+    if bio:
+        return await msg.reply_photo(photo=bio)
+
+    out = "<b>📈 System Stats</b>\n\n" + html.escape(text)
+    return await msg.reply_text(out, parse_mode="HTML")
