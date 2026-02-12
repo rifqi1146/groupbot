@@ -10,6 +10,7 @@ import sqlite3
 import aiohttp
 from utils.config import OWNER_ID
 from handlers.join import require_join_or_block
+from utils.premium import init_premium_db, premium_load_set, is_premium
 
 from telegram import (
     Update,
@@ -40,8 +41,6 @@ DL_FORMATS = {
 }
 
 DL_CACHE = {}
-
-PREMIUM_DB = "data/caca.sqlite3"
 
 PREMIUM_ONLY_DOMAINS = {
     "pornhub.com",
@@ -145,20 +144,17 @@ def _save_auto_dl(groups: set[int]):
 
 
 def _is_premium_user(user_id: int) -> bool:
-    if user_id in OWNER_ID:
+    uid = int(user_id)
+
+    if uid in OWNER_ID:
         return True
 
     try:
-        con = sqlite3.connect(PREMIUM_DB)
-        cur = con.execute(
-            "SELECT 1 FROM premium_users WHERE user_id=? AND enabled=1 LIMIT 1",
-            (int(user_id),)
-        )
-        row = cur.fetchone()
-        con.close()
-        return row is not None
+        s = premium_load_set()
     except Exception:
-        return False
+        s = set()
+
+    return is_premium(uid, s)
         
         
 def _extract_domain(url: str) -> str:
