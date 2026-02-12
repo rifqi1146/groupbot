@@ -161,6 +161,14 @@ def get_users_pool(chat_id: int) -> list[dict]:
         con.close()
 
 
+async def _is_chat_member(bot, chat_id: int, user_id: int) -> bool:
+    try:
+        m = await bot.get_chat_member(chat_id, user_id)
+        return m.status not in ("left", "kicked")
+    except Exception:
+        return False
+        
+        
 def format_remaining(seconds: int) -> str:
     h = seconds // 3600
     m = (seconds % 3600) // 60
@@ -191,26 +199,38 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = []
 
     if msg.reply_to_message and msg.reply_to_message.from_user:
-        add_user(chat.id, msg.reply_to_message.from_user)
-        users.append({
-            "id": msg.reply_to_message.from_user.id,
-            "name": msg.reply_to_message.from_user.first_name,
-        })
+        u = msg.reply_to_message.from_user
+        if await _is_chat_member(context.bot, chat.id, u.id):
+            add_user(chat.id, u)
+            users.append({"id": u.id, "name": str(u.first_name or "Unknown")})
 
     for ent in msg.entities or []:
         if ent.type == "text_mention" and ent.user:
-            add_user(chat.id, ent.user)
-            users.append({
-                "id": ent.user.id,
-                "name": ent.user.first_name,
-            })
+            u = ent.user
+            if await _is_chat_member(context.bot, chat.id, u.id):
+                add_user(chat.id, u)
+                users.append({"id": u.id, "name": str(u.first_name or "Unknown")})
 
     pool = get_users_pool(chat.id)
 
     if len(users) < 2:
-        if len(pool) < 2:
+        pool_ids = [p for p in pool if p.get("id") is not None]
+        if len(pool_ids) < 2:
             return await msg.reply_text("❌ Belum cukup orang buat di-ship.")
-        users = random.sample(pool, 2)
+
+        picked = None
+        for _ in range(12):
+            a, b = random.sample(pool_ids, 2)
+            ok_a = await _is_chat_member(context.bot, chat.id, int(a["id"]))
+            ok_b = await _is_chat_member(context.bot, chat.id, int(b["id"]))
+            if ok_a and ok_b:
+                picked = (a, b)
+                break
+
+        if not picked:
+            return await msg.reply_text("❌ Belum nemu 2 member aktif buat di-ship (pool banyak yang udah keluar).")
+
+        users = [picked[0], picked[1]]
 
     u1, u2 = users[:2]
 
