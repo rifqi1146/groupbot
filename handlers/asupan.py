@@ -77,18 +77,18 @@ def _db_load_enabled(table: str) -> set[int]:
     try:
         if table == "asupan_autodel":
             cur = con.execute("SELECT chat_id FROM asupan_autodel WHERE enabled=1")
-        else:
-            cur = con.execute("SELECT chat_id FROM asupan_groups")
+            rows = cur.fetchall()
+            if rows:
+                return {int(r[0]) for r in rows if r and r[0] is not None}
+
+            cur = con.execute("SELECT chat_id FROM asupan_autodel")
+            rows = cur.fetchall()
+            return {int(r[0]) for r in rows if r and r[0] is not None}
+
+        cur = con.execute("SELECT chat_id FROM asupan_groups")
         rows = cur.fetchall()
-        out = set()
-        for r in rows:
-            if not r:
-                continue
-            try:
-                out.add(int(r[0]))
-            except Exception:
-                pass
-        return out
+        return {int(r[0]) for r in rows if r and r[0] is not None}
+
     finally:
         con.close()
 
@@ -100,20 +100,37 @@ def _db_set_enabled(table: str, s: set[int]):
         now = time.time()
         src = "runtime"
 
-        con.execute(f"DELETE FROM {table}")
-
         if table == "asupan_autodel":
+            con.execute("UPDATE asupan_autodel SET enabled=0, updated_at=?", (now,))
             if s:
                 con.executemany(
-                    "INSERT INTO asupan_autodel (source_file, chat_id, enabled, updated_at) VALUES (?, ?, 1, ?)",
+                    """
+                    INSERT INTO asupan_autodel (source_file, chat_id, enabled, updated_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(source_file, chat_id) DO UPDATE SET
+                      enabled=1,
+                      updated_at=excluded.updated_at
+                    """,
                     [(src, int(cid), now) for cid in s],
                 )
+
         else:
             if s:
                 con.executemany(
-                    "INSERT INTO asupan_groups (source_file, chat_id, added_at) VALUES (?, ?, ?)",
+                    """
+                    INSERT INTO asupan_groups (source_file, chat_id, added_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(source_file, chat_id) DO UPDATE SET
+                      added_at=excluded.added_at
+                    """,
                     [(src, int(cid), now) for cid in s],
                 )
+
+            con.execute(
+                "DELETE FROM asupan_groups WHERE source_file=? AND chat_id NOT IN (%s)"
+                % (",".join("?" * len(s)) if s else "-1"),
+                (src, *[int(cid) for cid in s]) if s else (src,),
+            )
 
         con.execute("COMMIT")
     except Exception:
