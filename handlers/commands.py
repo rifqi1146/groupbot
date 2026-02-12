@@ -47,7 +47,7 @@ COMMAND_HANDLERS = [
     ("caca", meta_query, False),
     ("cacaa", meta_query, False),
     ("mode", meta_query, False),
-    ("cacamode", meta_query, False),
+    ("premium", meta_query, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
     ("update", update_cmd, False),
