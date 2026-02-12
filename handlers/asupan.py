@@ -49,18 +49,21 @@ def _asupan_db_init():
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS asupan_groups (
-                chat_id INTEGER PRIMARY KEY,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at REAL NOT NULL
+                source_file TEXT NOT NULL,
+                chat_id INTEGER NOT NULL,
+                added_at REAL NOT NULL,
+                PRIMARY KEY (source_file, chat_id)
             )
             """
         )
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS asupan_autodel (
-                chat_id INTEGER PRIMARY KEY,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at REAL NOT NULL
+                source_file TEXT NOT NULL,
+                chat_id INTEGER NOT NULL,
+                enabled INTEGER NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (source_file, chat_id)
             )
             """
         )
@@ -72,7 +75,10 @@ def _asupan_db_init():
 def _db_load_enabled(table: str) -> set[int]:
     con = sqlite3.connect(ASUPAN_DB_PATH)
     try:
-        cur = con.execute(f"SELECT chat_id FROM {table} WHERE enabled=1")
+        if table == "asupan_autodel":
+            cur = con.execute("SELECT chat_id FROM asupan_autodel WHERE enabled=1")
+        else:
+            cur = con.execute("SELECT chat_id FROM asupan_groups")
         rows = cur.fetchall()
         out = set()
         for r in rows:
@@ -92,12 +98,23 @@ def _db_set_enabled(table: str, s: set[int]):
     try:
         con.execute("BEGIN")
         now = time.time()
+        src = "runtime"
+
         con.execute(f"DELETE FROM {table}")
-        if s:
-            con.executemany(
-                f"INSERT INTO {table} (chat_id, enabled, updated_at) VALUES (?, 1, ?)",
-                [(int(cid), now) for cid in s],
-            )
+
+        if table == "asupan_autodel":
+            if s:
+                con.executemany(
+                    "INSERT INTO asupan_autodel (source_file, chat_id, enabled, updated_at) VALUES (?, ?, 1, ?)",
+                    [(src, int(cid), now) for cid in s],
+                )
+        else:
+            if s:
+                con.executemany(
+                    "INSERT INTO asupan_groups (source_file, chat_id, added_at) VALUES (?, ?, ?)",
+                    [(src, int(cid), now) for cid in s],
+                )
+
         con.execute("COMMIT")
     except Exception:
         try:
