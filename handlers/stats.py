@@ -235,7 +235,8 @@ def _render_dashboard(stats):
     if not Image or not ImageDraw or not ImageFont:
         return None
 
-    W, H = 1280, 720
+    W, H = 1920, 1080
+    S = 1.5
 
     bg0 = (12, 14, 18)
     bg1 = (18, 21, 28)
@@ -259,28 +260,28 @@ def _render_dashboard(stats):
         b = int(bg0[2] * (1 - t) + bg1[2] * t)
         d.line([(0, yy), (W, yy)], fill=(r, g, b))
 
-    f_title = _load_font(30, mono=False)
-    f_h = _load_font(20, mono=False)
-    f = _load_font(18, mono=False)
-    f_mono = _load_font(18, mono=True)
-    f_small = _load_font(14, mono=False)
-    f_small_mono = _load_font(14, mono=True)
+    f_title = _load_font(int(30 * S), mono=False)
+    f_h = _load_font(int(20 * S), mono=False)
+    f = _load_font(int(18 * S), mono=False)
+    f_mono = _load_font(int(18 * S), mono=True)
+    f_small = _load_font(int(14 * S), mono=False)
+    f_small_mono = _load_font(int(14 * S), mono=True)
 
-    pad = 28
-    gap = 18
+    pad = int(28 * S)
+    gap = int(18 * S)
 
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stats["ts"]))
-    d.text((pad, pad - 2), "📈 System Stats", font=f_title, fill=text)
-    d.text((pad, pad + 34), f"Updated: {ts}", font=f_small, fill=muted)
+    d.text((pad, int(pad - 2 * S)), "📈 System Stats", font=f_title, fill=text)
+    d.text((pad, pad + int(34 * S)), f"Updated: {ts}", font=f_small, fill=muted)
 
     x0 = pad
-    y0 = pad + 78
+    y0 = pad + int(78 * S)
     col_gap = gap
     col_w = (W - pad * 2 - col_gap) // 2
     left_x = x0
     right_x = x0 + col_w + col_gap
 
-    top_h = 250
+    top_h = int(250 * S)
     bottom_h = H - y0 - top_h - gap
 
     cpu_card = (left_x, y0, left_x + col_w, y0 + top_h)
@@ -289,77 +290,82 @@ def _render_dashboard(stats):
     net_card = (right_x, y0 + top_h + gap, right_x + col_w, y0 + top_h + gap + bottom_h)
 
     for rect, fillc in ((cpu_card, card), (sys_card, card), (res_card, card2), (net_card, card2)):
-        _draw_round_rect(d, rect, 18, fill=fillc, outline=border, width=1)
+        _draw_round_rect(d, rect, int(18 * S), fill=fillc, outline=border, width=1)
 
     cx0, cy0, cx1, cy1 = cpu_card
-    d.text((cx0 + 18, cy0 + 16), "⚙️ CPU", font=f_h, fill=text)
+    d.text((cx0 + int(18 * S), cy0 + int(16 * S)), "⚙️ CPU", font=f_h, fill=text)
 
     cpu = stats["cpu"]
     cpu_load = _safe_pct(cpu["load"])
-    d.text((cx0 + 18, cy0 + 56), f"Cores: {cpu['cores']}", font=f, fill=muted)
-    d.text((cx0 + 18, cy0 + 80), f"Freq : {cpu['freq']}", font=f, fill=muted)
+    d.text((cx0 + int(18 * S), cy0 + int(56 * S)), f"Cores: {cpu['cores']}", font=f, fill=muted)
+    d.text((cx0 + int(18 * S), cy0 + int(80 * S)), f"Freq : {cpu['freq']}", font=f, fill=muted)
 
-    bar_x = cx0 + 18
-    bar_y = cy0 + 118
-    bar_w = (cx1 - cx0) - 36
-    bar_h = 22
-    _bar(d, bar_x, bar_y, bar_w, bar_h, cpu_load, bar_bg, bar_fg, border, r=11)
-    d.text((bar_x, bar_y + 30), f"Load: {cpu_load:.1f}%", font=f_mono, fill=text)
+    bar_x = cx0 + int(18 * S)
+    bar_y = cy0 + int(118 * S)
+    bar_w = (cx1 - cx0) - int(36 * S)
+    bar_h = int(22 * S)
+    _bar(d, bar_x, bar_y, bar_w, bar_h, cpu_load, bar_bg, bar_fg, border, r=int(11 * S))
+    d.text((bar_x, bar_y + int(30 * S)), f"Load: {cpu_load:.1f}%", font=f_mono, fill=text)
 
     try:
         if psutil:
             la = os.getloadavg()
-            d.text((bar_x, bar_y + 56), f"LoadAvg: {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}", font=f_small_mono, fill=muted)
+            d.text(
+                (bar_x, bar_y + int(56 * S)),
+                f"LoadAvg: {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}",
+                font=f_small_mono,
+                fill=muted
+            )
     except Exception:
         pass
 
     sx0, sy0, sx1, sy1 = sys_card
-    d.text((sx0 + 18, sy0 + 16), "🖥️ System", font=f_h, fill=text)
+    d.text((sx0 + int(18 * S), sy0 + int(16 * S)), "🖥️ System", font=f_h, fill=text)
 
     sysi = stats["sys"]
-    d.text((sx0 + 18, sy0 + 56), f"OS     : {sysi['os']}", font=f_small, fill=muted)
-    d.text((sx0 + 18, sy0 + 78), f"Kernel : {sysi['kernel']}", font=f_small, fill=muted)
-    d.text((sx0 + 18, sy0 + 100), f"Python : {sysi['python']}", font=f_small, fill=muted)
-    d.text((sx0 + 18, sy0 + 122), f"Uptime : {sysi['uptime']}", font=f_small, fill=muted)
+    d.text((sx0 + int(18 * S), sy0 + int(56 * S)), f"OS     : {sysi['os']}", font=f_small, fill=muted)
+    d.text((sx0 + int(18 * S), sy0 + int(78 * S)), f"Kernel : {sysi['kernel']}", font=f_small, fill=muted)
+    d.text((sx0 + int(18 * S), sy0 + int(100 * S)), f"Python : {sysi['python']}", font=f_small, fill=muted)
+    d.text((sx0 + int(18 * S), sy0 + int(122 * S)), f"Uptime : {sysi['uptime']}", font=f_small, fill=muted)
 
     rx = stats["net"]["rx"]
     tx = stats["net"]["tx"]
-    d.text((sx0 + 18, sy0 + 160), "Quick Net", font=f, fill=text)
-    d.text((sx0 + 18, sy0 + 184), f"RX: {humanize_bytes(rx)}", font=f_mono, fill=muted)
-    d.text((sx0 + 18, sy0 + 206), f"TX: {humanize_bytes(tx)}", font=f_mono, fill=muted)
+    d.text((sx0 + int(18 * S), sy0 + int(160 * S)), "Network", font=f, fill=text)
+    d.text((sx0 + int(18 * S), sy0 + int(184 * S)), f"RX: {humanize_bytes(rx)}", font=f_mono, fill=muted)
+    d.text((sx0 + int(18 * S), sy0 + int(206 * S)), f"TX: {humanize_bytes(tx)}", font=f_mono, fill=muted)
 
     rx0, ry0, rx1, ry1 = res_card
-    d.text((rx0 + 18, ry0 + 16), "🧠 Memory + 💾 Disk", font=f_h, fill=text)
+    d.text((rx0 + int(18 * S), ry0 + int(16 * S)), "🧠 Memory + 💾 Disk", font=f_h, fill=text)
 
     ram = stats["ram"]
     ram_pct = _safe_pct(ram["pct"])
-    d.text((rx0 + 18, ry0 + 58), "RAM", font=f, fill=text)
-    d.text((rx0 + 90, ry0 + 58), f"{humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])}", font=f_mono, fill=muted)
-    _bar(d, rx0 + 18, ry0 + 86, (rx1 - rx0) - 36, 22, ram_pct, bar_bg, bar_fg, border, r=11)
-    d.text((rx0 + 18, ry0 + 114), f"{ram_pct:.1f}%", font=f_mono, fill=text)
+    d.text((rx0 + int(18 * S), ry0 + int(58 * S)), "RAM", font=f, fill=text)
+    d.text((rx0 + int(90 * S), ry0 + int(58 * S)), f"{humanize_bytes(ram['used'])} / {humanize_bytes(ram['total'])}", font=f_mono, fill=muted)
+    _bar(d, rx0 + int(18 * S), ry0 + int(86 * S), (rx1 - rx0) - int(36 * S), int(22 * S), ram_pct, bar_bg, bar_fg, border, r=int(11 * S))
+    d.text((rx0 + int(18 * S), ry0 + int(114 * S)), f"{ram_pct:.1f}%", font=f_mono, fill=text)
 
     swap = stats["swap"]
     swap_total = int(swap["total"] or 0)
     swap_pct = _safe_pct(swap["pct"])
-    d.text((rx0 + 18, ry0 + 148), "Swap", font=f, fill=text)
+    d.text((rx0 + int(18 * S), ry0 + int(148 * S)), "Swap", font=f, fill=text)
     if swap_total > 0:
-        d.text((rx0 + 90, ry0 + 148), f"{humanize_bytes(swap['used'])} / {humanize_bytes(swap['total'])}", font=f_mono, fill=muted)
-        _bar(d, rx0 + 18, ry0 + 176, (rx1 - rx0) - 36, 18, swap_pct, bar_bg, bar_fg2, border, r=9)
-        d.text((rx0 + 18, ry0 + 198), f"{swap_pct:.1f}%", font=f_small_mono, fill=muted)
+        d.text((rx0 + int(90 * S), ry0 + int(148 * S)), f"{humanize_bytes(swap['used'])} / {humanize_bytes(swap['total'])}", font=f_mono, fill=muted)
+        _bar(d, rx0 + int(18 * S), ry0 + int(176 * S), (rx1 - rx0) - int(36 * S), int(18 * S), swap_pct, bar_bg, bar_fg2, border, r=int(9 * S))
+        d.text((rx0 + int(18 * S), ry0 + int(198 * S)), f"{swap_pct:.1f}%", font=f_small_mono, fill=muted)
     else:
-        d.text((rx0 + 90, ry0 + 148), "N/A", font=f_mono, fill=muted)
+        d.text((rx0 + int(90 * S), ry0 + int(148 * S)), "N/A", font=f_mono, fill=muted)
 
     disk = stats["disk"]
     disk_pct = _safe_pct(disk["pct"])
-    d.text((rx0 + 18, ry0 + 232), "Disk (/)", font=f, fill=text)
-    d.text((rx0 + 110, ry0 + 232), f"{humanize_bytes(disk['used'])} / {humanize_bytes(disk['total'])}", font=f_mono, fill=muted)
-    _bar(d, rx0 + 18, ry0 + 260, (rx1 - rx0) - 36, 22, disk_pct, bar_bg, bar_fg, border, r=11)
-    d.text((rx0 + 18, ry0 + 288), f"{disk_pct:.1f}% free {humanize_bytes(disk['free'])}", font=f_small_mono, fill=muted)
+    d.text((rx0 + int(18 * S), ry0 + int(232 * S)), "Disk (/)", font=f, fill=text)
+    d.text((rx0 + int(110 * S), ry0 + int(232 * S)), f"{humanize_bytes(disk['used'])} / {humanize_bytes(disk['total'])}", font=f_mono, fill=muted)
+    _bar(d, rx0 + int(18 * S), ry0 + int(260 * S), (rx1 - rx0) - int(36 * S), int(22 * S), disk_pct, bar_bg, bar_fg, border, r=int(11 * S))
+    d.text((rx0 + int(18 * S), ry0 + int(288 * S)), f"{disk_pct:.1f}% free {humanize_bytes(disk['free'])}", font=f_small_mono, fill=muted)
 
     nx0, ny0, nx1, ny1 = net_card
-    d.text((nx0 + 18, ny0 + 16), "🌐 Network", font=f_h, fill=text)
-    d.text((nx0 + 18, ny0 + 58), f"RX Total: {humanize_bytes(rx)}", font=f_mono, fill=muted)
-    d.text((nx0 + 18, ny0 + 82), f"TX Total: {humanize_bytes(tx)}", font=f_mono, fill=muted)
+    d.text((nx0 + int(18 * S), ny0 + int(16 * S)), "🌐 Network", font=f_h, fill=text)
+    d.text((nx0 + int(18 * S), ny0 + int(58 * S)), f"RX Total: {humanize_bytes(rx)}", font=f_mono, fill=muted)
+    d.text((nx0 + int(18 * S), ny0 + int(82 * S)), f"TX Total: {humanize_bytes(tx)}", font=f_mono, fill=muted)
 
     if psutil:
         try:
@@ -374,28 +380,29 @@ def _render_dashboard(stats):
             dt = max(0.001, time.time() - t0)
             rxps = (rx1b - rx0b) / dt
             txps = (tx1b - tx0b) / dt
-            d.text((nx0 + 18, ny0 + 120), "Speed (approx)", font=f, fill=text)
-            d.text((nx0 + 18, ny0 + 144), f"RX/s: {humanize_bytes(int(rxps))}/s", font=f_mono, fill=muted)
-            d.text((nx0 + 18, ny0 + 168), f"TX/s: {humanize_bytes(int(txps))}/s", font=f_mono, fill=muted)
+
+            d.text((nx0 + int(18 * S), ny0 + int(120 * S)), "Speed (approx)", font=f, fill=text)
+            d.text((nx0 + int(18 * S), ny0 + int(144 * S)), f"RX/s: {humanize_bytes(int(rxps))}/s", font=f_mono, fill=muted)
+            d.text((nx0 + int(18 * S), ny0 + int(168 * S)), f"TX/s: {humanize_bytes(int(txps))}/s", font=f_mono, fill=muted)
 
             peak = max(rxps, txps, 1.0)
             rxp = min(100.0, (rxps / peak) * 100.0)
             txp = min(100.0, (txps / peak) * 100.0)
 
-            d.text((nx0 + 18, ny0 + 206), "RX", font=f_small, fill=text)
-            _bar(d, nx0 + 58, ny0 + 206, (nx1 - nx0) - 76, 16, rxp, bar_bg, bar_fg, border, r=8)
+            d.text((nx0 + int(18 * S), ny0 + int(206 * S)), "RX", font=f_small, fill=text)
+            _bar(d, nx0 + int(58 * S), ny0 + int(206 * S), (nx1 - nx0) - int(76 * S), int(16 * S), rxp, bar_bg, bar_fg, border, r=int(8 * S))
 
-            d.text((nx0 + 18, ny0 + 234), "TX", font=f_small, fill=text)
-            _bar(d, nx0 + 58, ny0 + 234, (nx1 - nx0) - 76, 16, txp, bar_bg, bar_fg2, border, r=8)
+            d.text((nx0 + int(18 * S), ny0 + int(234 * S)), "TX", font=f_small, fill=text)
+            _bar(d, nx0 + int(58 * S), ny0 + int(234 * S), (nx1 - nx0) - int(76 * S), int(16 * S), txp, bar_bg, bar_fg2, border, r=int(8 * S))
         except Exception:
             pass
 
     footer = f"PID: {os.getpid()}  •  Host: {platform.node() or 'N/A'}"
-    d.text((pad, H - 24 - 2), footer, font=f_small, fill=(120, 130, 150))
+    d.text((pad, H - int(24 * S) - 2), footer, font=f_small, fill=(120, 130, 150))
 
     bio = io.BytesIO()
     bio.name = "stats.png"
-    img.save(bio, format="PNG")
+    img.save(bio, format="PNG", compress_level=3)
     bio.seek(0)
     return bio
 
