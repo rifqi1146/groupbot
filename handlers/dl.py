@@ -45,6 +45,25 @@ PREMIUM_ONLY_DOMAINS = {
     "xnxx.com",
 }
 
+AUTO_DOWNLOAD_DOMAINS = {
+    "youtube.com",
+    "youtu.be",
+    "music.youtube.com",
+    "tiktok.com",
+    "vt.tiktok.com",
+    "vm.tiktok.com",
+    "instagram.com",
+    "instagr.am",
+    "facebook.com",
+    "fb.watch",
+    "fb.com",
+    "m.facebook.com",
+    "twitter.com",
+    "x.com",
+    "reddit.com",
+    "redd.it",
+}
+
 
 def progress_bar(percent: float, length: int = 12) -> str:
     try:
@@ -186,64 +205,9 @@ def _is_premium_required(url: str) -> bool:
             return True
     return False
 
-
-def is_youtube(url: str) -> bool:
-    return any(
-        x in url
-        for x in (
-            "youtube.com",
-            "youtu.be",
-            "music.youtube.com",
-        )
-    )
-
-
-def is_tiktok(url: str) -> bool:
-    return any(
-        x in url
-        for x in (
-            "tiktok.com",
-            "vt.tiktok.com",
-            "vm.tiktok.com",
-        )
-    )
-
-
-def is_instagram(url: str) -> bool:
-    return any(x in url for x in ("instagram.com", "instagr.am"))
-
-
-def is_facebook(url: str) -> bool:
-    return any(
-        x in url
-        for x in (
-            "facebook.com",
-            "fb.watch",
-            "fb.com",
-            "m.facebook.com",
-        )
-    )
-
-
-def is_twitter_x(url: str) -> bool:
-    return any(x in url for x in ("twitter.com", "x.com"))
-
-
-def is_reddit(url: str) -> bool:
-    return any(x in url for x in ("reddit.com", "redd.it"))
-
-
 def is_supported_platform(url: str) -> bool:
-    return any(
-        (
-            is_tiktok(url),
-            is_youtube(url),
-            is_instagram(url),
-            is_facebook(url),
-            is_twitter_x(url),
-            is_reddit(url),
-        )
-    )
+    url = (url or "").lower()
+    return any(domain in url for domain in AUTO_DOWNLOAD_DOMAINS)
 
 
 def normalize_url(text: str) -> str:
