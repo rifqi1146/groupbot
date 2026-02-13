@@ -137,7 +137,7 @@ HELP_TEXT.update({
 
     "help:cacaa": (
         "😍 <b>Caca Settings</b>\n\n"
-        "• <code>/mode</code> Change persona caca (Premium Only)\n"
+        "• <code>/mode</code> — Change persona caca (Premium Only)\n"
         "• <code>/cacaa enable</code> — Aktifkan Caca di grup\n"
         "• <code>/cacaa disable</code> — Matikan Caca di grup\n"
         "• <code>/cacaa status</code> — Cek status Caca\n\n"
