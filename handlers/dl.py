@@ -187,28 +187,6 @@ def _is_premium_required(url: str) -> bool:
     return False
 
 
-def is_pornhub(url: str) -> bool:
-    return any(
-        x in url
-        for x in (
-            "pornhub.com",
-            "www.pornhub.com",
-            "m.pornhub.com",
-        )
-    )
-
-
-def is_xnxx(url: str) -> bool:
-    return any(
-        x in url
-        for x in (
-            "xnxx.com",
-            "www.xnxx.com",
-            "m.xnxx.com",
-        )
-    )
-
-
 def is_youtube(url: str) -> bool:
     return any(
         x in url
@@ -264,8 +242,6 @@ def is_supported_platform(url: str) -> bool:
             is_facebook(url),
             is_twitter_x(url),
             is_reddit(url),
-            is_pornhub(url),
-            is_xnxx(url),
         )
     )
 
@@ -434,40 +410,56 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         return []
 
     formats = info.get("formats") or []
-    by_h = {}
+    by_h: dict[int, dict] = {}
 
     for f in formats:
         h = f.get("height")
         if not h:
             continue
 
+        try:
+            h = int(h)
+        except Exception:
+            continue
+
+        if h < 144 or h > 1080:
+            continue
+
         vcodec = str(f.get("vcodec") or "")
         if vcodec == "none":
+            continue
+
+        fid = str(f.get("format_id") or "")
+        if not fid:
             continue
 
         acodec = str(f.get("acodec") or "")
         ext = str(f.get("ext") or "")
         filesize = f.get("filesize") or f.get("filesize_approx") or 0
-        fid = str(f.get("format_id") or "")
+        try:
+            filesize = int(filesize) if filesize else 0
+        except Exception:
+            filesize = 0
 
-        cur = by_h.get(h)
         pick = {
-            "height": int(h),
+            "height": h,
             "format_id": fid,
             "ext": ext,
             "has_audio": acodec != "none",
-            "filesize": int(filesize) if filesize else 0,
+            "filesize": filesize,
         }
 
+        cur = by_h.get(h)
         if not cur:
             by_h[h] = pick
             continue
 
-        if pick["filesize"] and (not cur["filesize"] or pick["filesize"] < cur["filesize"]):
+        cur_size = int(cur.get("filesize") or 0)
+        if pick["filesize"] and (not cur_size or pick["filesize"] < cur_size):
             by_h[h] = pick
 
     out = list(by_h.values())
-    out.sort(key=lambda x: x["height"], reverse=True)
+    out.sort(key=lambda x: int(x.get("height") or 0), reverse=True)
     return out
 
 
@@ -477,22 +469,15 @@ async def get_resolutions(url: str) -> list[dict]:
 
 def res_keyboard(dl_id: str, res_list: list[dict]):
     rows = []
-    for r in res_list[:10]:
+    for r in res_list:
         h = int(r.get("height") or 0)
         if not h:
             continue
-        size = r.get("filesize") or 0
+        size = int(r.get("filesize") or 0)
         label = f"{h}p"
         if size:
             label += f" • {_fmt_bytes(size)}"
         rows.append([InlineKeyboardButton(label, callback_data=f"dlres:{dl_id}:{h}")])
-
-    if not rows:
-        rows = [
-            [InlineKeyboardButton("1080p", callback_data=f"dlres:{dl_id}:1080")],
-            [InlineKeyboardButton("720p", callback_data=f"dlres:{dl_id}:720")],
-            [InlineKeyboardButton("480p", callback_data=f"dlres:{dl_id}:480")],
-        ]
 
     rows.append([InlineKeyboardButton("❌ Cancel", callback_data=f"dl:{dl_id}:cancel")])
     return InlineKeyboardMarkup(rows)
@@ -623,7 +608,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     return out_path
 
 
-async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, height: int | None = None):
+async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
@@ -718,8 +703,11 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, height: int 
         if code != 0:
             return None
     else:
-        if height:
-            fmt = f"bestvideo[height<={int(height)}]+bestaudio/best[height<={int(height)}]"
+        if format_id:
+            if has_audio:
+                fmt = format_id
+            else:
+                fmt = f"{format_id}+bestaudio/best"
         else:
             fmt = "bestvideo*+bestaudio/best"
 
@@ -814,17 +802,9 @@ def reencode_mp3(src_path: str) -> str:
     return fixed_path
 
 
-async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, height: int | None = None):
+async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     bot = app.bot
     path = None
-
-    def detect_media_type(p):
-        ext = os.path.splitext(p.lower())[1]
-        if ext in (".jpg", ".jpeg", ".png", ".webp"):
-            return "photo"
-        if ext in (".mp4", ".mkv", ".webm"):
-            return "video"
-        return "unknown"
 
     try:
         if is_tiktok(raw_url):
@@ -944,7 +924,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, he
                 bot,
                 chat_id,
                 status_msg_id,
-                height=height,
+                format_id=format_id,
+                has_audio=has_audio,
             )
 
         if not path or not os.path.exists(path):
@@ -1076,9 +1057,23 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = data["url"]
 
-    if choice == "video" and (is_youtube(url) or is_xnxx(url)):
+    if choice == "video" and is_youtube(url):
         await q.edit_message_text("🔎 <b>Ngambil resolusi...</b>", parse_mode="HTML")
         res_list = await get_resolutions(url)
+
+        res_map = {}
+        for r in res_list:
+            h = int(r.get("height") or 0)
+            fid = str(r.get("format_id") or "")
+            if h and fid:
+                res_map[h] = {
+                    "format_id": fid,
+                    "has_audio": bool(r.get("has_audio")),
+                    "filesize": int(r.get("filesize") or 0),
+                }
+
+        DL_CACHE[dl_id]["res_map"] = res_map
+
         return await q.edit_message_text(
             "🎚️ <b>Pilih resolusi</b>",
             reply_markup=res_keyboard(dl_id, res_list),
@@ -1100,7 +1095,8 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raw_url=url,
             fmt_key=choice,
             status_msg_id=q.message.message_id,
-            height=None,
+            format_id=None,
+            has_audio=False,
         )
     )
 
@@ -1124,7 +1120,13 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         height = int(h)
     except Exception:
-        height = None
+        height = 0
+
+    res_map = data.get("res_map") or {}
+    pick = res_map.get(height) or {}
+
+    format_id = str(pick.get("format_id") or "")
+    has_audio = bool(pick.get("has_audio"))
 
     DL_CACHE.pop(dl_id, None)
 
@@ -1142,7 +1144,8 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raw_url=data["url"],
             fmt_key="video",
             status_msg_id=q.message.message_id,
-            height=height,
+            format_id=format_id if format_id else None,
+            has_audio=has_audio,
         )
     )
 
