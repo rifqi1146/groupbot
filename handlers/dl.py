@@ -26,7 +26,6 @@ from utils.text import bold, code, italic, underline, link, mono
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
 
-# dl config
 TMP_DIR = "downloads"
 os.makedirs(TMP_DIR, exist_ok=True)
 
@@ -34,7 +33,6 @@ AUTO_DL_DB = "data/auto_dl.sqlite3"
 
 MAX_TG_SIZE = 1900 * 1024 * 1024
 
-# format
 DL_FORMATS = {
     "video": {"label": "🎥 Video"},
     "mp3": {"label": "🎵 MP3"},
@@ -47,7 +45,7 @@ PREMIUM_ONLY_DOMAINS = {
     "xnxx.com",
 }
 
-# ux
+
 def progress_bar(percent: float, length: int = 12) -> str:
     try:
         p = max(0.0, min(100.0, float(percent)))
@@ -58,22 +56,25 @@ def progress_bar(percent: float, length: int = 12) -> str:
     bar = "▰" * filled + "▱" * empty
     return f"{bar} {p:.1f}%"
 
+
 def sanitize_filename(name: str, max_len: int = 80) -> str:
     name = (name or "").strip()
     name = re.sub(r'[\\/:*?"<>|]', "", name)
     name = re.sub(r"\s+", " ", name)
     return name[:max_len] or "video"
 
+
 def dl_keyboard(dl_id: str):
-    return InlineKeyboardMarkup([
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("🎥 Video", callback_data=f"dl:{dl_id}:video"),
-            InlineKeyboardButton("🎵 MP3", callback_data=f"dl:{dl_id}:mp3"),
-        ],
-        [
-            InlineKeyboardButton("❌ Cancel", callback_data=f"dl:{dl_id}:cancel")
+            [
+                InlineKeyboardButton("🎥 Video", callback_data=f"dl:{dl_id}:video"),
+                InlineKeyboardButton("🎵 MP3", callback_data=f"dl:{dl_id}:mp3"),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"dl:{dl_id}:cancel")],
         ]
-    ])
+    )
+
 
 def detect_media_type(path: str) -> str:
     ext = os.path.splitext(path.lower())[1]
@@ -83,7 +84,7 @@ def detect_media_type(path: str) -> str:
         return "video"
     return "unknown"
 
-# sqlite
+
 def _auto_dl_db_init():
     os.makedirs("data", exist_ok=True)
     con = sqlite3.connect(AUTO_DL_DB)
@@ -103,9 +104,11 @@ def _auto_dl_db_init():
     finally:
         con.close()
 
+
 def _auto_dl_db():
     _auto_dl_db_init()
     return sqlite3.connect(AUTO_DL_DB)
+
 
 def _load_auto_dl() -> set[int]:
     con = _auto_dl_db()
@@ -114,6 +117,7 @@ def _load_auto_dl() -> set[int]:
         return {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
     finally:
         con.close()
+
 
 def _save_auto_dl(groups: set[int]):
     con = _auto_dl_db()
@@ -155,8 +159,8 @@ def _is_premium_user(user_id: int) -> bool:
         s = set()
 
     return is_premium(uid, s)
-        
-        
+
+
 def _extract_domain(url: str) -> str:
     u = (url or "").strip().lower()
 
@@ -181,95 +185,115 @@ def _is_premium_required(url: str) -> bool:
         if host == d or host.endswith("." + d):
             return True
     return False
-    
-                    
-# platform check
+
+
 def is_pornhub(url: str) -> bool:
-    return any(x in url for x in (
-        "pornhub.com",
-        "www.pornhub.com",
-        "m.pornhub.com",
-    ))
+    return any(
+        x in url
+        for x in (
+            "pornhub.com",
+            "www.pornhub.com",
+            "m.pornhub.com",
+        )
+    )
+
 
 def is_xnxx(url: str) -> bool:
-    return any(x in url for x in (
-        "xnxx.com",
-        "www.xnxx.com",
-        "m.xnxx.com",
-    ))
-    
+    return any(
+        x in url
+        for x in (
+            "xnxx.com",
+            "www.xnxx.com",
+            "m.xnxx.com",
+        )
+    )
+
+
 def is_youtube(url: str) -> bool:
-    return any(x in url for x in (
-        "youtube.com",
-        "youtu.be",
-        "music.youtube.com",
-    ))
+    return any(
+        x in url
+        for x in (
+            "youtube.com",
+            "youtu.be",
+            "music.youtube.com",
+        )
+    )
+
 
 def is_tiktok(url: str) -> bool:
-    return any(x in url for x in (
-        "tiktok.com",
-        "vt.tiktok.com",
-        "vm.tiktok.com",
-    ))
+    return any(
+        x in url
+        for x in (
+            "tiktok.com",
+            "vt.tiktok.com",
+            "vm.tiktok.com",
+        )
+    )
+
 
 def is_instagram(url: str) -> bool:
-    return any(x in url for x in (
-        "instagram.com",
-        "instagr.am",
-    ))
+    return any(x in url for x in ("instagram.com", "instagr.am"))
+
 
 def is_facebook(url: str) -> bool:
-    return any(x in url for x in (
-        "facebook.com",
-        "fb.watch",
-        "fb.com",
-        "m.facebook.com",
-    ))
+    return any(
+        x in url
+        for x in (
+            "facebook.com",
+            "fb.watch",
+            "fb.com",
+            "m.facebook.com",
+        )
+    )
+
 
 def is_twitter_x(url: str) -> bool:
-    return any(x in url for x in (
-        "twitter.com",
-        "x.com",
-    ))
+    return any(x in url for x in ("twitter.com", "x.com"))
+
 
 def is_reddit(url: str) -> bool:
-    return any(x in url for x in (
-        "reddit.com",
-        "redd.it",
-    ))
+    return any(x in url for x in ("reddit.com", "redd.it"))
+
 
 def is_supported_platform(url: str) -> bool:
-    return any((
-        is_tiktok(url),
-        is_youtube(url),
-        is_instagram(url),
-        is_facebook(url),
-        is_twitter_x(url),
-        is_reddit(url),
-        is_pornhub(url),
-        is_xnxx(url),
-    ))
+    return any(
+        (
+            is_tiktok(url),
+            is_youtube(url),
+            is_instagram(url),
+            is_facebook(url),
+            is_twitter_x(url),
+            is_reddit(url),
+            is_pornhub(url),
+            is_xnxx(url),
+        )
+    )
 
-# resolve tt
+
 def normalize_url(text: str) -> str:
     text = text.strip()
     text = text.replace("\u200b", "")
     text = text.split("\n")[0]
     return text
 
+
 def is_invalid_video(path: str) -> bool:
     try:
         p = subprocess.run(
             [
                 "ffprobe",
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=duration,width,height",
-                "-of", "json",
-                path
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=duration,width,height",
+                "-of",
+                "json",
+                path,
             ],
             capture_output=True,
-            text=True
+            text=True,
         )
         info = __import__("json").loads(p.stdout)
         stream = info["streams"][0]
@@ -281,6 +305,7 @@ def is_invalid_video(path: str) -> bool:
         return duration < 1.5 or width == 0 or height == 0
     except Exception:
         return True
+
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -298,6 +323,7 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except:
         return False
 
+
 async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     msg = update.message
@@ -306,14 +332,11 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type == "private":
         return await msg.reply_text(
             "ℹ️ Auto-detect selalu <b>AKTIF</b> di private chat.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     if not await _is_admin_or_owner(update, context):
-        return await msg.reply_text(
-            "❌ <b>Anda bukan admin</b>",
-            parse_mode="HTML"
-        )
+        return await msg.reply_text("❌ <b>Anda bukan admin</b>", parse_mode="HTML")
 
     groups = _load_auto_dl()
     arg = context.args[0].lower() if context.args else ""
@@ -323,7 +346,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _save_auto_dl(groups)
         return await msg.reply_text(
             "✅ Auto-detect link <b>AKTIF</b> di grup ini.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     if arg == "disable":
@@ -331,18 +354,16 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _save_auto_dl(groups)
         return await msg.reply_text(
             "❌ Auto-detect link <b>DIMATIKAN</b> di grup ini.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     if arg == "status":
         if chat.id in groups:
             return await msg.reply_text(
-                "📡 Status Auto-detect: <b>AKTIF</b>",
-                parse_mode="HTML"
+                "📡 Status Auto-detect: <b>AKTIF</b>", parse_mode="HTML"
             )
         return await msg.reply_text(
-            "📴 Status Auto-detect: <b>NONAKTIF</b>",
-            parse_mode="HTML"
+            "📴 Status Auto-detect: <b>NONAKTIF</b>", parse_mode="HTML"
         )
 
     if arg == "list":
@@ -352,7 +373,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not groups:
             return await msg.reply_text(
                 "📭 Belum ada grup dengan auto-detect aktif.",
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
 
         lines = ["📋 <b>Grup dengan Auto-detect Aktif:</b>\n"]
@@ -364,10 +385,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 lines.append(f"• <code>{gid}</code>")
 
-        return await msg.reply_text(
-            "\n".join(lines),
-            parse_mode="HTML"
-        )
+        return await msg.reply_text("\n".join(lines), parse_mode="HTML")
 
     return await msg.reply_text(
         "⚙️ <b>Usage:</b>\n"
@@ -375,10 +393,111 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<code>/autodl disable</code>\n"
         "<code>/autodl status</code>\n"
         "<code>/autodl list</code>",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
-# auto detect
+
+def _fmt_bytes(n: int) -> str:
+    try:
+        n = int(n)
+    except Exception:
+        return ""
+    units = ["B", "KB", "MB", "GB", "TB"]
+    v = float(n)
+    i = 0
+    while v >= 1024 and i < len(units) - 1:
+        v /= 1024.0
+        i += 1
+    return f"{v:.2f}{units[i]}"
+
+
+def _probe_resolutions_sync(url: str) -> list[dict]:
+    YT_DLP = shutil.which("yt-dlp")
+    if not YT_DLP:
+        return []
+
+    cmd = [
+        YT_DLP,
+        "--cookies",
+        COOKIES_PATH,
+        "--no-playlist",
+        "-J",
+        url,
+    ]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        return []
+
+    try:
+        info = __import__("json").loads(p.stdout)
+    except Exception:
+        return []
+
+    formats = info.get("formats") or []
+    by_h = {}
+
+    for f in formats:
+        h = f.get("height")
+        if not h:
+            continue
+
+        vcodec = str(f.get("vcodec") or "")
+        if vcodec == "none":
+            continue
+
+        acodec = str(f.get("acodec") or "")
+        ext = str(f.get("ext") or "")
+        filesize = f.get("filesize") or f.get("filesize_approx") or 0
+        fid = str(f.get("format_id") or "")
+
+        cur = by_h.get(h)
+        pick = {
+            "height": int(h),
+            "format_id": fid,
+            "ext": ext,
+            "has_audio": acodec != "none",
+            "filesize": int(filesize) if filesize else 0,
+        }
+
+        if not cur:
+            by_h[h] = pick
+            continue
+
+        if pick["filesize"] and (not cur["filesize"] or pick["filesize"] < cur["filesize"]):
+            by_h[h] = pick
+
+    out = list(by_h.values())
+    out.sort(key=lambda x: x["height"], reverse=True)
+    return out
+
+
+async def get_resolutions(url: str) -> list[dict]:
+    return await asyncio.to_thread(_probe_resolutions_sync, url)
+
+
+def res_keyboard(dl_id: str, res_list: list[dict]):
+    rows = []
+    for r in res_list[:10]:
+        h = int(r.get("height") or 0)
+        if not h:
+            continue
+        size = r.get("filesize") or 0
+        label = f"{h}p"
+        if size:
+            label += f" • {_fmt_bytes(size)}"
+        rows.append([InlineKeyboardButton(label, callback_data=f"dlres:{dl_id}:{h}")])
+
+    if not rows:
+        rows = [
+            [InlineKeyboardButton("1080p", callback_data=f"dlres:{dl_id}:1080")],
+            [InlineKeyboardButton("720p", callback_data=f"dlres:{dl_id}:720")],
+            [InlineKeyboardButton("480p", callback_data=f"dlres:{dl_id}:480")],
+        ]
+
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data=f"dl:{dl_id}:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
@@ -400,10 +519,10 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await require_join_or_block(update, context):
         return
-    
+
     if _is_premium_required(text) and not _is_premium_user(update.effective_user.id):
         return await msg.reply_text("🔞 Link ini hanya bisa didownload user premium.")
-            
+
     dl_id = uuid.uuid4().hex[:8]
 
     DL_CACHE[dl_id] = {
@@ -413,12 +532,14 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "ts": time.time(),
     }
 
-    keyboard = InlineKeyboardMarkup([
+    keyboard = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("⬇️ Download", callback_data=f"dlask:{dl_id}:go"),
-            InlineKeyboardButton("❌ Close", callback_data=f"dlask:{dl_id}:close"),
+            [
+                InlineKeyboardButton("⬇️ Download", callback_data=f"dlask:{dl_id}:go"),
+                InlineKeyboardButton("❌ Close", callback_data=f"dlask:{dl_id}:close"),
+            ]
         ]
-    ])
+    )
 
     await msg.reply_text(
         "👀 <b>Ketemu link</b>\n\nMau aku downloadin?",
@@ -426,7 +547,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
     )
 
-# ask callback
+
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
@@ -450,17 +571,17 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text(
         "📥 <b>Pilih format</b>",
         reply_markup=dl_keyboard(dl_id),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
-# douyin api
+
 async def douyin_download(url, bot, chat_id, status_msg_id):
     session = await get_http_session()
 
     async with session.post(
         "https://www.tikwm.com/api/",
         data={"url": url},
-        timeout=aiohttp.ClientTimeout(total=20)
+        timeout=aiohttp.ClientTimeout(total=20),
     ) as r:
         data = await r.json()
 
@@ -495,14 +616,14 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
                             "🚀 <b>Download...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
-                        parse_mode="HTML"
+                        parse_mode="HTML",
                     )
                     last = time.time()
 
     return out_path
 
-# fallback ytdlp
-async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
+
+async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, height: int | None = None):
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
@@ -514,9 +635,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         print(" ".join(cmd))
 
         proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
         last_edit = 0
@@ -552,7 +671,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
                             "🚀 <b>yt-dlp download...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
-                        parse_mode="HTML"
+                        parse_mode="HTML",
                     )
                 except Exception as e:
                     print("[TG EDIT ERROR]", e)
@@ -573,48 +692,73 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
         return proc.returncode
 
     if fmt_key == "mp3":
-        code = await run([
-            YT_DLP,
-            "--cookies", COOKIES_PATH,
-            "--js-runtimes", "deno:/root/.deno/bin/deno",
-            "--no-playlist",
-            "-f", "bestaudio/best",
-            "--extract-audio",
-            "--audio-format", "mp3",
-            "--audio-quality", "0",
-            "--newline",
-            "--progress-template",
-            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "-o", out_tpl,
-            url
-        ])
+        code = await run(
+            [
+                YT_DLP,
+                "--cookies",
+                COOKIES_PATH,
+                "--js-runtimes",
+                "deno:/root/.deno/bin/deno",
+                "--no-playlist",
+                "-f",
+                "bestaudio/best",
+                "--extract-audio",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                "0",
+                "--newline",
+                "--progress-template",
+                "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+                "-o",
+                out_tpl,
+                url,
+            ]
+        )
         if code != 0:
             return None
     else:
-        code = await run([
-            YT_DLP,
-            "--cookies", COOKIES_PATH,
-            "--js-runtimes", "deno:/root/.deno/bin/deno",
-            "--no-playlist",
-            "-f", "bestvideo*+bestaudio/best",
-            "--merge-output-format", "mp4",
-            "--newline",
-            "--progress-template",
-            "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "-o", out_tpl,
-            url
-        ])
+        if height:
+            fmt = f"bestvideo[height<={int(height)}]+bestaudio/best[height<={int(height)}]"
+        else:
+            fmt = "bestvideo*+bestaudio/best"
+
+        code = await run(
+            [
+                YT_DLP,
+                "--cookies",
+                COOKIES_PATH,
+                "--js-runtimes",
+                "deno:/root/.deno/bin/deno",
+                "--no-playlist",
+                "-f",
+                fmt,
+                "--merge-output-format",
+                "mp4",
+                "--newline",
+                "--progress-template",
+                "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+                "-o",
+                out_tpl,
+                url,
+            ]
+        )
 
         if code != 0:
             print("[YTDLP] video failed → trying bestimage")
-            code = await run([
-                YT_DLP,
-                "--cookies", COOKIES_PATH,
-                "--no-playlist",
-                "-f", "bestimage",
-                "-o", out_tpl,
-                url
-            ])
+            code = await run(
+                [
+                    YT_DLP,
+                    "--cookies",
+                    COOKIES_PATH,
+                    "--no-playlist",
+                    "-f",
+                    "bestimage",
+                    "-o",
+                    out_tpl,
+                    url,
+                ]
+            )
 
             if code != 0:
                 return None
@@ -635,27 +779,33 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id):
             for f in os.listdir(TMP_DIR)
             if f.lower().endswith((".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp"))
         ),
-        key=lambda p: (media_priority(p), -os.path.getmtime(p))
+        key=lambda p: (media_priority(p), -os.path.getmtime(p)),
     )
 
     print("[YTDLP OUTPUT FILES]", files)
     return files[0] if files else None
+
 
 def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
 
     subprocess.run(
         [
-            "ffmpeg", "-y",
-            "-i", src_path,
+            "ffmpeg",
+            "-y",
+            "-i",
+            src_path,
             "-vn",
-            "-acodec", "libmp3lame",
-            "-ab", "192k",
-            "-ar", "44100",
-            fixed_path
+            "-acodec",
+            "libmp3lame",
+            "-ab",
+            "192k",
+            "-ar",
+            "44100",
+            fixed_path,
         ],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
     )
 
     if not os.path.exists(fixed_path):
@@ -663,8 +813,8 @@ def reencode_mp3(src_path: str) -> str:
 
     return fixed_path
 
-# worker
-async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
+
+async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, height: int | None = None):
     bot = app.bot
     path = None
 
@@ -698,7 +848,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 async with session.post(
                     "https://www.tikwm.com/api/",
                     data={"url": url},
-                    timeout=aiohttp.ClientTimeout(total=15)
+                    timeout=aiohttp.ClientTimeout(total=15),
                 ) as r:
                     data = await r.json()
 
@@ -736,7 +886,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                         performer=bot_name,
                         filename=f"{title[:50]}.mp3",
                         reply_to_message_id=reply_to,
-                        disable_notification=True
+                        disable_notification=True,
                     )
 
                     await bot.delete_message(chat_id, status_msg_id)
@@ -748,7 +898,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     chat_id=chat_id,
                     message_id=status_msg_id,
                     text="🖼️ Slideshow terdeteksi, mengirim album...",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
                 )
 
                 images = data.get("data", {}).get("images") or []
@@ -756,7 +906,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                     raise RuntimeError("Foto slideshow tidak ditemukan")
 
                 CHUNK_SIZE = 10
-                chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
+                chunks = [images[i : i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
                 bot_name = (await bot.get_me()).first_name or "Bot"
                 title = (
@@ -766,10 +916,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 )
                 title = html.escape(title.strip())
 
-                caption_text = (
-                    f"🖼️ <b>{title}</b>\n\n"
-                    f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
-                )
+                caption_text = f"🖼️ <b>{title}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
 
                 for idx, chunk in enumerate(chunks):
                     media = []
@@ -778,14 +925,14 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                             InputMediaPhoto(
                                 media=img,
                                 caption=caption_text if idx == 0 and i == 0 else None,
-                                parse_mode="HTML" if idx == 0 and i == 0 else None
+                                parse_mode="HTML" if idx == 0 and i == 0 else None,
                             )
                         )
 
                     await bot.send_media_group(
                         chat_id=chat_id,
                         media=media,
-                        reply_to_message_id=reply_to if idx == 0 else None
+                        reply_to_message_id=reply_to if idx == 0 else None,
                     )
 
                 await bot.delete_message(chat_id, status_msg_id)
@@ -796,17 +943,21 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 fmt_key,
                 bot,
                 chat_id,
-                status_msg_id
+                status_msg_id,
+                height=height,
             )
 
         if not path or not os.path.exists(path):
             raise RuntimeError("Download gagal")
 
+        if os.path.exists(path) and os.path.getsize(path) > MAX_TG_SIZE:
+            raise RuntimeError("File > 2GB. Pilih resolusi lebih kecil.")
+
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=status_msg_id,
             text="🚀 <b>Mengunggah...</b>",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
         bot_name = (await bot.get_me()).first_name or "Bot"
@@ -822,7 +973,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 performer=bot_name,
                 filename=f"{caption[:50]}.mp3",
                 reply_to_message_id=reply_to,
-                disable_notification=True
+                disable_notification=True,
             )
             os.remove(fixed_audio)
 
@@ -836,7 +987,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 ),
                 parse_mode="HTML",
                 reply_to_message_id=reply_to,
-                disable_notification=True
+                disable_notification=True,
             )
 
         elif media_type == "video":
@@ -850,7 +1001,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
                 parse_mode="HTML",
                 supports_streaming=False,
                 reply_to_message_id=reply_to,
-                disable_notification=True
+                disable_notification=True,
             )
 
         else:
@@ -863,7 +1014,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg_id,
-                text=f"❌ Gagal: {e}"
+                text=f"❌ Gagal: {e}",
             )
         except:
             pass
@@ -875,7 +1026,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id):
             except:
                 pass
 
-# dl cmd
+
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
@@ -887,24 +1038,22 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if _is_premium_required(url):
         if not _is_premium_user(update.effective_user.id):
-            return await update.message.reply_text(
-                "🔞 Download dari website ini khusus user premium"
-            )
+            return await update.message.reply_text("🔞 Download dari website ini khusus user premium")
 
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
         "url": url,
         "user": update.effective_user.id,
-        "reply_to": update.message.message_id
+        "reply_to": update.message.message_id,
     }
 
     await update.message.reply_text(
         "📥 <b>Pilih format</b>",
         reply_markup=dl_keyboard(dl_id),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
-# dl callback
+
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
@@ -925,11 +1074,64 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DL_CACHE.pop(dl_id, None)
         return await q.edit_message_text("❌ Dibatalkan")
 
+    url = data["url"]
+
+    if choice == "video" and (is_youtube(url) or is_xnxx(url)):
+        await q.edit_message_text("🔎 <b>Ngambil resolusi...</b>", parse_mode="HTML")
+        res_list = await get_resolutions(url)
+        return await q.edit_message_text(
+            "🎚️ <b>Pilih resolusi</b>",
+            reply_markup=res_keyboard(dl_id, res_list),
+            parse_mode="HTML",
+        )
+
     DL_CACHE.pop(dl_id, None)
 
     await q.edit_message_text(
         f"⏳ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
-        parse_mode="HTML"
+        parse_mode="HTML",
+    )
+
+    context.application.create_task(
+        _dl_worker(
+            app=context.application,
+            chat_id=q.message.chat.id,
+            reply_to=data["reply_to"],
+            raw_url=url,
+            fmt_key=choice,
+            status_msg_id=q.message.message_id,
+            height=None,
+        )
+    )
+
+
+async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update, context):
+        return
+
+    q = update.callback_query
+    await q.answer()
+
+    _, dl_id, h = q.data.split(":", 2)
+
+    data = DL_CACHE.get(dl_id)
+    if not data:
+        return await q.edit_message_text("❌ Data expired")
+
+    if q.from_user.id != data["user"]:
+        return await q.answer("Bukan request lu", show_alert=True)
+
+    try:
+        height = int(h)
+    except Exception:
+        height = None
+
+    DL_CACHE.pop(dl_id, None)
+
+    label = f"{height}p" if height else "video"
+    await q.edit_message_text(
+        f"⏳ <b>Menyiapkan 🎥 Video ({html.escape(label)})...</b>",
+        parse_mode="HTML",
     )
 
     context.application.create_task(
@@ -938,10 +1140,17 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=q.message.chat.id,
             reply_to=data["reply_to"],
             raw_url=data["url"],
-            fmt_key=choice,
-            status_msg_id=q.message.message_id
+            fmt_key="video",
+            status_msg_id=q.message.message_id,
+            height=height,
         )
     )
+
+
+try:
+    init_premium_db()
+except Exception:
+    pass
 
 try:
     _auto_dl_db_init()
