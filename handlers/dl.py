@@ -473,10 +473,7 @@ def res_keyboard(dl_id: str, res_list: list[dict]):
         h = int(r.get("height") or 0)
         if not h:
             continue
-        size = int(r.get("filesize") or 0)
         label = f"{h}p"
-        if size:
-            label += f" • {_fmt_bytes(size)}"
         rows.append([InlineKeyboardButton(label, callback_data=f"dlres:{dl_id}:{h}")])
 
     rows.append([InlineKeyboardButton("❌ Cancel", callback_data=f"dl:{dl_id}:cancel")])
@@ -1058,7 +1055,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = data["url"]
 
     if choice == "video" and is_youtube(url):
-        await q.edit_message_text("🔎 <b>Ngambil resolusi...</b>", parse_mode="HTML")
+        await q.edit_message_text("🔎 <b>Mengambil format...</b>", parse_mode="HTML")
         res_list = await get_resolutions(url)
 
         res_map = {}
