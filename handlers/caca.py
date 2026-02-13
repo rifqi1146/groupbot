@@ -13,18 +13,14 @@ from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from rag.adalah_pokoknya.retriever import retrieve_context
-from rag.adalah_pokoknya.prompt import build_rag_prompt
-from rag.adalah_pokoknya.loader import load_local_contexts
 from handlers.gsearch import google_search
 
-from utils.ai_utils import split_message, sanitize_ai_output, PERSONAS, SYSTEM_PROMPT, SYSTEM_PROMPT2
+from utils.ai_utils import split_message, sanitize_ai_output, PERSONAS
 from utils.config import (
     GROQ_BASE,
     GROQ_KEY,
     GROQ_MODEL2,
     GROQ_TIMEOUT,
-    COOLDOWN,
     OWNER_ID,
 )
 from utils.http import get_http_session
@@ -38,12 +34,9 @@ from utils.premium import (
     is_premium,
 )
 
-LOCAL_CONTEXTS = load_local_contexts()
-
 MEMORY_EXPIRE = 60 * 60 * 24
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
-_last_req = {}
 
 META_DB_PATH = "data/meta_memory.sqlite3"
 META_MAX_TURNS = 50
@@ -51,8 +44,8 @@ META_MAX_TURNS = 50
 CACA_DB_PATH = "data/caca.sqlite3"
 
 _CACA_MODE = {}
-
 _PREMIUM_USERS = set()
+
 
 def _meta_db_init():
     os.makedirs("data", exist_ok=True)
@@ -79,6 +72,7 @@ def _meta_db_init():
     finally:
         con.close()
 
+
 def _meta_db_get(user_id: int) -> tuple[list, float, int | None] | None:
     con = sqlite3.connect(META_DB_PATH)
     try:
@@ -97,6 +91,7 @@ def _meta_db_get(user_id: int) -> tuple[list, float, int | None] | None:
         return history, last_used, last_message_id
     finally:
         con.close()
+
 
 def _meta_db_set(user_id: int, history: list, last_message_id: int | None):
     if META_MAX_TURNS and META_MAX_TURNS > 0:
@@ -121,6 +116,7 @@ def _meta_db_set(user_id: int, history: list, last_message_id: int | None):
     finally:
         con.close()
 
+
 def _meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
     con = sqlite3.connect(META_DB_PATH)
     try:
@@ -138,6 +134,7 @@ def _meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
     finally:
         con.close()
 
+
 def _meta_db_clear_last_message_id(user_id: int):
     con = sqlite3.connect(META_DB_PATH)
     try:
@@ -149,6 +146,7 @@ def _meta_db_clear_last_message_id(user_id: int):
     finally:
         con.close()
 
+
 def _meta_db_clear(user_id: int):
     con = sqlite3.connect(META_DB_PATH)
     try:
@@ -156,6 +154,7 @@ def _meta_db_clear(user_id: int):
         con.commit()
     finally:
         con.close()
+
 
 def _meta_db_cleanup(expire_seconds: int):
     cutoff = time.time() - expire_seconds
@@ -166,11 +165,14 @@ def _meta_db_cleanup(expire_seconds: int):
     finally:
         con.close()
 
+
 async def meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
     await asyncio.to_thread(_meta_db_set_last_message_id, user_id, last_message_id)
 
+
 async def meta_db_init():
     await asyncio.to_thread(_meta_db_init)
+
 
 async def meta_db_get(user_id: int) -> list:
     res = await asyncio.to_thread(_meta_db_get, user_id)
@@ -179,8 +181,10 @@ async def meta_db_get(user_id: int) -> list:
     history, last_used, last_message_id = res
     return history
 
+
 async def meta_db_set(user_id: int, history: list, last_message_id: int | None = None):
     await asyncio.to_thread(_meta_db_set, user_id, history, last_message_id)
+
 
 def _meta_db_has_last_message_id(message_id: int) -> bool:
     con = sqlite3.connect(META_DB_PATH)
@@ -193,8 +197,10 @@ def _meta_db_has_last_message_id(message_id: int) -> bool:
     finally:
         con.close()
 
+
 async def meta_db_has_last_message_id(message_id: int) -> bool:
     return await asyncio.to_thread(_meta_db_has_last_message_id, message_id)
+
 
 async def meta_db_get_last_message_id(user_id: int) -> int | None:
     res = await asyncio.to_thread(_meta_db_get, user_id)
@@ -203,14 +209,18 @@ async def meta_db_get_last_message_id(user_id: int) -> int | None:
     history, last_used, last_message_id = res
     return last_message_id
 
+
 async def meta_db_clear_last_message_id(user_id: int):
     await asyncio.to_thread(_meta_db_clear_last_message_id, user_id)
+
 
 async def meta_db_clear(user_id: int):
     await asyncio.to_thread(_meta_db_clear, user_id)
 
+
 async def meta_db_cleanup():
     await asyncio.to_thread(_meta_db_cleanup, MEMORY_EXPIRE)
+
 
 def _caca_db_init():
     os.makedirs("data", exist_ok=True)
@@ -247,6 +257,7 @@ def _caca_db_init():
     finally:
         con.close()
 
+
 def _caca_db_load_modes() -> dict[int, str]:
     con = sqlite3.connect(CACA_DB_PATH)
     try:
@@ -262,6 +273,7 @@ def _caca_db_load_modes() -> dict[int, str]:
     finally:
         con.close()
 
+
 def _caca_db_load_groups() -> set[int]:
     con = sqlite3.connect(CACA_DB_PATH)
     try:
@@ -270,6 +282,7 @@ def _caca_db_load_groups() -> set[int]:
         return {int(r[0]) for r in rows if r and r[0] is not None}
     finally:
         con.close()
+
 
 def _caca_db_save_modes(modes: dict[int, str]):
     con = sqlite3.connect(CACA_DB_PATH)
@@ -302,6 +315,7 @@ def _caca_db_save_modes(modes: dict[int, str]):
     finally:
         con.close()
 
+
 def _caca_db_save_groups(groups: set[int]):
     con = sqlite3.connect(CACA_DB_PATH)
     try:
@@ -326,8 +340,10 @@ def _caca_db_save_groups(groups: set[int]):
     finally:
         con.close()
 
+
 async def caca_db_init():
     await asyncio.to_thread(_caca_db_init)
+
 
 def _load_modes():
     try:
@@ -335,8 +351,10 @@ def _load_modes():
     except Exception:
         return {}
 
+
 def _save_modes(modes: dict[int, str]):
     _caca_db_save_modes(modes)
+
 
 def _load_groups() -> set[int]:
     try:
@@ -344,16 +362,17 @@ def _load_groups() -> set[int]:
     except Exception:
         return set()
 
+
 def _save_groups(groups: set[int]):
     _caca_db_save_groups(groups)
 
+
 _CACA_MODE = _load_modes()
+
 
 def _emo():
     return random.choice(_EMOS)
 
-def _can(uid: int) -> bool:
-    return True
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -371,12 +390,14 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception:
         return False
 
+
 def _cleanup_memory():
     try:
         loop = asyncio.get_event_loop()
         loop.create_task(meta_db_cleanup())
     except Exception:
         pass
+
 
 async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     try:
@@ -386,10 +407,13 @@ async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     except Exception:
         pass
 
+
 _URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
+
 
 def _find_urls(text: str) -> List[str]:
     return _URL_RE.findall(text) if text else []
+
 
 async def _fetch_article(url: str) -> Optional[str]:
     try:
@@ -408,19 +432,6 @@ async def _fetch_article(url: str) -> Optional[str]:
     except Exception:
         return None
 
-async def build_rag(prompt: str, use_search: bool) -> str:
-    ctx = await retrieve_context(prompt, LOCAL_CONTEXTS, top_k=3)
-    if use_search:
-        try:
-            ok, results = await google_search(prompt, limit=5)
-            if ok:
-                ctx += [
-                    f"[WEB]\n{r['title']}\n{r['snippet']}\nSumber: {r['link']}"
-                    for r in results
-                ]
-        except Exception:
-            pass
-    return build_rag_prompt(prompt, ctx)
 
 async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_memory()
@@ -605,7 +616,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "😒 Gue ga inget ngobrol sama lu.\n"
                 "Ketik /caca dulu."
             )
-        prompt = msg.text.strip()
+        prompt = (msg.text or "").strip()
 
     if not prompt:
         return
@@ -618,7 +629,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if use_search:
             try:
-                ok, results = await google_search(prompt, limit=3)
+                ok, results = await google_search(prompt, limit=5)
                 if ok and results:
                     lines = []
                     for r in results:
@@ -641,17 +652,11 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         system_prompt = PERSONAS.get(mode, PERSONAS["default"])
 
         messages = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            }
+            {"role": "system", "content": system_prompt}
         ] + history + [
             {
                 "role": "user",
-                "content": (
-                    f"{search_context}\n\n{prompt}"
-                    if search_context else prompt
-                )
+                "content": (f"{search_context}\n\n{prompt}" if search_context else prompt),
             }
         ]
 
@@ -698,6 +703,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await meta_db_clear(user_id)
         await meta_db_clear_last_message_id(user_id)
         await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
+
 
 try:
     asyncio.get_event_loop().create_task(meta_db_init())
