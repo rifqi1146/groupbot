@@ -204,7 +204,16 @@ def _is_premium_required(url: str) -> bool:
         if host == d or host.endswith("." + d):
             return True
     return False
-
+    
+    
+def is_youtube(url: str) -> bool:
+    return any(x in url for x in (
+        "youtube.com",
+        "youtu.be",
+        "music.youtube.com",
+    ))
+    
+    
 def is_supported_platform(url: str) -> bool:
     url = (url or "").lower()
     return any(domain in url for domain in AUTO_DOWNLOAD_DOMAINS)
