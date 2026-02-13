@@ -43,6 +43,7 @@ DL_CACHE = {}
 PREMIUM_ONLY_DOMAINS = {
     "pornhub.com",
     "xnxx.com",
+    "redtube.com",
 }
 
 AUTO_DOWNLOAD_DOMAINS = {
