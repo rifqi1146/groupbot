@@ -407,7 +407,7 @@ async def fetch_asupan_tikwm(keyword: str | None = None):
         "#tanteholic",
         "shsshlla",
         "Seeazeee",
-        "hi,its me tatut",
+        "iniitataajugaa_",
         "billaazz",
         "innova.kasih.4",
         "tobrut",
