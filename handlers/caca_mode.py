@@ -28,7 +28,7 @@ async def mode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Mode tersedia:\n"
             "• default\n"
             "• bokep\n"
-            "• sarkas\n"
+            "• sarkas,
             parse_mode="HTML"
         )
 
