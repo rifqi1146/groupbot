@@ -8,7 +8,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "cookies.txt"))
 COOKIES_DIR = os.path.dirname(COOKIES_PATH)
 
-_MAX_FILE_SIZE = 512 * 1024  # 512KB
+_MAX_FILE_SIZE = 512 * 1024
+_EST_EXPIRE_SECONDS = 3 * 24 * 60 * 60
 
 
 def _is_owner(user_id: int) -> bool:
@@ -39,8 +40,8 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not user or not _is_owner(user.id):
         return
-    doc = None
 
+    doc = None
     if msg.document:
         doc = msg.document
     elif msg.reply_to_message and msg.reply_to_message.document:
@@ -51,7 +52,7 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📎 <b>Kirim file cookies sebagai document</b>.\n\n"
             "Cara pakai:\n"
             "• Kirim <code>cookies.txt</code> lalu ketik <code>/cookies</code>\n"
-            "• Atau reply pesa dengan <code>/cookies</code>",
+            "• Atau reply pesan dengan <code>/cookies</code>",
             parse_mode="HTML",
         )
 
@@ -59,7 +60,6 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("❌ <b>File terlalu besar.</b> Maks 512KB.", parse_mode="HTML")
 
     os.makedirs(COOKIES_DIR, exist_ok=True)
-
     tmp_path = COOKIES_PATH + ".uploading"
 
     try:
@@ -88,9 +88,17 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         os.replace(tmp_path, COOKIES_PATH)
 
-        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        now = time.time()
+        updated_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
+        exp_ts = time.strftime(
+            "%Y-%m-%d %H:%M:%S",
+            time.localtime(now + _EST_EXPIRE_SECONDS),
+        )
+
         return await msg.reply_text(
-            f"✅ <b>Cookies berhasil diupdate.</b>\n🕒 <code>{ts}</code>",
+            "✅ <b>Cookies berhasil diupdate.</b>\n"
+            f"🕒 Updated: <code>{updated_ts}</code>\n"
+            f"⌛ Est. expired: <code>{exp_ts}</code>",
             parse_mode="HTML",
         )
 
