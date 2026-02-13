@@ -5,7 +5,7 @@ import html
 import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
-
+from .constants import MAX_TG_SIZE
 from handlers.join import require_join_or_block
 from utils.config import OWNER_ID
 from utils.premium import init_premium_db
@@ -304,6 +304,13 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("🔎 <b>Mengambil format vidio...</b>", parse_mode="HTML")
         res_list = await get_resolutions(url)
 
+        if not res_list:
+            DL_CACHE.pop(dl_id, None)
+            return await q.edit_message_text(
+                "❌ Tidak ada resolusi yang valid (mungkin semua > limit Telegram).",
+                parse_mode="HTML",
+            )
+
         res_map = {}
         for r in res_list:
             h = int(r.get("height") or 0)
@@ -313,6 +320,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "format_id": fid,
                     "has_audio": bool(r.get("has_audio")),
                     "filesize": int(r.get("filesize") or 0),
+                    "total_size": int(r.get("total_size") or 0),
                 }
 
         DL_CACHE[dl_id]["res_map"] = res_map
@@ -369,6 +377,15 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     format_id = str(pick.get("format_id") or "")
     has_audio = bool(pick.get("has_audio"))
+    total_size = int(pick.get("total_size") or 0)
+
+    if total_size and total_size > MAX_TG_SIZE:
+        DL_CACHE.pop(dl_id, None)
+        return await q.edit_message_text(
+            "❌ <b>File terlalu besar</b> (Melebihi limit Telegram 2GB).\n"
+            "Pilih resolusi lebih kecil.",
+            parse_mode="HTML",
+        )
 
     DL_CACHE.pop(dl_id, None)
 
