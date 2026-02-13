@@ -2,7 +2,7 @@ from telegram.ext import CallbackQueryHandler
 
 from handlers.help import help_callback
 from handlers.gsearch import gsearch_callback
-from handlers.dl import dl_callback, dlask_callback, dlres_callback
+from handlers.dl.handlers import dl_callback, dlask_callback, dlres_callback
 from handlers.asupan import asupan_callback
 from handlers.helpowner import helpowner_callback
 from fun.reminder import reminder_cancel_cb

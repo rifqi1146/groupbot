@@ -12,7 +12,7 @@ from handlers.help import help_cmd
 from handlers.speedtest import speedtest_cmd
 from handlers.ping import ping_cmd
 from handlers.weather import weather_cmd
-from handlers.dl import dl_cmd, autodl_cmd
+from handlers.dl.handlers import dl_cmd, autodl_cmd
 from handlers.helpowner import helpowner_cmd
 from handlers.welcome import wlc_cmd, start_verify_pm
 from fun.ship import ship_cmd
