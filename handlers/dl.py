@@ -644,7 +644,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
             last_pct = pct
 
             now = time.time()
-            if now - last_edit >= 6:
+            if now - last_edit >= 3:
                 try:
                     await bot.edit_message_text(
                         chat_id=chat_id,
@@ -1055,7 +1055,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = data["url"]
 
     if choice == "video" and is_youtube(url):
-        await q.edit_message_text("🔎 <b>Mengambil format...</b>", parse_mode="HTML")
+        await q.edit_message_text("🔎 <b>Mengambil format vidio...</b>", parse_mode="HTML")
         res_list = await get_resolutions(url)
 
         res_map = {}
@@ -1072,7 +1072,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DL_CACHE[dl_id]["res_map"] = res_map
 
         return await q.edit_message_text(
-            "🎚️ <b>Pilih resolusi</b>",
+            "<b>Pilih resolusi</b>",
             reply_markup=res_keyboard(dl_id, res_list),
             parse_mode="HTML",
         )
