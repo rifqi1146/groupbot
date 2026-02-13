@@ -199,5 +199,5 @@ SARKAS = (
 PERSONAS = {
     "default": SYSTEM_PROMPT,
     "bokep": SYSTEM_PROMPT2,
-    "sarkas": SARKAS,
+    "toxic": SARKAS,
 }
