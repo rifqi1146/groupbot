@@ -22,6 +22,9 @@ from handlers.groq import groq_query
 from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
 from handlers.caca import meta_query
+from handlers.caca_group import cacaa_cmd
+from handlers.caca_mode import mode_cmd
+from handlers.premium import premium_cmd
 from fun.waifu import waifu_cmd
 from handlers.update import update_cmd
 from handlers.groups import groups_cmd
@@ -47,9 +50,9 @@ COMMAND_HANDLERS = [
     ("groups", groups_cmd, False),
     ("waifu", waifu_cmd, False),
     ("caca", meta_query, False),
-    ("cacaa", meta_query, False),
-    ("mode", meta_query, False),
-    ("premium", meta_query, False),
+    ("cacaa", cacaa_cmd, False),
+    ("mode", mode_cmd, False),
+    ("premium", premium_cmd, False),
     ("quiz", quiz_cmd, False),
     ("ship", ship_cmd, True),
     ("update", update_cmd, False),

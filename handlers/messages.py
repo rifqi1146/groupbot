@@ -7,7 +7,9 @@ from handlers.dl.handlers import auto_dl_detect
 from handlers.bot_dollar import dollar_router
 from handlers.welcome import welcome_handler
 from utils.user_collector import user_collector
-from handlers.caca import meta_query, meta_db_get_last_message_id, meta_db_has_last_message_id
+from handlers.caca import meta_query
+from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
+from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from fun.quiz import quiz_answer
 from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS

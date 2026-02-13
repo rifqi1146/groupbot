@@ -1,12 +1,10 @@
 import time
 import re
-import json
 import os
 import asyncio
 import random
 import html
 from typing import List, Optional
-import sqlite3
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -14,401 +12,20 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.gsearch import google_search
-
 from utils.ai_utils import split_message, sanitize_ai_output, PERSONAS
-from utils.config import (
-    GROQ_BASE,
-    GROQ_KEY,
-    GROQ_MODEL2,
-    GROQ_TIMEOUT,
-    OWNER_ID,
-)
+from utils.config import GROQ_BASE, GROQ_KEY, GROQ_MODEL2, GROQ_TIMEOUT
 from utils.http import get_http_session
 
-from utils.premium import (
-    init_premium_db,
-    premium_add,
-    premium_del,
-    premium_list,
-    premium_load_set,
-    is_premium,
-)
+from utils import caca_db
+from utils import caca_memory
 
-MEMORY_EXPIRE = 60 * 60 * 24
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
-
-META_DB_PATH = "data/meta_memory.sqlite3"
-META_MAX_TURNS = 50
-
-CACA_DB_PATH = "data/caca.sqlite3"
-
-_CACA_MODE = {}
-_PREMIUM_USERS = set()
-
-
-def _meta_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS meta_memory (
-                user_id INTEGER PRIMARY KEY,
-                history_json TEXT NOT NULL,
-                last_used REAL NOT NULL,
-                last_message_id INTEGER
-            )
-            """
-        )
-        con.commit()
-        try:
-            con.execute("ALTER TABLE meta_memory ADD COLUMN last_message_id INTEGER")
-            con.commit()
-        except Exception:
-            pass
-    finally:
-        con.close()
-
-
-def _meta_db_get(user_id: int) -> tuple[list, float, int | None] | None:
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        cur = con.execute(
-            "SELECT history_json, last_used, last_message_id FROM meta_memory WHERE user_id=?",
-            (user_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-        history = json.loads(row[0]) if row[0] else []
-        last_used = float(row[1])
-        last_message_id = int(row[2]) if row[2] is not None else None
-        if not isinstance(history, list):
-            history = []
-        return history, last_used, last_message_id
-    finally:
-        con.close()
-
-
-def _meta_db_set(user_id: int, history: list, last_message_id: int | None):
-    if META_MAX_TURNS and META_MAX_TURNS > 0:
-        max_msgs = META_MAX_TURNS * 2
-        if len(history) > max_msgs:
-            history = history[-max_msgs:]
-
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute(
-            """
-            INSERT INTO meta_memory (user_id, history_json, last_used, last_message_id)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              history_json=excluded.history_json,
-              last_used=excluded.last_used,
-              last_message_id=excluded.last_message_id
-            """,
-            (user_id, json.dumps(history, ensure_ascii=False), time.time(), last_message_id),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute(
-            """
-            INSERT INTO meta_memory (user_id, history_json, last_used, last_message_id)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              last_used=excluded.last_used,
-              last_message_id=excluded.last_message_id
-            """,
-            (user_id, "[]", time.time(), last_message_id),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _meta_db_clear_last_message_id(user_id: int):
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute(
-            "UPDATE meta_memory SET last_message_id=NULL, last_used=? WHERE user_id=?",
-            (time.time(), user_id),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _meta_db_clear(user_id: int):
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute("DELETE FROM meta_memory WHERE user_id=?", (user_id,))
-        con.commit()
-    finally:
-        con.close()
-
-
-def _meta_db_cleanup(expire_seconds: int):
-    cutoff = time.time() - expire_seconds
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        con.execute("DELETE FROM meta_memory WHERE last_used < ?", (cutoff,))
-        con.commit()
-    finally:
-        con.close()
-
-
-async def meta_db_set_last_message_id(user_id: int, last_message_id: int | None):
-    await asyncio.to_thread(_meta_db_set_last_message_id, user_id, last_message_id)
-
-
-async def meta_db_init():
-    await asyncio.to_thread(_meta_db_init)
-
-
-async def meta_db_get(user_id: int) -> list:
-    res = await asyncio.to_thread(_meta_db_get, user_id)
-    if not res:
-        return []
-    history, last_used, last_message_id = res
-    return history
-
-
-async def meta_db_set(user_id: int, history: list, last_message_id: int | None = None):
-    await asyncio.to_thread(_meta_db_set, user_id, history, last_message_id)
-
-
-def _meta_db_has_last_message_id(message_id: int) -> bool:
-    con = sqlite3.connect(META_DB_PATH)
-    try:
-        cur = con.execute(
-            "SELECT 1 FROM meta_memory WHERE last_message_id=? LIMIT 1",
-            (int(message_id),),
-        )
-        return cur.fetchone() is not None
-    finally:
-        con.close()
-
-
-async def meta_db_has_last_message_id(message_id: int) -> bool:
-    return await asyncio.to_thread(_meta_db_has_last_message_id, message_id)
-
-
-async def meta_db_get_last_message_id(user_id: int) -> int | None:
-    res = await asyncio.to_thread(_meta_db_get, user_id)
-    if not res:
-        return None
-    history, last_used, last_message_id = res
-    return last_message_id
-
-
-async def meta_db_clear_last_message_id(user_id: int):
-    await asyncio.to_thread(_meta_db_clear_last_message_id, user_id)
-
-
-async def meta_db_clear(user_id: int):
-    await asyncio.to_thread(_meta_db_clear, user_id)
-
-
-async def meta_db_cleanup():
-    await asyncio.to_thread(_meta_db_cleanup, MEMORY_EXPIRE)
-
-
-def _caca_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS caca_mode (
-                user_id INTEGER PRIMARY KEY,
-                mode TEXT NOT NULL,
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS caca_groups (
-                chat_id INTEGER PRIMARY KEY,
-                added_at REAL NOT NULL
-            )
-            """
-        )
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS caca_approved (
-                user_id INTEGER PRIMARY KEY,
-                added_at REAL NOT NULL
-            )
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _caca_db_load_modes() -> dict[int, str]:
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        cur = con.execute("SELECT user_id, mode FROM caca_mode")
-        rows = cur.fetchall()
-        out = {}
-        for uid, mode in rows:
-            try:
-                out[int(uid)] = str(mode)
-            except Exception:
-                pass
-        return out
-    finally:
-        con.close()
-
-
-def _caca_db_load_groups() -> set[int]:
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        cur = con.execute("SELECT chat_id FROM caca_groups")
-        rows = cur.fetchall()
-        return {int(r[0]) for r in rows if r and r[0] is not None}
-    finally:
-        con.close()
-
-
-def _caca_db_save_modes(modes: dict[int, str]):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("BEGIN")
-        keys = list(modes.keys())
-        if not keys:
-            con.execute("DELETE FROM caca_mode")
-        else:
-            placeholders = ",".join(["?"] * len(keys))
-            con.execute(f"DELETE FROM caca_mode WHERE user_id NOT IN ({placeholders})", tuple(keys))
-        now = time.time()
-        con.executemany(
-            """
-            INSERT INTO caca_mode (user_id, mode, updated_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              mode=excluded.mode,
-              updated_at=excluded.updated_at
-            """,
-            [(int(uid), str(modes[uid]), now) for uid in keys],
-        )
-        con.execute("COMMIT")
-    except Exception:
-        try:
-            con.execute("ROLLBACK")
-        except Exception:
-            pass
-        raise
-    finally:
-        con.close()
-
-
-def _caca_db_save_groups(groups: set[int]):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("BEGIN")
-        if not groups:
-            con.execute("DELETE FROM caca_groups")
-        else:
-            placeholders = ",".join(["?"] * len(groups))
-            con.execute(f"DELETE FROM caca_groups WHERE chat_id NOT IN ({placeholders})", tuple(groups))
-        now = time.time()
-        con.executemany(
-            "INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)",
-            [(int(gid), now) for gid in groups],
-        )
-        con.execute("COMMIT")
-    except Exception:
-        try:
-            con.execute("ROLLBACK")
-        except Exception:
-            pass
-        raise
-    finally:
-        con.close()
-
-
-async def caca_db_init():
-    await asyncio.to_thread(_caca_db_init)
-
-
-def _load_modes():
-    try:
-        return _caca_db_load_modes()
-    except Exception:
-        return {}
-
-
-def _save_modes(modes: dict[int, str]):
-    _caca_db_save_modes(modes)
-
-
-def _load_groups() -> set[int]:
-    try:
-        return _caca_db_load_groups()
-    except Exception:
-        return set()
-
-
-def _save_groups(groups: set[int]):
-    _caca_db_save_groups(groups)
-
-
-_CACA_MODE = _load_modes()
+_URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
 
 
 def _emo():
     return random.choice(_EMOS)
-
-
-async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user = update.effective_user
-    chat = update.effective_chat
-
-    if user.id in OWNER_ID:
-        return True
-
-    if chat.type not in ("group", "supergroup"):
-        return False
-
-    try:
-        member = await context.bot.get_chat_member(chat.id, user.id)
-        return member.status in ("administrator", "creator")
-    except Exception:
-        return False
-
-
-def _cleanup_memory():
-    try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(meta_db_cleanup())
-    except Exception:
-        pass
-
-
-async def _typing_loop(bot, chat_id, stop: asyncio.Event):
-    try:
-        while not stop.is_set():
-            await bot.send_chat_action(chat_id, "typing")
-            await asyncio.sleep(4)
-    except Exception:
-        pass
-
-
-_URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
 
 
 def _find_urls(text: str) -> List[str]:
@@ -433,6 +50,23 @@ async def _fetch_article(url: str) -> Optional[str]:
         return None
 
 
+def _cleanup_memory():
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(caca_memory.cleanup())
+    except Exception:
+        pass
+
+
+async def _typing_loop(bot, chat_id, stop: asyncio.Event):
+    try:
+        while not stop.is_set():
+            await bot.send_chat_action(chat_id, "typing")
+            await asyncio.sleep(4)
+    except Exception:
+        pass
+
+
 async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_memory()
 
@@ -444,146 +78,9 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     em = _emo()
 
-    if msg.text and msg.text.startswith("/premium"):
-        if user_id not in OWNER_ID:
-            return
-
-        if not context.args:
-            return await msg.reply_text(
-                "<b>👑 Premium Control</b>\n\n"
-                "<code>/premium add &lt;user_id&gt;</code>\n"
-                "<code>/premium del &lt;user_id&gt;</code>\n"
-                "<code>/premium list</code>",
-                parse_mode="HTML"
-            )
-
-        cmd = context.args[0].lower()
-
-        if cmd == "add" and len(context.args) > 1:
-            uid = int(context.args[1])
-            await asyncio.to_thread(premium_add, uid)
-            _PREMIUM_USERS.add(uid)
-            return await msg.reply_text(
-                f"✅ Premium ditambah: <code>{uid}</code>",
-                parse_mode="HTML"
-            )
-
-        if cmd == "del" and len(context.args) > 1:
-            uid = int(context.args[1])
-            await asyncio.to_thread(premium_del, uid)
-            _PREMIUM_USERS.discard(uid)
-            _CACA_MODE.pop(uid, None)
-            _save_modes(_CACA_MODE)
-            await meta_db_clear(uid)
-            return await msg.reply_text(
-                f"❎ Premium dihapus: <code>{uid}</code>",
-                parse_mode="HTML"
-            )
-
-        if cmd == "list":
-            ids = await asyncio.to_thread(premium_list)
-            if not ids:
-                return await msg.reply_text("Belum ada user premium.")
-            lines = []
-            for uid in ids[:200]:
-                try:
-                    u = await context.bot.get_chat(uid)
-                    name = html.escape(u.full_name)
-                except Exception:
-                    name = "Unknown User"
-                lines.append(f"• <a href=\"tg://user?id={uid}\">{name}</a> <code>{uid}</code>")
-            return await msg.reply_text(
-                "👑 <b>User Premium:</b>\n" + "\n".join(lines),
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-
-        return
-
-    if msg.text and msg.text.startswith("/mode"):
-        if not is_premium(user_id, _PREMIUM_USERS):
-            return await msg.reply_text(
-                "❌ Mode persona hanya untuk user premium.\n"
-                "Selain premium dilarang ngatur 😤"
-            )
-
-        if not context.args:
-            cur = _CACA_MODE.get(user_id, "default")
-            return await msg.reply_text(
-                f"🎭 Mode sekarang: <b>{cur}</b>\n\n"
-                "Mode tersedia:\n"
-                "• default\n"
-                "• bokep",
-                parse_mode="HTML"
-            )
-
-        mode = context.args[0].lower()
-        if mode not in PERSONAS:
-            return await msg.reply_text("❌ Mode tidak dikenal.")
-
-        _CACA_MODE[user_id] = mode
-        _save_modes(_CACA_MODE)
-        await meta_db_clear(user_id)
-
-        return await msg.reply_text(
-            f"🎭 Persona diubah ke <b>{mode}</b> ✨",
-            parse_mode="HTML"
-        )
-
-    if msg.text and msg.text.startswith("/cacaa"):
-        if not await _is_admin_or_owner(update, context):
-            return
-
-        groups = _load_groups()
-        cmd = (context.args[0].lower() if context.args else "")
-
-        if not cmd:
-            return await msg.reply_text(
-                "<b>⚙️ Caca Group Control</b>\n\n"
-                "<code>/cacaa enable</code> — aktifkan di grup\n"
-                "<code>/cacaa disable</code> — matikan di grup\n"
-                "<code>/cacaa status</code> — cek status",
-                parse_mode="HTML"
-            )
-
-        if cmd == "enable":
-            if chat.type == "private":
-                return await msg.reply_text("Group Only")
-            groups.add(chat.id)
-            _save_groups(groups)
-            return await msg.reply_text("Caca diaktifkan di grup ini.")
-
-        if cmd == "disable":
-            groups.discard(chat.id)
-            _save_groups(groups)
-            return await msg.reply_text("Caca dimatikan di grup ini.")
-
-        if cmd == "status":
-            if chat.id in groups:
-                return await msg.reply_text("Caca AKTIF di grup ini.")
-            return await msg.reply_text("Caca TIDAK aktif di grup ini.")
-
-        if cmd == "list":
-            if user_id not in OWNER_ID:
-                return
-
-            if not groups:
-                return await msg.reply_text("Belum ada grup aktif.")
-
-            text = ["📋 Grup Caca Aktif:\n"]
-            for gid in groups:
-                try:
-                    c = await context.bot.get_chat(gid)
-                    text.append(f"• {c.title}")
-                except Exception:
-                    text.append(f"• {gid}")
-
-            return await msg.reply_text("\n".join(text))
-
-        return
-
-    if chat.type in ("group", "supergroup"):
-        if chat.id not in _load_groups():
+    if chat and chat.type in ("group", "supergroup"):
+        groups = caca_db.load_groups()
+        if chat.id not in groups:
             return await msg.reply_text(
                 "<b>Caca tidak tersedia di grup ini</b>",
                 parse_mode="HTML"
@@ -598,8 +95,8 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = " ".join(context.args[1:])
         else:
             prompt = " ".join(context.args)
-            await meta_db_clear(user_id)
-            await meta_db_clear_last_message_id(user_id)
+            await caca_memory.clear(user_id)
+            await caca_memory.clear_last_message_id(user_id)
 
         if not prompt.strip():
             return await msg.reply_text(
@@ -610,7 +107,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif msg.reply_to_message:
-        history = await meta_db_get(user_id)
+        history = await caca_memory.get_history(user_id)
         if not history:
             return await msg.reply_text(
                 "😒 Gue ga inget ngobrol sama lu.\n"
@@ -646,14 +143,12 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        history = await meta_db_get(user_id)
+        history = await caca_memory.get_history(user_id)
 
-        mode = _CACA_MODE.get(user_id, "default")
+        mode = caca_db.get_mode(user_id)
         system_prompt = PERSONAS.get(mode, PERSONAS["default"])
 
-        messages = [
-            {"role": "system", "content": system_prompt}
-        ] + history + [
+        messages = [{"role": "system", "content": system_prompt}] + history + [
             {
                 "role": "user",
                 "content": (f"{search_context}\n\n{prompt}" if search_context else prompt),
@@ -680,7 +175,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"role": "assistant", "content": raw},
         ]
 
-        await meta_db_set(user_id, history)
+        await caca_memory.set_history(user_id, history)
 
         stop.set()
         typing.cancel()
@@ -695,28 +190,20 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.reply_text(chunk, parse_mode="HTML")
 
         if sent:
-            await meta_db_set_last_message_id(user_id, sent.message_id)
+            await caca_memory.set_last_message_id(user_id, sent.message_id)
 
     except Exception as e:
         stop.set()
         typing.cancel()
-        await meta_db_clear(user_id)
-        await meta_db_clear_last_message_id(user_id)
+        await caca_memory.clear(user_id)
+        await caca_memory.clear_last_message_id(user_id)
         await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
 
 
-try:
-    asyncio.get_event_loop().create_task(meta_db_init())
-except Exception:
-    pass
-
-try:
-    asyncio.get_event_loop().create_task(caca_db_init())
-except Exception:
-    pass
-
-try:
-    init_premium_db()
-    _PREMIUM_USERS = premium_load_set()
-except Exception:
-    _PREMIUM_USERS = set()
+def init_background():
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(caca_memory.init())
+        loop.create_task(caca_db.init())
+    except Exception:
+        pass
