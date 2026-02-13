@@ -27,7 +27,8 @@ async def mode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎭 Mode sekarang: <b>{cur}</b>\n\n"
             "Mode tersedia:\n"
             "• default\n"
-            "• bokep",
+            "• bokep\n"
+            "• sarkas\n"
             parse_mode="HTML"
         )
 
