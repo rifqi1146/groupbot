@@ -639,7 +639,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             f"  Sumber: {r['link']}"
                         )
                     search_context = (
-                        "Ini hasil search, pake buat nambah konteks. "
+                        "Ini hasil search, pake buat nambah konteks, anggap ini adalah sumber terbaru."
                         "Jawab tetap sebagai Caca.\n\n"
                         + "\n\n".join(lines)
                     )
