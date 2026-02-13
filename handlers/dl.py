@@ -206,6 +206,14 @@ def _is_premium_required(url: str) -> bool:
     return False
     
     
+def is_tiktok(url: str) -> bool:
+    return any(x in url for x in (
+        "tiktok.com",
+        "vt.tiktok.com",
+        "vm.tiktok.com",
+    ))
+    
+    
 def is_youtube(url: str) -> bool:
     return any(x in url for x in (
         "youtube.com",
