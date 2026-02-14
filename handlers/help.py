@@ -64,6 +64,7 @@ HELP_TEXT = {
         "• ⬇️ <code>/dl</code> — Download videos from supported platforms\n"
         "• 🍜 <code>/asupan</code> — Random TikTok content\n"
         "• 🌤️ <code>/weather</code> — Get weather information\n"
+        "• 🪉 <code>/music</code> — Search music\n"
         "• 🔎 <code>/gsearch</code> — Search on Google\n"
         "• 🌍 <code>/tr</code> — Translate text between languages\n"
         "• 📃 <code>/trlist</code> — List supported languages\n"
