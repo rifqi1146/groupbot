@@ -58,7 +58,7 @@ async def ytdlp_download(
                         chat_id=chat_id,
                         message_id=status_msg_id,
                         text=(
-                            "🚀 <b>yt-dlp download...</b>\n\n"
+                            "<b>Downloading...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
                         parse_mode="HTML",

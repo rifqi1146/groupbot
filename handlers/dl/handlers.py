@@ -55,13 +55,10 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = msg.from_user.id
 
     if chat.type == "private":
-        return await msg.reply_text(
-            "ℹ️ Auto-detect selalu <b>AKTIF</b> di private chat.",
-            parse_mode="HTML",
-        )
+        return
 
     if not await _is_admin_or_owner(update, context):
-        return await msg.reply_text("❌ <b>Anda bukan admin</b>", parse_mode="HTML")
+        return await msg.reply_text("<b>You are not an admin</b>", parse_mode="HTML")
 
     groups = load_auto_dl()
     arg = context.args[0].lower() if context.args else ""
@@ -70,7 +67,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         groups.add(chat.id)
         save_auto_dl(groups)
         return await msg.reply_text(
-            "✅ Auto-detect link <b>AKTIF</b> di grup ini.",
+            "Auto-detect link <b>ENABLED</b> in this group.",
             parse_mode="HTML",
         )
 
@@ -78,23 +75,23 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         groups.discard(chat.id)
         save_auto_dl(groups)
         return await msg.reply_text(
-            "❌ Auto-detect link <b>DIMATIKAN</b> di grup ini.",
+            "Auto-detect link <b>DISABLED</b> in this group.",
             parse_mode="HTML",
         )
 
     if arg == "status":
         if chat.id in groups:
-            return await msg.reply_text("📡 Status Auto-detect: <b>AKTIF</b>", parse_mode="HTML")
-        return await msg.reply_text("📴 Status Auto-detect: <b>NONAKTIF</b>", parse_mode="HTML")
+            return await msg.reply_text("Auto-detect Status: <b>ENABLED</b>", parse_mode="HTML")
+        return await msg.reply_text("Auto-detect Status: <b>DISABLED</b>", parse_mode="HTML")
 
     if arg == "list":
         if user_id not in OWNER_ID:
             return
 
         if not groups:
-            return await msg.reply_text("📭 Belum ada grup dengan auto-detect aktif.", parse_mode="HTML")
+            return await msg.reply_text("No groups with auto-detect enabled.", parse_mode="HTML")
 
-        lines = ["📋 <b>Grup dengan Auto-detect Aktif:</b>\n"]
+        lines = ["📋 <b>Groups with Auto-detect Enabled:</b>\n"]
         for gid in groups:
             try:
                 c = await context.bot.get_chat(gid)
@@ -113,6 +110,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<code>/autodl list</code>",
         parse_mode="HTML",
     )
+
 
 async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -137,7 +135,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if is_premium_required(text, PREMIUM_ONLY_DOMAINS) and not is_premium_user(update.effective_user.id):
-        return await msg.reply_text("🔞 Link ini hanya bisa didownload user premium.")
+        return await msg.reply_text("🔞 This link can only be downloaded by premium users.")
 
     dl_id = uuid.uuid4().hex[:8]
 
@@ -149,10 +147,11 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     await msg.reply_text(
-        "👀 <b>Ketemu link</b>\n\nMau aku downloadin?",
+        "👀 <b>Link detected</b>\n\nDo you want me to download it?",
         reply_markup=autodl_detect_keyboard(dl_id),
         parse_mode="HTML",
     )
+
 
 async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
@@ -165,20 +164,21 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = DL_CACHE.get(dl_id)
     if not data:
-        return await q.edit_message_text("❌ Request expired")
+        return await q.edit_message_text("Request expired")
 
     if q.from_user.id != data["user"]:
-        return await q.answer("Bukan request lu", show_alert=True)
+        return await q.answer("This is not your request", show_alert=True)
 
     if action == "close":
         DL_CACHE.pop(dl_id, None)
         return await q.message.delete()
 
     await q.edit_message_text(
-        "📥 <b>Pilih format</b>",
+        "📥 <b>Select format</b>",
         reply_markup=dl_keyboard(dl_id),
         parse_mode="HTML",
     )
+
 
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     bot = app.bot
@@ -240,7 +240,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg_id,
-                text=f"❌ Gagal: {e}",
+                text=f"Failed: {e}",
             )
         except Exception:
             pass
@@ -252,18 +252,19 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
             except Exception:
                 pass
 
+
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
 
     if not context.args:
-        return await update.message.reply_text("❌ Kirim link TikTok / Platform Yt-dlp Support")
+        return await update.message.reply_text("Send a TikTok link / YT-dlp supported platform link")
 
     url = context.args[0]
 
     if is_premium_required(url, PREMIUM_ONLY_DOMAINS):
         if not is_premium_user(update.effective_user.id):
-            return await update.message.reply_text("🔞 Download dari website ini khusus user premium")
+            return await update.message.reply_text("🔞 Download from this website is for premium users only")
 
     dl_id = uuid.uuid4().hex[:8]
     DL_CACHE[dl_id] = {
@@ -273,10 +274,11 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     await update.message.reply_text(
-        "📥 <b>Pilih format</b>",
+        "📥 <b>Select format</b>",
         reply_markup=dl_keyboard(dl_id),
         parse_mode="HTML",
     )
+
 
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
@@ -289,25 +291,25 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = DL_CACHE.get(dl_id)
     if not data:
-        return await q.edit_message_text("❌ Data expired")
+        return await q.edit_message_text("Data expired")
 
     if q.from_user.id != data["user"]:
-        return await q.answer("Bukan request lu", show_alert=True)
+        return await q.answer("This is not your request", show_alert=True)
 
     if choice == "cancel":
         DL_CACHE.pop(dl_id, None)
-        return await q.edit_message_text("❌ Dibatalkan")
+        return await q.edit_message_text("Cancelled")
 
     url = data["url"]
 
     if choice == "video" and is_youtube(url):
-        await q.edit_message_text("🔎 <b>Mengambil format vidio...</b>", parse_mode="HTML")
+        await q.edit_message_text("🔎 <b>Fetching video formats...</b>", parse_mode="HTML")
         res_list = await get_resolutions(url)
 
         if not res_list:
             DL_CACHE.pop(dl_id, None)
             return await q.edit_message_text(
-                "❌ Tidak ada resolusi yang valid (mungkin semua > limit Telegram).",
+                "No valid resolutions available (possibly all exceed Telegram limit).",
                 parse_mode="HTML",
             )
 
@@ -326,7 +328,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DL_CACHE[dl_id]["res_map"] = res_map
 
         return await q.edit_message_text(
-            "<b>Pilih resolusi</b>",
+            "<b>Select resolution</b>",
             reply_markup=res_keyboard(dl_id, res_list),
             parse_mode="HTML",
         )
@@ -334,7 +336,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     DL_CACHE.pop(dl_id, None)
 
     await q.edit_message_text(
-        f"⏳ <b>Menyiapkan {DL_FORMATS[choice]['label']}...</b>",
+        f"<b>Preparing {DL_FORMATS[choice]['label']}...</b>",
         parse_mode="HTML",
     )
 
@@ -351,6 +353,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
 
+
 async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
@@ -362,10 +365,10 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = DL_CACHE.get(dl_id)
     if not data:
-        return await q.edit_message_text("❌ Data expired")
+        return await q.edit_message_text("Data expired")
 
     if q.from_user.id != data["user"]:
-        return await q.answer("Bukan request lu", show_alert=True)
+        return await q.answer("This is not your request", show_alert=True)
 
     try:
         height = int(h)
@@ -382,8 +385,8 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if total_size and total_size > MAX_TG_SIZE:
         DL_CACHE.pop(dl_id, None)
         return await q.edit_message_text(
-            "❌ <b>File terlalu besar</b> (Melebihi limit Telegram 2GB).\n"
-            "Pilih resolusi lebih kecil.",
+            "<b>File too large</b> (Exceeds Telegram 2GB limit).\n"
+            "Please choose a lower resolution.",
             parse_mode="HTML",
         )
 
@@ -391,7 +394,7 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     label = f"{height}p" if height else "video"
     await q.edit_message_text(
-        f"⏳ <b>Menyiapkan 🎥 Video ({html.escape(label)})...</b>",
+        f"⏳ <b>Preparing 🎥 Video ({html.escape(label)})...</b>",
         parse_mode="HTML",
     )
 
@@ -407,6 +410,7 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             has_audio=has_audio,
         )
     )
+
 
 try:
     init_premium_db()

@@ -45,12 +45,12 @@ async def send_downloaded_media(
         raise RuntimeError("Download gagal")
 
     if os.path.exists(path) and os.path.getsize(path) > MAX_TG_SIZE:
-        raise RuntimeError("File > 2GB. Pilih resolusi lebih kecil.")
+        raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
 
     await bot.edit_message_text(
         chat_id=chat_id,
         message_id=status_msg_id,
-        text="🚀 <b>Mengunggah...</b>",
+        text="<b>Uploading...</b>",
         parse_mode="HTML",
     )
 
