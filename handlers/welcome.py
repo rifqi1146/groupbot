@@ -13,7 +13,8 @@ from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
 
-WELCOME_VERIFY_DB = "data/welcome_verify.sqlite3"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WELCOME_VERIFY_DB = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "welcome_verify.sqlite3"))
 
 WELCOME_ENABLED_CHATS = set()
 VERIFIED_USERS = {}
@@ -260,34 +261,45 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
     chat = update.effective_chat
+    if not msg or not chat:
+        return
 
     if not await is_admin_or_owner(update, context):
         return
 
-    if not context.args:
-        return await update.message.reply_text(
+    arg = ""
+    if context.args:
+        arg = (context.args[0] or "").strip().lower()
+    else:
+        raw = (msg.text or "").strip()
+        parts = raw.split(maxsplit=1)
+        if len(parts) == 2:
+            arg = parts[1].strip().split()[0].lower()
+
+    if not arg:
+        return await msg.reply_text(
             "Gunakan:\n"
             "<code>/wlc enable</code>\n"
             "<code>/wlc disable</code>",
             parse_mode="HTML"
         )
 
-    mode = context.args[0].lower()
-
-    if mode == "enable":
+    if arg == "enable":
         WELCOME_ENABLED_CHATS.add(chat.id)
         save_welcome_chats()
-        await update.message.reply_text("✅ Welcome message diaktifkan.")
-    elif mode == "disable":
+        return await msg.reply_text("✅ Welcome message diaktifkan.", parse_mode="HTML")
+
+    if arg == "disable":
         WELCOME_ENABLED_CHATS.discard(chat.id)
         save_welcome_chats()
-        await update.message.reply_text("🚫 Welcome message dimatikan.")
-    else:
-        await update.message.reply_text(
-            "❌ Gunakan <code>enable</code> atau <code>disable</code>.",
-            parse_mode="HTML"
-        )
+        return await msg.reply_text("🚫 Welcome message dimatikan.", parse_mode="HTML")
+
+    return await msg.reply_text(
+        "❌ Gunakan <code>enable</code> atau <code>disable</code>.",
+        parse_mode="HTML"
+    )
 
 
 async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
