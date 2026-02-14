@@ -50,7 +50,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
                         chat_id=chat_id,
                         message_id=status_msg_id,
                         text=(
-                            "🚀 <b>Download...</b>\n\n"
+                            "<b>Downloading...</b>\n\n"
                             f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
                         ),
                         parse_mode="HTML",
@@ -82,7 +82,7 @@ async def tiktok_fallback_send(
         )
 
         if not music_url:
-            raise RuntimeError("Audio slideshow tidak ditemukan")
+            raise RuntimeError("Slideshow audio not found")
 
         tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
 
@@ -120,13 +120,13 @@ async def tiktok_fallback_send(
     await bot.edit_message_text(
         chat_id=chat_id,
         message_id=status_msg_id,
-        text="🖼️ Slideshow terdeteksi, mengirim album...",
+        text="🖼️ Slideshow detected, sending album...",
         parse_mode="HTML",
     )
 
     images = data.get("data", {}).get("images") or []
     if not images:
-        raise RuntimeError("Foto slideshow tidak ditemukan")
+        raise RuntimeError("Slideshow images not found")
 
     CHUNK_SIZE = 10
     chunks = [images[i : i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
@@ -135,7 +135,7 @@ async def tiktok_fallback_send(
     title = (
         data.get("data", {}).get("title")
         or data.get("data", {}).get("desc")
-        or "Slideshow TikTok"
+        or "TikTok Slideshow"
     )
     title = html.escape(title.strip())
 
