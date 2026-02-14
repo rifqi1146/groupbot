@@ -236,17 +236,23 @@ def pop_pending_welcome(chat_id: int, user_id: int) -> int | None:
 
 
 def generate_math_question(user_id: int, chat_id: int):
-    a = random.randint(20, 99)
-    b = random.randint(1, 50)
-    if b > a:
-        a, b = b, a
+    op = random.choice(["+", "-"])
 
-    answer = a - b
+    if op == "+":
+        a = random.randint(10, 99)
+        b = random.randint(10, 99)
+        answer = a + b
+    else:
+        a = random.randint(20, 99)
+        b = random.randint(1, 50)
+        if b > a:
+            a, b = b, a
+        answer = a - b
 
     wrong = set()
     while len(wrong) < 3:
         x = random.randint(answer - 30, answer + 30)
-        if x != answer and x > 0:
+        if x != answer and x >= 0:
             wrong.add(x)
 
     options = list(wrong) + [answer]
@@ -264,7 +270,7 @@ def generate_math_question(user_id: int, chat_id: int):
 
     text = (
         "Jawab soal Matematika berikut 👇\n\n"
-        f"<b>{a} - {b} = ?</b>\n\n"
+        f"<b>{a} {op} {b} = ?</b>\n\n"
     )
 
     return text, InlineKeyboardMarkup(buttons)
