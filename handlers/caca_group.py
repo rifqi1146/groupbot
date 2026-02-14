@@ -41,43 +41,43 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not cmd:
         return await msg.reply_text(
             "<b>⚙️ Caca Group Control</b>\n\n"
-            "<code>/cacaa enable</code> — aktifkan di grup\n"
-            "<code>/cacaa disable</code> — matikan di grup\n"
-            "<code>/cacaa status</code> — cek status",
+            "<code>/cacaa enable</code> — enable in this group\n"
+            "<code>/cacaa disable</code> — disable in this group\n"
+            "<code>/cacaa status</code> — check status",
             parse_mode="HTML"
         )
 
     if cmd == "enable":
         if chat.type == "private":
-            return await msg.reply_text("Group Only")
+            return await msg.reply_text("<b>Group only.</b>", parse_mode="HTML")
         groups.add(chat.id)
         caca_db.save_groups(groups)
-        return await msg.reply_text("Caca diaktifkan di grup ini.")
+        return await msg.reply_text("<b>Caca has been enabled in this group.</b>", parse_mode="HTML")
 
     if cmd == "disable":
         groups.discard(chat.id)
         caca_db.save_groups(groups)
-        return await msg.reply_text("Caca dimatikan di grup ini.")
+        return await msg.reply_text("<b>Caca has been disabled in this group.</b>", parse_mode="HTML")
 
     if cmd == "status":
         if chat.id in groups:
-            return await msg.reply_text("Caca AKTIF di grup ini.")
-        return await msg.reply_text("Caca TIDAK aktif di grup ini.")
+            return await msg.reply_text("<b>Caca status in this group: ENABLED</b>", parse_mode="HTML")
+        return await msg.reply_text("<b>Caca status in this group: DISABLED</b>", parse_mode="HTML")
 
     if cmd == "list":
         if user.id not in OWNER_ID:
             return
 
         if not groups:
-            return await msg.reply_text("Belum ada grup aktif.")
+            return await msg.reply_text("<b>No active groups yet.</b>", parse_mode="HTML")
 
-        text = ["📋 Grup Caca Aktif:\n"]
+        text = ["<b>Active Caca Groups:</b>\n"]
         for gid in groups:
             try:
                 c = await context.bot.get_chat(gid)
-                text.append(f"• {html.escape(c.title or str(gid))}")
+                text.append(f"• <b>{html.escape(c.title or str(gid))}</b>")
             except Exception:
-                text.append(f"• {gid}")
+                text.append(f"• <b>{gid}</b>")
 
         return await msg.reply_text("\n".join(text), parse_mode="HTML")
 

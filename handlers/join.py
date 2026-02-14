@@ -53,15 +53,14 @@ async def require_join_or_block(
         return True
 
     text = (
-        "<b>Untuk menggunakan fitur download</b>\n\n"
-        "kamu wajib join dulu ke channel support.\n\n"
-        "📢 <b>Support Channel</b>\n"
+        "<b>To use the download feature</b>\n"
+        "you must join the support channel first."
     )
 
     try:
         if update.callback_query:
             await update.callback_query.answer(
-                "Join dulu channel support ya 👀",
+                "Please join the support channel first",
                 show_alert=True
             )
 

@@ -18,19 +18,19 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         return await msg.reply_text(
-            "❌ Contoh: <code>/weather jakarta</code>",
+            "Example: <code>/weather jakarta</code>",
             parse_mode="HTML"
         )
 
     city = " ".join(context.args).strip()
     if not city:
         return await msg.reply_text(
-            "❌ Contoh: <code>/weather jakarta</code>",
+            "Example: <code>/weather jakarta</code>",
             parse_mode="HTML"
         )
 
     status_msg = await msg.reply_text(
-        f"🌤 Mengambil cuaca untuk <b>{city.title()}</b>...",
+        f"🌤 Fetching weather for <b>{city.title()}</b>...",
         parse_mode="HTML"
     )
 
@@ -49,15 +49,15 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ) as resp:
             if resp.status != 200:
                 return await status_msg.edit_text(
-                    "❌ Gagal mengambil data cuaca.\n"
-                    "Server cuaca sedang sibuk, coba lagi nanti."
+                    "Failed to fetch weather data.\n"
+                    "The weather server is busy, please try again later."
                 )
             data = await resp.json()
 
     except asyncio.TimeoutError:
-        return await status_msg.edit_text("❌ Request timeout. Coba lagi nanti.")
+        return await status_msg.edit_text("Request timed out. Please try again later.")
     except Exception:
-        return await status_msg.edit_text("❌ Gagal menghubungi server cuaca.")
+        return await status_msg.edit_text("Failed to reach the weather server.")
 
     try:
         current = data.get("current_condition", [{}])[0]
@@ -74,19 +74,19 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sunset = astronomy.get("sunset", "N/A")
 
     except Exception:
-        return await status_msg.edit_text("❌ Error parsing data cuaca.")
+        return await status_msg.edit_text("Error parsing weather data.")
 
     report = (
         f"🌤 <b>Weather — {city.title()}</b>\n\n"
-        f"🔎 Kondisi : {weather_desc}\n"
-        f"🌡 Suhu : {temp_c}°C (Terasa {feels}°C)\n"
-        f"💧 Kelembaban : {humidity}%\n"
-        f"💨 Angin : {wind}\n"
-        f"☁️ Awan : {cloud}%\n\n"
+        f"🔎 Condition : {weather_desc}\n"
+        f"🌡 Temperature : {temp_c}°C (Feels like {feels}°C)\n"
+        f"💧 Humidity : {humidity}%\n"
+        f"💨 Wind : {wind}\n"
+        f"☁️ Cloud cover : {cloud}%\n\n"
         f"🌅 Sunrise : {sunrise}\n"
         f"🌇 Sunset  : {sunset}\n\n"
-        f"🕒 Update : {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        f"🕒 Updated : {time.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
     await status_msg.edit_text(report, parse_mode="HTML")
-        
+    

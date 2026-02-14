@@ -34,9 +34,9 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if not user or user.id not in OWNER_ID:
-        return await msg.reply_text("❌ Owner only.")
+        return
 
-    status = await msg.reply_text("🔄 Cek update...")
+    status = await msg.reply_text("Checking for updates...")
 
     subprocess.run(
         ["git", "fetch"],
@@ -52,7 +52,7 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if "behind" not in check.stdout:
-        return await status.edit_text("✅ Bot sudah versi terbaru.")
+        return await status.edit_text("The bot is already up to date.")
 
     changelog = _get_changelog()
 
@@ -65,24 +65,24 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if pull.returncode != 0:
         return await status.edit_text(
-            f"❌ Git pull gagal:\n<code>{html.escape(pull.stderr)}</code>",
+            f"Git pull failed:\n<code>{html.escape(pull.stderr)}</code>",
             parse_mode="HTML"
         )
 
-    text = "✅ <b>Update berhasil!</b>\n\n"
+    text = "<b>Update successful!</b>\n\n"
 
     if changelog:
         text += "📝 <b>Changelog:</b>\n"
         text += changelog + "\n\n"
     else:
-        text += "📝 <i>Tidak ada changelog.</i>\n\n"
+        text += "📝 <i>No changelog.</i>\n\n"
 
-    text += "Restart bot sekarang?"
+    text += "Restart the bot now?"
 
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("♻️ Restart Bot", callback_data="update_restart"),
-            InlineKeyboardButton("❌ Batal", callback_data="update_cancel"),
+            InlineKeyboardButton("❌ Cancel", callback_data="update_cancel"),
         ]
     ])
 
@@ -97,18 +97,17 @@ async def update_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
 
     if not user or user.id not in OWNER_ID:
-        await query.answer("❌ Lu bukan owner.", show_alert=True)
         return
 
     if query.data == "update_cancel":
-        await query.answer("❎ Dibatalkan.")
+        await query.answer("Cancelled.")
         await query.message.edit_reply_markup(None)
         return
 
     if query.data == "update_restart":
         await query.answer("♻️ Restarting...")
         await query.message.edit_text(
-            "♻️ <b>Update sukses, restarting bot...</b>",
+            "♻️ <b>Update successful, restarting the bot...</b>",
             parse_mode="HTML"
         )
 

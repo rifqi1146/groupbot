@@ -13,15 +13,15 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     if not query:
         return await update.message.reply_text(
-            "🎵 <b>Perintah Musik</b>\n\n"
-            "Gunakan format:\n"
-            "<code>/music &lt;judul lagu atau nama artis&gt;</code>",
+            "🎵 <b>Music Command</b>\n\n"
+            "Use the format:\n"
+            "<code>/music &lt;song title or artist name&gt;</code>",
             parse_mode="HTML"
         )
 
     status_msg = await update.message.reply_text(
-        "⏳ <b>Sedang mencari lagu...</b>\n\n"
-        "Tunggu bentar ya 🎧",
+        "⏳ <b>Searching for the song...</b>\n\n"
+        "Please wait a moment 🎧",
         reply_to_message_id=update.message.message_id,
         parse_mode="HTML",
     )
@@ -40,30 +40,30 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch5:{query}", download=False)
             if not info or not info.get("entries"):
-                raise Exception("Tidak ditemukan lagu atau video yang sesuai dengan pencarian.")
+                raise Exception("No matching songs or videos were found.")
             entries = info["entries"][:5]
 
         keyboard = []
-        text = "<b>🎧 Hasil Pencarian Lagu</b>\n\n"
+        text = "<b>🎧 Music Search Results</b>\n\n"
         for i, entry in enumerate(entries, 1):
-            title = entry.get("title") or "Tanpa judul"
+            title = entry.get("title") or "Untitled"
             video_id = entry.get("id")
-            uploader = entry.get("uploader") or "Tidak diketahui"
+            uploader = entry.get("uploader") or "Unknown"
             duration = entry.get("duration") or 0
 
             text += f"{i}. <b>{html.escape(title)}</b>\n"
-            text += f"   Oleh: {html.escape(uploader)} ({duration//60}:{duration%60:02d})\n\n"
+            text += f"   By: {html.escape(uploader)} ({duration//60}:{duration%60:02d})\n\n"
 
             if video_id:
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"▶️ Pilih {i}",
+                        f"▶️ Select {i}",
                         callback_data=f"music_download:{video_id}"
                     )
                 ])
 
         if not keyboard:
-            raise Exception("Hasil pencarian ada, tapi video_id kosong semua (aneh).")
+            raise Exception("Search results found, but all video IDs are missing.")
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -75,7 +75,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await status_msg.edit_text(
-            f"❌ <b>Gagal mencari lagu</b>\n\n<code>{html.escape(str(e))}</code>",
+            f"<b>Failed to search for the song</b>\n\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
         )
 
@@ -87,8 +87,8 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video_id = query.data.split(":", 1)[1]
 
     await query.edit_message_text(
-        "⏳ <b>Sedang mengunduh lagu</b>\n\n"
-        "Mohon tunggu sebentar, proses sedang berlangsung 🎶",
+        "⏳ <b>Downloading the song</b>\n\n"
+        "Please wait, the process is ongoing 🎶",
         parse_mode="HTML"
     )
 
@@ -96,7 +96,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if not shutil.which("ffmpeg"):
-            raise Exception("FFmpeg tidak terpasang di sistem.")
+            raise Exception("FFmpeg is not installed on the system.")
 
         ydl_opts = {
             "format": "bestaudio/best",
@@ -120,12 +120,12 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 download=True
             )
             if not info:
-                raise Exception("Gagal mengunduh lagu.")
+                raise Exception("Failed to download the song.")
             entry = info
 
         mp3_files = glob.glob("downloads/*.mp3")
         if not mp3_files:
-            raise Exception("File audio tidak ditemukan.")
+            raise Exception("Audio file not found.")
 
         file_path = max(mp3_files, key=os.path.getmtime)
 
@@ -133,11 +133,11 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             audio=open(file_path, "rb"),
             title=entry.get("title") or "Audio",
-            performer=entry.get("uploader", "Tidak diketahui"),
+            performer=entry.get("uploader", "Unknown"),
             duration=entry.get("duration"),
             caption=(
-                "🎵 <b>Unduhan Berhasil</b>\n\n"
-                f"<b>Judul:</b> {html.escape(entry.get('title') or 'Audio')}"
+                "🎵 <b>Download Successful</b>\n\n"
+                f"<b>Title:</b> {html.escape(entry.get('title') or 'Audio')}"
             ),
             reply_to_message_id=query.message.reply_to_message.message_id,
             parse_mode="HTML"
@@ -148,6 +148,6 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await query.edit_message_text(
-            f"❌ <b>Gagal mengunduh lagu</b>\n\n<code>{html.escape(str(e))}</code>",
+            f"❌ <b>Failed to download the song</b>\n\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
         )

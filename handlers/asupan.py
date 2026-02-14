@@ -276,21 +276,27 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if sub == "enable":
         ASUPAN_ENABLED_CHATS.add(chat.id)
         save_asupan_groups()
-        return await update.message.reply_text("Asupan diaktifkan di grup ini.")
+        return await update.message.reply_text(
+            "Asupan has been <b>ENABLED</b> in this group.",
+            parse_mode="HTML"
+        )
 
     if sub == "disable":
         ASUPAN_ENABLED_CHATS.discard(chat.id)
         save_asupan_groups()
-        return await update.message.reply_text("Asupan dimatikan di grup ini.")
+        return await update.message.reply_text(
+            "Asupan has been <b>DISABLED</b> in this group.",
+            parse_mode="HTML"
+        )
 
     if sub == "status":
         if chat.id in ASUPAN_ENABLED_CHATS:
             return await update.message.reply_text(
-                "Asupan <b>AKTIF</b> di grup ini.",
+                "Asupan status in this group: <b>ENABLED</b>",
                 parse_mode="HTML"
             )
         return await update.message.reply_text(
-            "Asupan <b>TIDAK AKTIF</b> di grup ini.",
+            "Asupan status in this group: <b>DISABLED</b>",
             parse_mode="HTML"
         )
 
@@ -299,9 +305,11 @@ async def asupann_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if not ASUPAN_ENABLED_CHATS:
-            return await update.message.reply_text("Belum ada grup yang diizinkan asupan.")
+            return await update.message.reply_text(
+                "No groups have Asupan enabled yet."
+            )
 
-        lines = ["<b>Grup Asupan Aktif</b>\n"]
+        lines = ["<b>Active Asupan Groups</b>\n"]
         for cid in ASUPAN_ENABLED_CHATS:
             try:
                 c = await bot.get_chat(cid)
@@ -341,17 +349,23 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "enable":
         AUTODEL_ENABLED_CHATS.add(chat.id)
         save_autodel_groups()
-        return await update.message.reply_text("Auto delete asupan diaktifkan di grup ini.")
+        return await update.message.reply_text(
+            "Auto delete Asupan has been <b>ENABLED</b> in this group.",
+            parse_mode="HTML"
+        )
 
     if arg == "disable":
         AUTODEL_ENABLED_CHATS.discard(chat.id)
         save_autodel_groups()
-        return await update.message.reply_text("Auto delete asupan dimatikan di grup ini.")
+        return await update.message.reply_text(
+            "Auto delete Asupan has been <b>DISABLED</b> in this group.",
+            parse_mode="HTML"
+        )
 
     if arg == "status":
-        status = "AKTIF" if is_autodel_enabled(chat.id) else "NONAKTIF"
+        status = "ENABLED" if is_autodel_enabled(chat.id) else "DISABLED"
         return await update.message.reply_text(
-            f"📌 Status auto delete asupan: <b>{status}</b>",
+            f"Auto delete Asupan status: <b>{status}</b>",
             parse_mode="HTML"
         )
 
@@ -361,10 +375,10 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not AUTODEL_ENABLED_CHATS:
             return await update.message.reply_text(
-                "Tidak ada grup dengan auto delete asupan aktif."
+                "No groups have auto delete Asupan enabled."
             )
 
-        lines = ["<b>Grup Auto Delete Asupan Aktif</b>\n"]
+        lines = ["<b>Active Auto Delete Asupan Groups</b>\n"]
         for cid in AUTODEL_ENABLED_CHATS:
             try:
                 c = await context.bot.get_chat(cid)
@@ -382,7 +396,7 @@ async def autodel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def asupan_keyboard(owner_id: int):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "🔄 Ganti Asupan",
+            "🔄 Next Asupan",
             callback_data=f"asupan:next:{owner_id}"
         )]
     ])
@@ -541,12 +555,12 @@ async def asupan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type != "private":
         if not is_asupan_enabled(chat.id):
             return await update.message.reply_text(
-                "🚫 Fitur asupan tidak tersedia di grup ini.",
+                "🚫 Asupan feature is not available in this group.",
                 parse_mode="HTML"
             )
 
     keyword = " ".join(context.args).strip() if context.args else None
-    msg = await update.message.reply_text("😋 Nyari asupan...")
+    msg = await update.message.reply_text("😋 Searching asupan...")
 
     try:
         data = await get_asupan_fast(context.bot, keyword)

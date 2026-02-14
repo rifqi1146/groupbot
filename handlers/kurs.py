@@ -22,16 +22,16 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
                 if r.status != 200:
-                    return await msg.reply_text("❌ Gagal ambil daftar mata uang.")
+                    return await msg.reply_text("Failed to fetch currency list.")
 
                 data = await r.json()
 
-            lines = ["💱 <b>Daftar Mata Uang</b>\n"]
+            lines = ["💱 <b>Currency List</b>\n"]
             for code, name in sorted(data.items()):
                 lines.append(f"• <b>{code}</b> — {name}")
 
             lines.append(
-                "\n🌐 Sumber data: "
+                "\n🌐 Data source: "
                 f"<a href=\"{ECB_SOURCE_URL}\">European Central Bank</a>"
             )
 
@@ -42,14 +42,14 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         except Exception as e:
-            return await msg.reply_text(f"❌ Error: {e}")
+            return await msg.reply_text(f"Error: {e}")
 
     if len(args) < 2:
         return await msg.reply_text(
-            "💱 <b>Kurs Mata Uang</b>\n\n"
+            "💱 <b>Currency Exchange</b>\n\n"
             "Format:\n"
-            "<code>/kurs [jumlah] FROM TO</code>\n\n"
-            "Contoh:\n"
+            "<code>/kurs [amount] FROM TO</code>\n\n"
+            "Example:\n"
             "<code>/kurs USD IDR</code>\n"
             "<code>/kurs 10 USD IDR</code>\n"
             "<code>/kurs list</code>",
@@ -66,7 +66,7 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from_cur = args[1].upper()
             to_cur = args[2].upper()
     except Exception:
-        return await msg.reply_text("❌ Format salah.")
+        return await msg.reply_text("Invalid format.")
 
     try:
         session = await get_http_session()
@@ -80,7 +80,7 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=aiohttp.ClientTimeout(total=10)
         ) as r:
             if r.status != 200:
-                return await msg.reply_text("❌ Gagal ambil data kurs.")
+                return await msg.reply_text("Failed to fetch exchange rate data.")
 
             data = await r.json()
 
@@ -88,17 +88,17 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date = data.get("date")
 
         if rate is None:
-            return await msg.reply_text("❌ Mata uang tidak valid.")
+            return await msg.reply_text("Invalid currency code.")
 
         await msg.reply_text(
-            "💱 <b>Kurs Mata Uang</b>\n\n"
+            "💱 <b>Currency Exchange</b>\n\n"
             f"{amount:g} <b>{from_cur}</b> ≈ <b>{rate:,.2f} {to_cur}</b>\n\n"
-            f"📅 Tanggal: <code>{date}</code>\n"
-            "🌐 Sumber: "
+            f"📅 Date: <code>{date}</code>\n"
+            "🌐 Source: "
             f"<a href=\"{ECB_SOURCE_URL}\">European Central Bank</a>",
             parse_mode="HTML",
             disable_web_page_preview=True
         )
 
     except Exception as e:
-        await msg.reply_text(f"❌ Error: {e}")
+        await msg.reply_text(f"Error: {e}")

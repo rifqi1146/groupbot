@@ -25,9 +25,9 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     group_ids = _load_groups()
     if not group_ids:
-        return await msg.reply_text("📭 Bot belum tercatat di grup manapun.")
+        return await msg.reply_text("📭 The bot is not registered in any groups.")
 
-    lines = ["<b>📋 Grup Bot Saat Ini</b>\n"]
+    lines = ["<b>📋 Current Bot Groups</b>\n"]
 
     for gid in group_ids:
         try:
@@ -35,7 +35,6 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = chat.title or "Unknown"
             lines.append(f"• {title}")
         except Exception:
-            # grup dihapus / bot keluar
             continue
 
     await msg.reply_text(

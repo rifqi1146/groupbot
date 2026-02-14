@@ -240,7 +240,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         text = (
-            "<b>🛰️ NET</b>\n\n"
+            "<b>NET</b>\n\n"
             "<b>Usage:</b>\n"
             "• <code>/net 8.8.8.8</code>\n"
             "• <code>/net google.com</code>\n"
@@ -252,10 +252,10 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = " ".join(context.args).strip()
     _, host, port = _extract_host_port(raw)
     if not host:
-        return await msg.reply_text("❌ Input invalid.", parse_mode="HTML")
+        return await msg.reply_text("Input invalid.", parse_mode="HTML")
 
     loading = await msg.reply_text(
-        f"🔄 <b>Analyzing:</b> <code>{html.escape(host)}</code>",
+        f"<b>Analyzing:</b> <code>{html.escape(host)}</code>",
         parse_mode="HTML"
     )
 
@@ -275,7 +275,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     w = await _fetch_whois_domain(host) if not target_is_ip else None
 
     lines = []
-    lines.append("<b>🛰️ NET Report</b>\n")
+    lines.append("<b>NET Report</b>\n")
     lines.append(f"<b>Input:</b> <code>{html.escape(raw)}</code>")
     lines.append(f"<b>Host:</b> <code>{html.escape(host)}</code>")
     if port:
@@ -301,7 +301,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ip_for_geo:
         lines.append("<b>🌍 IP / ASN</b>")
         if isinstance(ip_info, dict) and ip_info.get("error"):
-            lines.append(f"❌ <b>IP API:</b> <code>{html.escape(str(ip_info.get('error')))}</code>")
+            lines.append(f"<b>IP API:</b> <code>{html.escape(str(ip_info.get('error')))}</code>")
         elif isinstance(ip_info, dict) and ip_info.get("status") == "success":
             lines.append(f"<b>IP:</b> <code>{html.escape(str(ip_info.get('query')))}</code>")
             lines.append(f"<b>ISP:</b> {html.escape(ip_info.get('isp','N/A'))}")
@@ -332,7 +332,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append("")
 
     if httpfp:
-        lines.append("<b>🧩 HTTP Fingerprint</b>")
+        lines.append("<b>HTTP Fingerprint</b>")
         https_r = httpfp.get("https") or {}
         http_r = httpfp.get("http") or {}
 
@@ -346,7 +346,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"<b>Content-Type:</b> <code>{html.escape(https_r.get('content_type'))}</code>")
             lines.append(f"<b>HSTS:</b> <code>{'Yes' if https_r.get('hsts') else 'No'}</code>")
         else:
-            lines.append("<b>HTTPS:</b> ❌")
+            lines.append("<b>HTTPS:</b>")
             if https_r.get("err"):
                 lines.append(f"<code>{html.escape(https_r.get('err'))}</code>")
 
@@ -362,7 +362,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     lines.append(f"<b>Content-Type:</b> <code>{html.escape(http_r.get('content_type'))}</code>")
             else:
                 lines.append("")
-                lines.append("<b>HTTP:</b> ❌")
+                lines.append("<b>HTTP:</b>")
                 if http_r.get("err"):
                     lines.append(f"<code>{html.escape(http_r.get('err'))}</code>")
 
@@ -381,7 +381,7 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if w and isinstance(w, dict) and w.get("error"):
         lines.append("")
         lines.append("<b>📋 WHOIS</b>")
-        lines.append(f"❌ <code>{html.escape(str(w.get('error')))}</code>")
+        lines.append(f"<code>{html.escape(str(w.get('error')))}</code>")
 
     elif w and not isinstance(w, dict):
         ns = getattr(w, "name_servers", None)

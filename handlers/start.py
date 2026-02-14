@@ -13,7 +13,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = (user.first_name or "").strip() or "there"
     text = (
-        f"👋 Halo {name}!\n\n"
-        "Ketik /help buat lihat menu."
+        f"👋 Hello {name}!\n\n"
+        "Type /help to see the menu."
     )
     await update.message.reply_text(text)

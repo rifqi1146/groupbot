@@ -64,12 +64,12 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = raw_text[len("/broadcast"):].lstrip() if raw_text.startswith("/broadcast") else raw_text
 
     if not text:
-        return await msg.reply_text("❌ Message is empty.")
+        return await msg.reply_text("Message is empty.")
 
     sent = 0
     failed = 0
 
-    status = await msg.reply_text("📣 Broadcasting...")
+    status = await msg.reply_text("Broadcasting...")
 
     targets = _get_targets()
 
@@ -102,9 +102,9 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.7)
 
     await status.edit_text(
-        "✅ <b>Broadcast finished</b>\n\n"
-        f"📨 Sent: <b>{sent}</b>\n"
-        f"❌ Failed: <b>{failed}</b>",
+        "<b>Broadcast finished</b>\n\n"
+        f"Sent: <b>{sent}</b>\n"
+        f"Failed: <b>{failed}</b>",
         parse_mode="HTML"
     )
 

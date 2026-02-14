@@ -90,14 +90,14 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "ts": time.time(),
     }
 
-    msg = await update.message.reply_text("🔍 Lagi nyari di Google...")
+    msg = await update.message.reply_text("🔍 Searching on Google...")
 
     ok, res = await google_search(query, 0)
     if not ok:
-        return await msg.edit_text(f"❌ Error\n<code>{res}</code>", parse_mode="HTML")
+        return await msg.edit_text(f"Error\n<code>{res}</code>", parse_mode="HTML")
 
     if not res:
-        return await msg.edit_text("❌ Ga nemu hasil.")
+        return await msg.edit_text("No results found.")
 
     text = f"🔍 <b>Google Search:</b> <i>{html.escape(query)}</i>\n\n"
     for i, r in enumerate(res, start=1):
@@ -114,7 +114,8 @@ async def gsearch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=False
     )
 
-#callback
+
+# callback
 async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -133,14 +134,14 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = GSEARCH_CACHE.get(search_id)
     if not data:
-        return await q.message.edit_text("❌ Data search expired.")
+        return await q.message.edit_text("Search data expired.")
 
     if time.time() - data["ts"] > GSEARCH_CACHE_TTL:
         GSEARCH_CACHE.pop(search_id, None)
-        return await q.message.edit_text("❌ Search expired.")
+        return await q.message.edit_text("Search expired.")
 
     if q.from_user.id != data["user"]:
-        return await q.answer("Ini bukan search lu dongo", show_alert=True)
+        return await q.answer("This is not your search.", show_alert=True)
 
     if page < 0:
         return
@@ -148,7 +149,7 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = data["query"]
     ok, res = await google_search(query, page)
     if not ok or not res:
-        return await q.message.edit_text("❌ Gada hasil lagi.")
+        return await q.message.edit_text("No more results.")
 
     data["page"] = page
     data["ts"] = time.time()
@@ -167,4 +168,3 @@ async def gsearch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=gsearch_keyboard(search_id, page),
         disable_web_page_preview=False
     )
-                   

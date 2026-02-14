@@ -1,6 +1,6 @@
 from telegram.ext import CommandHandler
 
-from handlers.nsfw import pollinations_generate_nsfw, nsfw_cmd
+from handlers.nsfw import nsfw_cmd
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd
 from handlers.broadcast import broadcast_cmd
 from handlers.start import start_cmd

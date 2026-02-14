@@ -131,11 +131,11 @@ async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not groups:
             return await update.message.reply_text(
-                "📭 Tidak ada grup NSFW aktif.",
+                "No NSFW-enabled groups.",
                 parse_mode="HTML"
             )
 
-        lines = ["🔞 <b>Grup NSFW Aktif</b>\n"]
+        lines = ["<b>NSFW Enabled Groups</b>\n"]
 
         for gid in groups:
             try:
@@ -156,95 +156,32 @@ async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "enable":
         set_nsfw(chat.id, True)
         return await update.message.reply_text(
-            "🔞 NSFW <b>AKTIF</b> di grup ini.",
+            "NSFW <b>ENABLED</b> in this group.",
             parse_mode="HTML"
         )
 
     if arg == "disable":
         set_nsfw(chat.id, False)
         return await update.message.reply_text(
-            "🚫 NSFW <b>DIMATIKAN</b> di grup ini.",
+            "NSFW <b>DISABLED</b> in this group.",
             parse_mode="HTML"
         )
 
     if arg == "status":
-        status = "AKTIF" if is_nsfw_allowed(chat.id, chat.type) else "NONAKTIF"
+        status = "ENABLED" if is_nsfw_allowed(chat.id, chat.type) else "DISABLED"
         return await update.message.reply_text(
-            f"📌 Status NSFW di grup ini: <b>{status}</b>",
+            f"NSFW status in this group: <b>{status}</b>",
             parse_mode="HTML"
         )
 
     return await update.message.reply_text(
-        "⚙️ <b>NSFW Settings</b>\n\n"
+        "<b>NSFW Settings</b>\n\n"
         "<code>/nsfw enable</code>\n"
         "<code>/nsfw disable</code>\n"
         "<code>/nsfw status</code>\n"
         "<code>/nsfw list</code>",
         parse_mode="HTML"
     )
-
-
-async def pollinations_generate_nsfw(update, context):
-    msg = update.message
-    if not msg:
-        return
-
-    chat = update.effective_chat
-
-    if not is_nsfw_allowed(chat.id, chat.type):
-        return await msg.reply_text(
-            "🚫 NSFW tidak tersedia di grup ini."
-        )
-
-    em = _emo()
-
-    prompt = _extract_prompt_from_update(update, context)
-    if not prompt:
-        return await msg.reply_text(
-            f"{em} {bold('Contoh:')} {code('/generate waifu anime')}",
-            parse_mode="HTML"
-        )
-
-    uid = msg.from_user.id if msg.from_user else 0
-    if uid and not _can(uid):
-        return await msg.reply_text(f"{em} ⏳ Sabar dulu ya...")
-
-    status_msg = await msg.reply_text(
-        bold("🖼️ Generating image..."),
-        parse_mode="HTML"
-    )
-
-    boosted = f"{prompt}, nude, hentai, adult, soft lighting, bdsm"
-    encoded = urllib.parse.quote(boosted)
-    url = f"https://image.pollinations.ai/prompt/{encoded}"
-
-    try:
-        session = await get_http_session()
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as r:
-            if r.status != 200:
-                err = (await r.text())[:300]
-                return await status_msg.edit_text(
-                    f"{em} ❌ Gagal.\n<code>{html.escape(err)}</code>",
-                    parse_mode="HTML"
-                )
-
-            bio = io.BytesIO(await r.read())
-            bio.name = "nsfw.png"
-
-            await msg.reply_photo(
-                photo=bio,
-                caption=f"🔞 {bold('NSFW')}\n🖼️ Prompt: {code(prompt)}",
-                parse_mode="HTML"
-            )
-
-            await status_msg.delete()
-
-    except Exception as e:
-        await status_msg.edit_text(
-            f"{em} ❌ Error: <code>{html.escape(str(e))}</code>",
-            parse_mode="HTML"
-        )
-
 
 try:
     _nsfw_db_init()

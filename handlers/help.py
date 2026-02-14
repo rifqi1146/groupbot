@@ -68,17 +68,17 @@ HELP_TEXT = {
         "• 🔎 <code>/gsearch</code> — Search on Google\n"
         "• 🌍 <code>/tr</code> — Translate text between languages\n"
         "• 📃 <code>/trlist</code> — List supported languages\n"
-        "• 💝 <code>/ship</code> — Choose couple\n"
-        "• 🧭 <code>/reminder</code> — Schedule reminder\n"
-        "• 💝 <code>/waifu</code> — Get waifu\n"
+        "• 💝 <code>/ship</code> — Choose a couple\n"
+        "• 🧭 <code>/reminder</code> — Schedule a reminder\n"
+        "• 💝 <code>/waifu</code> — Get a waifu\n"
         "• 💸 <code>/kurs</code> — Currency conversion\n"
     ),
 
     "help:ai": (
         "🤐 <b>AI Chat</b>\n\n"
-        "• 💬 <code>/ai</code> — Chat with AI Gemini\n"
-        "• 🧠 <code>/ask</code> — ChatGPT\n"
-        "• ⚡ <code>/groq</code> — Groq\n"
+        "• 💬 <code>/ai</code> — Chat with Gemini AI\n"
+        "• 🧠 <code>/ask</code> — Chat with ChatGPT\n"
+        "• ⚡ <code>/groq</code> — Chat with Groq\n"
         "• 😍 <code>/caca</code> — Caca Chat Bot\n"
     ),
 
@@ -92,69 +92,69 @@ HELP_TEXT = {
     ),
 
     "help:privacy": (
-        "🔐 <b>Privasi Pengguna</b>\n\n"
-        "Dengan menggunakan bot ini, pengguna memahami dan menyetujui bahwa:\n\n"
-        "• Owner bot dapat melihat dan menyimpan riwayat command yang digunakan pengguna\n"
-        "• Data yang dicatat meliputi:\n"
-        "  - ID pengguna Telegram\n"
-        "  - Username (jika ada)\n"
-        "  - Command yang digunakan\n"
-        "  - Waktu penggunaan (timestamp)\n\n"
-        "Data tersebut hanya digunakan untuk keperluan:\n"
-        "• Pengembangan\n"
-        "• Pemeliharaan\n"
-        "• Peningkatan layanan bot\n\n"
-        "<b>❗ Jangan kirimkan kata sandi, nomor identitas, atau data sensitive lainnya.</b>\n\n"
-        "Dengan melanjutkan penggunaan bot, pengguna dianggap telah menyetujui kebijakan ini."
+        "🔐 <b>User Privacy</b>\n\n"
+        "By using this bot, users understand and agree that:\n\n"
+        "• The bot owner may view and store the command history used by users\n"
+        "• The recorded data may include:\n"
+        "  - Telegram user ID\n"
+        "  - Username (if available)\n"
+        "  - Commands used\n"
+        "  - Usage time (timestamp)\n\n"
+        "This data is used only for:\n"
+        "• Development\n"
+        "• Maintenance\n"
+        "• Service improvement\n\n"
+        "<b>❗ Do not send passwords, identification numbers, or other sensitive data.</b>\n\n"
+        "By continuing to use this bot, users are considered to have agreed to this policy."
     ),
 }
 
 HELP_TEXT.update({
     "help:settings": (
         "⚙️ <b>Bot Settings</b>\n\n"
-        "Pilih menu di bawah untuk melihat detail per fitur."
+        "Select a menu below to see detailed options for each feature."
     ),
 
     "help:asupan": (
         "🍜 <b>Asupan Settings</b>\n\n"
-        "• <code>/asupann enable</code> — Aktifkan asupan di grup\n"
-        "• <code>/asupann disable</code> — Matikan asupan di grup\n"
-        "• <code>/asupann status</code> — Cek status asupan\n\n"
+        "• <code>/asupann enable</code> — Enable asupan in the group\n"
+        "• <code>/asupann disable</code> — Disable asupan in the group\n"
+        "• <code>/asupann status</code> — Check asupan status\n\n"
     ),
 
     "help:autodel": (
         "🗑️ <b>Auto Delete Asupan</b>\n\n"
-        "• <code>/autodel enable</code> — Aktifkan auto delete asupan\n"
-        "• <code>/autodel disable</code> — Matikan auto delete asupan\n"
-        "• <code>/autodel status</code> — Cek status auto delete\n\n"
+        "• <code>/autodel enable</code> — Enable auto-delete for asupan\n"
+        "• <code>/autodel disable</code> — Disable auto-delete for asupan\n"
+        "• <code>/autodel status</code> — Check auto-delete status\n\n"
     ),
 
     "help:autodl": (
         "⬇️ <b>Auto Download Link</b>\n\n"
-        "• <code>/autodl enable</code> — Aktifkan auto-detect link\n"
-        "• <code>/autodl disable</code> — Matikan auto-detect link\n"
-        "• <code>/autodl status</code> — Cek status auto-detect\n\n"
+        "• <code>/autodl enable</code> — Enable automatic link detection\n"
+        "• <code>/autodl disable</code> — Disable automatic link detection\n"
+        "• <code>/autodl status</code> — Check auto-detect status\n\n"
     ),
 
     "help:cacaa": (
         "😍 <b>Caca Settings</b>\n\n"
-        "• <code>/mode</code> — Change persona caca (Premium Only)\n"
-        "• <code>/cacaa enable</code> — Aktifkan Caca di grup\n"
-        "• <code>/cacaa disable</code> — Matikan Caca di grup\n"
-        "• <code>/cacaa status</code> — Cek status Caca\n\n"
+        "• <code>/mode</code> — Change Caca persona (Premium Only)\n"
+        "• <code>/cacaa enable</code> — Enable Caca in the group\n"
+        "• <code>/cacaa disable</code> — Disable Caca in the group\n"
+        "• <code>/cacaa status</code> — Check Caca status\n\n"
     ),
     
     "help:nsfw": (
         "🔞 <b>NSFW Settings</b>\n\n"
-        "• <code>/nsfw enable</code> — Aktifkan NSFW di grup\n"
-        "• <code>/nsfw disable</code> — Matikan NSFW di grup\n"
-        "• <code>/nsfw status</code> — Cek status NSFW\n\n"
+        "• <code>/nsfw enable</code> — Enable NSFW in the group\n"
+        "• <code>/nsfw disable</code> — Disable NSFW in the group\n"
+        "• <code>/nsfw status</code> — Check NSFW status\n\n"
     ),
     
     "help:wlc": (
         "🛖 <b>Welcome Settings</b>\n\n"
-        "• <code>wlc enable</code> — Aktifkan Welcome\n"
-        "• <code>wlc disable</code> — Matikan Welcome\n\n"
+        "• <code>/wlc enable</code> — Enable welcome messages\n"
+        "• <code>/wlc disable</code> — Disable welcome messages\n\n"
     ),
 })
 

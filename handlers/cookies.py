@@ -49,15 +49,18 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not doc:
         return await msg.reply_text(
-            "📎 <b>Kirim file cookies sebagai document</b>.\n\n"
-            "Cara pakai:\n"
-            "• Kirim <code>cookies.txt</code> lalu ketik <code>/cookies</code>\n"
-            "• Atau reply pesan dengan <code>/cookies</code>",
+            "<b>Send the cookies file as a document</b>.\n\n"
+            "How to use:\n"
+            "• Send <code>cookies.txt</code> then type <code>/cookies</code>\n"
+            "• Or reply to the file message with <code>/cookies</code>",
             parse_mode="HTML",
         )
 
     if doc.file_size and doc.file_size > _MAX_FILE_SIZE:
-        return await msg.reply_text("❌ <b>File terlalu besar.</b> Maks 512KB.", parse_mode="HTML")
+        return await msg.reply_text(
+            "<b>File too large.</b> Maximum 512KB.",
+            parse_mode="HTML"
+        )
 
     os.makedirs(COOKIES_DIR, exist_ok=True)
     tmp_path = COOKIES_PATH + ".uploading"
@@ -70,7 +73,7 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raw = f.read()
 
         if not raw:
-            raise RuntimeError("File kosong")
+            raise RuntimeError("File is empty")
 
         text = raw.decode("utf-8", errors="ignore")
 
@@ -81,8 +84,8 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
             return await msg.reply_text(
-                "❌ <b>Format cookies tidak dikenali.</b>\n"
-                "Pastikan format <b>Netscape cookies.txt</b>.",
+                "<b>Unrecognized cookies format.</b>\n"
+                "Make sure it uses <b>Netscape cookies.txt</b> format.",
                 parse_mode="HTML",
             )
 
@@ -96,9 +99,9 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         return await msg.reply_text(
-            "✅ <b>Cookies berhasil diupdate.</b>\n"
-            f"🕒 Updated: <code>{updated_ts}</code>\n"
-            f"⌛ Est. expired: <code>{exp_ts}</code>",
+            "<b>Cookies successfully updated.</b>\n"
+            f"Updated: <code>{updated_ts}</code>\n"
+            f"Estimated expiration: <code>{exp_ts}</code>",
             parse_mode="HTML",
         )
 
@@ -109,6 +112,6 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         return await msg.reply_text(
-            f"❌ <b>Gagal update cookies:</b> <code>{e}</code>",
+            f"<b>Failed to update cookies:</b> <code>{e}</code>",
             parse_mode="HTML",
         )

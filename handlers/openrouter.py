@@ -109,7 +109,7 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not prompt:
             return await msg.reply_text(
-                "<b>❓ Ask AI</b>\n\n"
+                "<b>Ask AI</b>\n\n"
                 "<code>/ask jelaskan relativitas</code>\n"
                 "<code>/ask search berita AI terbaru</code>",
                 parse_mode="HTML"
@@ -205,6 +205,6 @@ async def ask_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ASK_MEMORY.pop(user_id, None)
         _ASK_ACTIVE_USERS.pop(user_id, None)
         await msg.reply_text(
-            f"<b>❌ Error</b>\n<code>{html.escape(str(e))}</code>",
+            f"<b>Error</b>\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
         )
