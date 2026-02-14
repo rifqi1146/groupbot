@@ -269,7 +269,7 @@ def generate_math_question(user_id: int, chat_id: int):
     ]
 
     text = (
-        "Jawab soal Matematika berikut 👇\n\n"
+        "Answer the following math question\n\n"
         f"<b>{a} {op} {b} = ?</b>\n\n"
     )
 
@@ -280,7 +280,7 @@ def verify_keyboard(user_id: int, chat_id: int, bot_username: str):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "Verifikasi",
+                "Verify",
                 url=f"https://t.me/{bot_username}?start=verify_{chat_id}_{user_id}"
             )
         ]
@@ -324,7 +324,7 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not arg:
         return await msg.reply_text(
-            "Gunakan:\n"
+            "Usage:\n"
             "<code>/wlc enable</code>\n"
             "<code>/wlc disable</code>",
             parse_mode="HTML"
@@ -333,15 +333,15 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "enable":
         WELCOME_ENABLED_CHATS.add(chat.id)
         save_welcome_chats()
-        return await msg.reply_text("✅ Welcome message diaktifkan.", parse_mode="HTML")
+        return await msg.reply_text("<b>Welcome message enabled.</b>", parse_mode="HTML")
 
     if arg == "disable":
         WELCOME_ENABLED_CHATS.discard(chat.id)
         save_welcome_chats()
-        return await msg.reply_text("🚫 Welcome message dimatikan.", parse_mode="HTML")
+        return await msg.reply_text("<b>Welcome message disabled.</b>", parse_mode="HTML")
 
     return await msg.reply_text(
-        "❌ Gunakan <code>enable</code> atau <code>disable</code>.",
+        "Use <code>enable</code> or <code>disable</code>.",
         parse_mode="HTML"
     )
 
@@ -368,13 +368,13 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chatname = chat.title or "this group"
 
         caption = (
-            f"👋 <b>Hai {fullname}</b>\n"
-            f"Selamat datang di <b>{chatname}</b> ✨\n\n"
+            f"👋 <b>Hello {fullname}</b>\n"
+            f"Welcome to <b>{chatname}</b> ✨\n\n"
             f"🧾 <b>User Information</b>\n"
             f"🆔 ID       : <code>{user.id}</code>\n"
             f"👤 Name     : {fullname}\n"
             f"🔖 Username : {username}\n\n"
-            f"🔐 <b>Silakan verifikasi terlebih dahulu</b>"
+            f"🔐 <b>Please complete verification first</b>"
         )
 
         try:
@@ -440,16 +440,16 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
     chosen = int(chosen)
 
     if q.from_user.id != user_id:
-        await q.answer("❌ Bukan tombol lu.", show_alert=True)
+        await q.answer("Not your button.", show_alert=True)
         return
 
     pending = PENDING_VERIFY.get(user_id)
     if not pending or pending["chat_id"] != chat_id:
-        await q.answer("❌ Verifikasi invalid.", show_alert=True)
+        await q.answer("Invalid verification.", show_alert=True)
         return
 
     if chosen != pending["answer"]:
-        await q.answer("❌ Salah. Coba lagi.", show_alert=False)
+        await q.answer("Wrong answer. Try again.", show_alert=True)
         text, keyboard = generate_math_question(user_id, chat_id)
         try:
             await q.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -457,7 +457,7 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
             await q.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
-    await q.answer("✅ Verifikasi berhasil!", show_alert=False)
+    await q.answer("Verification successful!", show_alert=False)
 
     try:
         await context.bot.restrict_chat_member(
@@ -509,12 +509,12 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
     try:
-        await q.message.edit_text("✅ Verifikasi berhasil. Anda dapat kembali ke grup.")
+        await q.message.edit_text("Verification successful. You may return to the group.")
     except Exception:
         try:
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
-                text="✅ Verifikasi berhasil. Anda dapat kembali ke grup."
+                text="Verification successful. You may return to the group."
             )
         except Exception:
             pass
