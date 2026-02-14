@@ -64,6 +64,44 @@ def _wv_db_init():
         )
 
         con.commit()
+
+        cur = con.execute("PRAGMA table_info(welcome_chats)")
+        cols = cur.fetchall()
+        pk_on_chat_id = False
+        for c in cols:
+            name = c[1]
+            is_pk = c[5]
+            if name == "chat_id" and int(is_pk) == 1:
+                pk_on_chat_id = True
+                break
+
+        if not pk_on_chat_id:
+            con.execute("ALTER TABLE welcome_chats RENAME TO welcome_chats_old")
+
+            con.execute(
+                """
+                CREATE TABLE welcome_chats (
+                    chat_id INTEGER PRIMARY KEY,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+
+            con.execute(
+                """
+                INSERT OR REPLACE INTO welcome_chats (chat_id, enabled, updated_at)
+                SELECT
+                    COALESCE(chat_id, id) as chat_id,
+                    COALESCE(enabled, 1) as enabled,
+                    COALESCE(updated_at, strftime('%s','now')) as updated_at
+                FROM welcome_chats_old
+                """
+            )
+
+            con.execute("DROP TABLE welcome_chats_old")
+            con.commit()
+
     finally:
         con.close()
 
