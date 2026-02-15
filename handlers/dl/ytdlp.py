@@ -2,8 +2,54 @@ import os
 import uuid
 import asyncio
 import shutil
+import subprocess
 from .constants import COOKIES_PATH, TMP_DIR
 from .utils import progress_bar
+
+_SIZE_100MB = 100 * 1024 * 1024
+
+def _probe_total_size_sync(url: str, fmt: str) -> int:
+    YT_DLP = shutil.which("yt-dlp")
+    if not YT_DLP:
+        return 0
+
+    cmd = [
+        YT_DLP,
+        "--cookies", COOKIES_PATH,
+        "--no-playlist",
+        "-J",
+        "-f", fmt,
+        url,
+    ]
+
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        return 0
+
+    try:
+        info = __import__("json").loads(p.stdout)
+    except Exception:
+        return 0
+
+    total = info.get("filesize") or info.get("filesize_approx") or 0
+    try:
+        total = int(total) if total else 0
+    except Exception:
+        total = 0
+
+    if total:
+        return total
+
+    req = info.get("requested_downloads") or []
+    s = 0
+    for d in req:
+        fs = d.get("filesize") or d.get("filesize_approx") or 0
+        try:
+            fs = int(fs) if fs else 0
+        except Exception:
+            fs = 0
+        s += fs
+    return s
 
 async def ytdlp_download(
     url,
@@ -20,7 +66,11 @@ async def ytdlp_download(
 
     out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
 
+    update_interval = 3
+
     async def run(cmd):
+        nonlocal update_interval
+
         print("\n[YTDLP CMD]")
         print(" ".join(cmd))
 
@@ -52,7 +102,7 @@ async def ytdlp_download(
             last_pct = pct
 
             now = __import__("time").time()
-            if now - last_edit >= 3:
+            if now - last_edit >= update_interval:
                 try:
                     await bot.edit_message_text(
                         chat_id=chat_id,
@@ -82,6 +132,7 @@ async def ytdlp_download(
         return proc.returncode
 
     if fmt_key == "mp3":
+        update_interval = 3
         code = await run(
             [
                 YT_DLP,
@@ -109,6 +160,9 @@ async def ytdlp_download(
         else:
             fmt = "bestvideo*+bestaudio/best"
 
+        est_size = await asyncio.to_thread(_probe_total_size_sync, url, fmt)
+        update_interval = 7 if (est_size and est_size >= _SIZE_100MB) else 3
+
         code = await run(
             [
                 YT_DLP,
@@ -126,6 +180,7 @@ async def ytdlp_download(
 
         if code != 0:
             print("[YTDLP] video failed → trying bestimage")
+            update_interval = 3
             code = await run(
                 [
                     YT_DLP,
