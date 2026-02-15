@@ -34,16 +34,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "skip_download": True,
             "cookiefile": COOKIES_PATH,
             "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
-            "extract_flat": True,
-            "default_search": "ytsearch",
-            "socket_timeout": 10,
-            "retries": 1,
-            "extractor_retries": 1,       
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android"],
-                }
-            },
+            "extractor_args": {"youtube": {"player_client": ["web", "tv", "android"]}},
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -66,7 +57,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if video_id:
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"Select {i}",
+                        f"▶️ Select {i}",
                         callback_data=f"music_download:{video_id}"
                     )
                 ])
