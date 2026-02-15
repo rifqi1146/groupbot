@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import html
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
@@ -54,19 +55,31 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     group_ids = _load_groups()
     if not group_ids:
-        return await msg.reply_text("The bot is not registered in any groups.")
+        return await msg.reply_text("📭 <b>No groups recorded yet.</b>", parse_mode="HTML")
 
-    lines = ["<b>Current Bot Groups</b>\n"]
+    total = len(group_ids)
+    lines = [f"📋 <b>Current Bot Groups</b> — <b>{total}</b>\n"]
 
     for gid in group_ids:
         try:
             chat = await bot.get_chat(gid)
-            title = chat.title or "Unknown"
-            lines.append(f"• {title} <code>{gid}</code>")
-        except Exception:
-            lines.append(f"• <code>{gid}</code>")
+            title = html.escape(chat.title or "Unknown")
+            username = getattr(chat, "username", None)
 
-    await msg.reply_text("\n".join(lines), parse_mode="HTML")
+            if username:
+                link = f"https://t.me/{html.escape(username)}"
+                lines.append(f"• 🔗 <a href=\"{link}\">{title}</a> <code>{gid}</code>")
+            else:
+                lines.append(f"• 🏷️ {title} <code>{gid}</code>")
+
+        except Exception:
+            lines.append(f"• ⚠️ <code>{gid}</code>")
+
+    await msg.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
 
 
 try:
