@@ -30,7 +30,8 @@ async def mode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• bokep\n"
             "• sarkas\n"
             "• toxic\n"
-            "• yandere",
+            "• yandere\n"
+            "• loli",
             parse_mode="HTML"
         )
 
