@@ -51,7 +51,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
                         message_id=status_msg_id,
                         text=(
                             "<b>Downloading...</b>\n\n"
-                            f"<code>{progress_bar(pct)} {pct:.1f}%</code>"
+                            f"<code>{progress_bar(pct)}</code>"
                         ),
                         parse_mode="HTML",
                     )
