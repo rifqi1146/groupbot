@@ -2,6 +2,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 
 from utils.config import SUPPORT_CHANNEL_ID, SUPPORT_CHANNEL_LINK
+
 async def is_joined_support_channel(
     user_id: int,
     context: ContextTypes.DEFAULT_TYPE
