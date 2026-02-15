@@ -1,10 +1,7 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 
-SUPPORT_CHANNEL_ID = -1003823718542
-SUPPORT_CHANNEL_LINK = "https://t.me/kiyoshi_support"
-
-
+from utils.config import SUPPORT_CHANNEL_ID, SUPPORT_CHANNEL_LINK
 async def is_joined_support_channel(
     user_id: int,
     context: ContextTypes.DEFAULT_TYPE

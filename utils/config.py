@@ -31,6 +31,10 @@ OWNER_ID = require_env_list("BOT_OWNER_ID")
 #log & asupan startup
 LOG_CHAT_ID = require_env("LOG_CHAT_ID", int)
 
+# force join
+SUPPORT_CHANNEL_ID = os.getenv("SUPPORT_CH_ID")
+SUPPORT_CHANNEL_LINK = os.getenv("SUPPORT_CH_LINK")
+
 #gsearch & gemini
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
