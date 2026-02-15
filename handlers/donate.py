@@ -20,7 +20,9 @@ async def donate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "<b>Support the Bot</b>\n\n"
         "If you enjoy using this bot and would like to support its development, "
-        "you can donate through the button below."
+        "you can donate through the button below.\n\n"
+        "Once the donation is completed, contact the bot owner via private message "
+        "to activate premium access."
     )
 
     await msg.reply_text(

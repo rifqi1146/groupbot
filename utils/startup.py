@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 
 async def startup_tasks(app):
-    log.info("🔧 Running startup tasks...")
+    log.info("✓ Running startup tasks...")
 
     try:
         load_asupan_groups()

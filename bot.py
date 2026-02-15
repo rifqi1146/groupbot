@@ -48,13 +48,14 @@ async def post_init(app):
     try:
         me = await app.bot.get_me()
         BOT_USERNAME = me.username.lower()
-        log.info(f"🤖 Bot username loaded: @{BOT_USERNAME}")
+        log.info(f"✓ Bot username loaded: @{BOT_USERNAME}")
     except Exception as e:
         log.warning(f"⚠️ Failed to get bot username: {e}")
 
     try:
         await app.bot.set_my_commands([
             ("start", "Check bot status"),
+            ("donate", "Support bot"),
             ("help", "Show help menu"),
             ("quiz", "random soal"),
             ("ping", "Check latency"),
@@ -63,25 +64,26 @@ async def post_init(app):
             ("dl", "Download video"),
             ("ai", "Ask Gemini AI"),
             ("ask", "Ask ChatGPT"),
-            ("music", "Search music"),            ("caca", "Chat sama caca 😍"),
+            ("music", "Search music"),            
+            ("caca", "Chat sama caca 😍"),
             ("groq", "Ask Groq AI"),
             ("gsearch", "Google search"),
             ("asupan", "Asupan 😋"),
             ("tr", "Translate text"),
         ])
-        log.info("📜 Bot commands set")
+        log.info("✓ Bot commands set")
     except Exception as e:
-        log.warning(f"⚠️ Failed to set bot commands: {e}")
+        log.warning(f"✓ Failed to set bot commands: {e}")
 
     try:
         cmds = await app.bot.get_my_commands()
         app.bot_data["commands"] = cmds
-        log.info("🧠 Cached bot commands: " + ", ".join(c.command for c in cmds))
+        log.info("✓ Cached bot commands: " + ", ".join(c.command for c in cmds))
     except Exception as e:
         log.warning(f"⚠️ Failed to cache bot commands: {e}")
 
     await startup_tasks(app)
-    log.info("🚀 Startup tasks executed")
+    log.info("✓ Startup tasks executed")
 
 
 async def post_shutdown(app):
