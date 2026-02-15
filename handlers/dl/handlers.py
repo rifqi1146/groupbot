@@ -29,9 +29,30 @@ os.makedirs(TMP_DIR, exist_ok=True)
 def is_youtube(url: str) -> bool:
     return any(x in (url or "") for x in ("youtube.com", "youtu.be", "music.youtube.com"))
 
+from urllib.parse import urlparse
+
+def _host(url: str) -> str:
+    try:
+        u = urlparse((url or "").strip())
+        h = (u.hostname or "").lower()
+        return h
+    except Exception:
+        return ""
+
+def _host_match(host: str, domain: str) -> bool:
+    host = (host or "").lower()
+    domain = (domain or "").lower()
+    return host == domain or host.endswith("." + domain)
+
 def is_supported_platform(url: str) -> bool:
-    url = (url or "").lower()
-    return any(domain in url for domain in AUTO_DOWNLOAD_DOMAINS)
+    host = _host(url)
+    if not host:
+        return False
+    return any(_host_match(host, d) for d in AUTO_DOWNLOAD_DOMAINS)
+
+def is_youtube(url: str) -> bool:
+    host = _host(url)
+    return any(_host_match(host, d) for d in ("youtube.com", "youtu.be", "music.youtube.com"))
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user

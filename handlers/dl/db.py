@@ -85,15 +85,14 @@ def is_premium_required(url: str, premium_domains: set[str]) -> bool:
             return True
     return False
 
+_PREMIUM_USERS: set[int] = set()
+
+def init_premium_cache():
+    global _PREMIUM_USERS
+    _PREMIUM_USERS = premium_load_set()
+
 def is_premium_user(user_id: int) -> bool:
     uid = int(user_id)
-
     if uid in OWNER_ID:
         return True
-
-    try:
-        s = premium_load_set()
-    except Exception:
-        s = set()
-
-    return is_premium(uid, s)
+    return uid in _PREMIUM_USERS
