@@ -404,6 +404,7 @@ def asupan_keyboard(owner_id: int):
 
 async def fetch_asupan_tikwm(keyword: str | None = None):
     default_keywords = [
+        "cacaaaja39",
         "tante holic",
         "alaa.sabillaa",
         "urvelsyn",
