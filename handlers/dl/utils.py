@@ -7,9 +7,11 @@ def progress_bar(percent: float, length: int = 12) -> str:
         p = max(0.0, min(100.0, float(percent)))
     except Exception:
         p = 0.0
-    filled = int(round((p / 100.0) * length))
+
+    filled = int((p / 100.0) * length)
     empty = length - filled
-    bar = "▰" * filled + "▱" * empty
+
+    bar = "█" * filled + "░" * empty
     return f"{bar} {p:.1f}%"
 
 def sanitize_filename(name: str, max_len: int = 80) -> str:
