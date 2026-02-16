@@ -5,8 +5,6 @@ import shutil
 import subprocess
 from urllib.parse import urlparse
 
-import aiohttp
-
 from .constants import COOKIES_PATH, TMP_DIR
 from .utils import progress_bar
 
@@ -21,70 +19,28 @@ def _is_instagram(url: str) -> bool:
         return "instagram.com" in (url or "").lower()
 
 
-def _probe_ig_image_url_sync(url: str) -> str:
-    YT_DLP = shutil.which("yt-dlp")
-    if not YT_DLP:
-        return ""
-
-    cmd = [
-        YT_DLP,
-        "--cookies", COOKIES_PATH,
-        "--no-playlist",
-        "-J",
-        url,
-    ]
-
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        return ""
-
+def _pick_latest_media_file(since_ts: float) -> str | None:
+    exts = (".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
     try:
-        info = __import__("json").loads(p.stdout)
+        files = []
+        for f in os.listdir(TMP_DIR):
+            p = os.path.join(TMP_DIR, f)
+            if not os.path.isfile(p):
+                continue
+            if not f.lower().endswith(exts):
+                continue
+            try:
+                mt = os.path.getmtime(p)
+            except Exception:
+                continue
+            if mt >= since_ts - 1:
+                files.append((mt, p))
+        if not files:
+            return None
+        files.sort(key=lambda x: x[0], reverse=True)
+        return files[0][1]
     except Exception:
-        return ""
-
-    def pick_best_thumb(obj: dict) -> str:
-        thumbs = obj.get("thumbnails") or []
-        if thumbs:
-            def score(t):
-                w = int(t.get("width") or 0)
-                h = int(t.get("height") or 0)
-                pref = int(t.get("preference") or 0)
-                return (w * h, pref)
-            thumbs = sorted(thumbs, key=score, reverse=True)
-            u = (thumbs[0].get("url") or "").strip()
-            if u.startswith("http"):
-                return u
-        return ""
-
-    if info.get("_type") == "playlist" and info.get("entries"):
-        for e in info["entries"]:
-            if isinstance(e, dict):
-                u = pick_best_thumb(e)
-                if u:
-                    return u
-        return ""
-
-    if isinstance(info, dict):
-        return pick_best_thumb(info)
-
-    return ""
-
-
-async def _download_url_to_file(url: str, out_path: str) -> bool:
-    timeout = aiohttp.ClientTimeout(total=30)
-    headers = {"User-Agent": "Mozilla/5.0 (TelegramBot)"}
-    try:
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get(url) as r:
-                if r.status != 200:
-                    return False
-                with open(out_path, "wb") as f:
-                    async for chunk in r.content.iter_chunked(256 * 1024):
-                        f.write(chunk)
-        return True
-    except Exception:
-        return False
+        return None
 
 
 def _probe_total_size_sync(url: str, fmt: str) -> int:
@@ -145,8 +101,8 @@ async def ytdlp_download(
         raise RuntimeError("yt-dlp not found in PATH")
 
     out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
-
     update_interval = 3
+    is_ig = _is_instagram(url)
 
     async def run(cmd):
         nonlocal update_interval
@@ -211,26 +167,28 @@ async def ytdlp_download(
         print("[YTDLP EXIT CODE]", proc.returncode)
         return proc.returncode
 
+    start_ts = __import__("time").time()
+
     if fmt_key == "mp3":
         update_interval = 3
-        code = await run(
-            [
-                YT_DLP,
-                "--cookies", COOKIES_PATH,
-                "--js-runtimes", "deno:/root/.deno/bin/deno",
-                "--no-playlist",
-                "-f", "bestaudio/best",
-                "--extract-audio",
-                "--audio-format", "mp3",
-                "--audio-quality", "0",
-                "--newline",
-                "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-                "-o", out_tpl,
-                url,
-            ]
-        )
+        cmd = [
+            YT_DLP,
+            "--cookies", COOKIES_PATH,
+            "--js-runtimes", "deno:/root/.deno/bin/deno",
+            "--no-playlist",
+            "-f", "bestaudio/best",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+            "--newline",
+            "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url,
+        ]
+        code = await run(cmd)
         if code != 0:
             return None
+
     else:
         if format_id:
             if has_audio:
@@ -243,43 +201,52 @@ async def ytdlp_download(
         est_size = await asyncio.to_thread(_probe_total_size_sync, url, fmt)
         update_interval = 7 if (est_size and est_size >= _SIZE_100MB) else 3
 
-        code = await run(
-            [
+        cmd = [
+            YT_DLP,
+            "--cookies", COOKIES_PATH,
+            "--js-runtimes", "deno:/root/.deno/bin/deno",
+            "--no-playlist",
+            "-f", fmt,
+            "--merge-output-format", "mp4",
+            "--newline",
+            "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "-o", out_tpl,
+            url,
+        ]
+        if is_ig:
+            cmd.insert(1, "--ignore-errors")
+            cmd.insert(2, "--no-abort-on-error")
+
+        code = await run(cmd)
+
+        if code != 0:
+            if is_ig:
+                picked = _pick_latest_media_file(start_ts)
+                if picked:
+                    return picked
+
+            print("[YTDLP] video failed → trying bestimage")
+            update_interval = 3
+
+            cmd2 = [
                 YT_DLP,
                 "--cookies", COOKIES_PATH,
-                "--js-runtimes", "deno:/root/.deno/bin/deno",
                 "--no-playlist",
-                "-f", fmt,
-                "--merge-output-format", "mp4",
-                "--newline",
-                "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+                "-f", "bestimage",
                 "-o", out_tpl,
                 url,
             ]
-        )
+            if is_ig:
+                cmd2.insert(1, "--ignore-errors")
+                cmd2.insert(2, "--no-abort-on-error")
 
-        if code != 0:
-            print("[YTDLP] video failed → trying bestimage")
-            update_interval = 3
-            code = await run(
-                [
-                    YT_DLP,
-                    "--cookies", COOKIES_PATH,
-                    "--no-playlist",
-                    "-f", "bestimage",
-                    "-o", out_tpl,
-                    url,
-                ]
-            )
-            if code != 0:
-                if _is_instagram(url):
-                    img_url = await asyncio.to_thread(_probe_ig_image_url_sync, url)
-                    if img_url:
-                        os.makedirs(TMP_DIR, exist_ok=True)
-                        out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}.jpg")
-                        ok = await _download_url_to_file(img_url, out_path)
-                        if ok:
-                            return out_path
+            code2 = await run(cmd2)
+
+            if code2 != 0:
+                if is_ig:
+                    picked = _pick_latest_media_file(start_ts)
+                    if picked:
+                        return picked
                 return None
 
     def media_priority(p):
