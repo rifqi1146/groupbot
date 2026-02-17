@@ -58,3 +58,6 @@ META_MEMORY = {}
 
 # donate
 DONATE_URL = os.getenv("DONATE_URL")
+
+# terabox
+SONZAIX_API_BASE = os.getenv("SONZAIX_API_BASE", "https://api.sonzaix.indevs.in")

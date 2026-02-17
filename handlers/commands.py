@@ -33,6 +33,7 @@ from handlers.kurs import kurs_cmd
 from handlers.net import net_cmd
 from handlers.cookies import cookies_cmd
 from handlers.donate import donate_cmd
+from handlers.terabox import terabox_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -43,6 +44,7 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("cookies", cookies_cmd, False),
+    ("terabox", terabox_cmd, False),
     ("net", net_cmd, False),
     ("donate", donate_cmd, False),
     ("start", start_verify_pm, False),
