@@ -39,11 +39,6 @@ SUPPORT_CHANNEL_LINK = os.getenv("SUPPORT_CH_LINK")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODELS = {
-    "flash": "gemini-2.5-flash",
-    "pro": "gemini-2.5-pro",
-    "lite": "gemini-2.0-flash-lite-001",
-}
 
 # open router api key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
