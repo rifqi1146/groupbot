@@ -1,83 +1,86 @@
 import os
 import re
-import html
 import uuid
+import html
 import aiohttp
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from utils.config import SONZAIX_API_BASE
 from utils.http import get_http_session
-from handlers.dl.constants import TMP_DIR, MAX_TG_SIZE
+from handlers.dl.constants import TMP_DIR
 
 
-def _pick_first(d: dict, keys: list[str]):
-    for k in keys:
-        if k in d and d[k]:
-            return d[k]
-    return None
+SONZAIX_BASE = "https://api.sonzaix.indevs.in"
 
 
-def _sanitize_filename(name: str, max_len: int = 80) -> str:
+def _safe_name(name: str, max_len: int = 80) -> str:
     name = (name or "").strip()
     name = re.sub(r'[\\/:*?"<>|]', "", name)
     name = re.sub(r"\s+", " ", name)
-    return name[:max_len] or "file"
+    return (name[:max_len] or "file").strip()
 
 
-def _extract_files(obj):
-    out = []
+def _pick_files(payload) -> list[dict]:
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
 
-    def walk(x):
-        if isinstance(x, dict):
-            url = _pick_first(x, ["download", "download_url", "downloadUrl", "direct", "direct_url", "url", "link"])
-            name = _pick_first(x, ["name", "filename", "file_name", "title"])
-            size = _pick_first(x, ["size", "filesize", "file_size", "content_length"])
-            if isinstance(url, str) and url.startswith(("http://", "https://")):
-                out.append({"name": str(name) if name else "File", "url": url, "size": size})
-            for v in x.values():
-                walk(v)
-        elif isinstance(x, list):
-            for i in x:
-                walk(i)
+    if not isinstance(payload, dict):
+        return []
 
-    walk(obj)
-
-    seen = set()
-    uniq = []
-    for f in out:
-        u = f["url"]
-        if u in seen:
-            continue
-        seen.add(u)
-        uniq.append(f)
-    return uniq
+    for k in ("files", "result", "data", "items", "list"):
+        v = payload.get(k)
+        if isinstance(v, list):
+            return [x for x in v if isinstance(x, dict)]
+        if isinstance(v, dict):
+            for kk in ("files", "items", "list", "result"):
+                vv = v.get(kk)
+                if isinstance(vv, list):
+                    return [x for x in vv if isinstance(x, dict)]
+    return []
 
 
-async def _head_content_length(session, url: str) -> int:
-    try:
-        async with session.head(url, timeout=aiohttp.ClientTimeout(total=15), allow_redirects=True) as r:
-            cl = r.headers.get("Content-Length")
-            if cl and cl.isdigit():
-                return int(cl)
-    except Exception:
-        pass
+def _pick_download_url(item: dict) -> str:
+    for k in ("download", "download_url", "downloadUrl", "dlink", "url", "link", "direct", "direct_url"):
+        v = item.get(k)
+        if isinstance(v, str) and v.startswith(("http://", "https://")):
+            return v
+    return ""
+
+
+def _pick_filename(item: dict) -> str:
+    for k in ("filename", "name", "title", "file_name"):
+        v = item.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return "file"
+
+
+def _pick_size(item: dict) -> int:
+    for k in ("size", "filesize", "file_size"):
+        v = item.get(k)
+        try:
+            return int(v)
+        except Exception:
+            pass
     return 0
 
 
-async def _download_to_file(session, url: str, path: str) -> int:
-    size = 0
-    async with session.get(url, timeout=aiohttp.ClientTimeout(total=300), allow_redirects=True) as r:
-        r.raise_for_status()
-        with open(path, "wb") as f:
+async def _download_to_path(session: aiohttp.ClientSession, url: str, out_path: str) -> None:
+    headers = {"User-Agent": "Mozilla/5.0 (TelegramBot)"}
+    async with session.get(url, headers=headers, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=120)) as r:
+        if r.status != 200:
+            raise RuntimeError(f"Download failed (HTTP {r.status})")
+
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+
+        with open(out_path, "wb") as f:
             async for chunk in r.content.iter_chunked(256 * 1024):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                size += len(chunk)
-                if MAX_TG_SIZE and size > int(MAX_TG_SIZE):
-                    raise RuntimeError("File too large (exceeds Telegram limit).")
-    return size
+                if chunk:
+                    f.write(chunk)
+
+    if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
+        raise RuntimeError("Downloaded file is missing or empty")
 
 
 async def terabox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -87,125 +90,78 @@ async def terabox_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         return await msg.reply_text(
-            "<b>Terabox Downloader</b>\n\n"
+            "<b>TeraBox Downloader</b>\n\n"
             "Usage:\n"
-            "<code>/terabox &lt;url&gt; [password]</code>\n\n"
-            "Example:\n"
-            "<code>/terabox https://terabox.com/s/xxxx</code>\n"
-            "<code>/terabox https://terabox.com/s/xxxx mypass</code>",
+            "<code>/terabox &lt;url&gt;</code>\n"
+            "<code>/terabox &lt;url&gt; &lt;password&gt;</code>",
             parse_mode="HTML",
-            disable_web_page_preview=True,
         )
 
-    tb_url = context.args[0].strip()
-    pwd = context.args[1].strip() if len(context.args) > 1 else ""
+    url = (context.args[0] or "").strip()
+    pwd = (context.args[1] or "").strip() if len(context.args) > 1 else ""
 
-    os.makedirs(TMP_DIR, exist_ok=True)
+    status = await msg.reply_text("<b>Fetching TeraBox data...</b>", parse_mode="HTML")
 
-    status = await msg.reply_text(
-        "<b>Fetching Terabox info...</b>",
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-    )
-
-    api_url = SONZAIX_API_BASE.rstrip("/") + "/terabox"
     session = await get_http_session()
 
     try:
-        params = {"url": tb_url}
-        if pwd:
-            params["pwd"] = pwd
-
-        async with session.get(api_url, params=params, timeout=aiohttp.ClientTimeout(total=25)) as r:
+        async with session.get(
+            f"{SONZAIX_BASE}/terabox",
+            params={"url": url, "pwd": pwd} if pwd else {"url": url},
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as r:
             if r.status != 200:
-                return await status.edit_text(
-                    f"<b>Failed to fetch data</b>\n\nHTTP <code>{r.status}</code>",
-                    parse_mode="HTML",
-                )
-            data = await r.json(content_type=None)
-    except Exception as e:
-        return await status.edit_text(
-            f"<b>Failed to contact API</b>\n\n<code>{html.escape(str(e))}</code>",
-            parse_mode="HTML",
-        )
+                return await status.edit_text(f"<b>API error</b>: HTTP {r.status}", parse_mode="HTML")
 
-    files = _extract_files(data)
-    if not files:
-        return await status.edit_text(
-            "<b>No downloadable files found.</b>\n\n"
-            "Possible reasons:\n"
-            "• The link is invalid/expired\n"
-            "• The link requires a password\n"
-            "• The API response format changed",
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
+            data = await r.json()
 
-    pick = files[0]
-    direct_url = pick["url"]
-    filename = _sanitize_filename(pick.get("name") or "file")
-    if not filename.lower().endswith((".mp4", ".mkv", ".webm", ".mp3", ".zip", ".rar", ".7z", ".pdf", ".jpg", ".jpeg", ".png", ".webp")):
-        filename += ".bin"
-
-    tmp_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{filename}")
-
-    try:
-        est = 0
-        try:
-            if pick.get("size"):
-                est = int(pick["size"])
-        except Exception:
-            est = 0
-
-        if not est:
-            est = await _head_content_length(session, direct_url)
-
-        if est and MAX_TG_SIZE and est > int(MAX_TG_SIZE):
+        files = _pick_files(data)
+        if not files:
+            keys = ", ".join(sorted(data.keys())) if isinstance(data, dict) else type(data).__name__
             return await status.edit_text(
-                "<b>File too large</b>\n"
-                "This file exceeds Telegram upload limit.",
+                "<b>No files found.</b>\n\n"
+                f"<code>Top-level: {html.escape(keys)}</code>",
                 parse_mode="HTML",
             )
 
-        await status.edit_text(
-            "<b>Downloading file...</b>",
-            parse_mode="HTML",
-        )
+        files.sort(key=_pick_size, reverse=True)
+        item = files[0]
 
-        await _download_to_file(session, direct_url, tmp_path)
+        dl_url = _pick_download_url(item)
+        if not dl_url:
+            return await status.edit_text(
+                "<b>No downloadable URL found in API response.</b>\n\n"
+                f"<code>Item keys: {html.escape(', '.join(sorted(item.keys())))}</code>",
+                parse_mode="HTML",
+            )
 
-        await status.edit_text(
-            "<b>Uploading to Telegram...</b>",
-            parse_mode="HTML",
-        )
+        filename = _safe_name(_pick_filename(item))
+        ext = os.path.splitext(filename)[1].lower()
+        if not ext:
+            ext = ".bin"
+
+        out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{filename}")
+
+        await status.edit_text("<b>Downloading file...</b>", parse_mode="HTML")
+        await _download_to_path(session, dl_url, out_path)
 
         await context.bot.send_document(
             chat_id=msg.chat_id,
-            document=open(tmp_path, "rb"),
-            filename=os.path.basename(tmp_path),
-            caption=f"<b>Terabox Download</b>\n<code>{html.escape(filename)}</code>",
+            document=open(out_path, "rb"),
+            caption=f"<b>Downloaded:</b> {html.escape(filename)}",
             parse_mode="HTML",
             reply_to_message_id=msg.message_id,
-            disable_notification=True,
         )
 
         try:
-            await status.delete()
+            os.remove(out_path)
         except Exception:
             pass
+
+        await status.delete()
 
     except Exception as e:
-        try:
-            await status.edit_text(
-                f"<b>Failed</b>\n\n<code>{html.escape(str(e))}</code>",
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
-
-    finally:
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
+        return await status.edit_text(
+            f"<b>Failed:</b> <code>{html.escape(str(e))}</code>",
+            parse_mode="HTML",
+        )
