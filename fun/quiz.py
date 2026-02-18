@@ -209,7 +209,7 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
                 await context.bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=quiz["message_id"],
-                    text="✅ <b>Quiz selesai!</b>\n\nMenghitung skor...",
+                    text="<b>Quiz selesai!</b>\n\nMenghitung skor...",
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
@@ -223,7 +223,7 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=quiz["message_id"],
-                text="⏰ <b>Waktu habis!</b>\n\nLanjut ke soal berikutnya...",
+                text="<b>Waktu habis!</b>\n\nLanjut ke soal berikutnya...",
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
@@ -265,7 +265,7 @@ async def _end_quiz(context: ContextTypes.DEFAULT_TYPE, quiz: dict):
 
     scores = quiz["scores"]
     if not scores:
-        text = "😴 Quiz selesai. Tidak ada yang menjawab."
+        text = "Quiz selesai. Tidak ada yang menjawab."
     else:
         ranking = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
@@ -307,12 +307,12 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     if chat_id in _ACTIVE_QUIZ:
-        return await msg.reply_text("⚠️ Quiz masih berjalan!")
+        return await msg.reply_text("Quiz masih berjalan!")
 
     try:
         bank = await _generate_question_bank()
     except Exception:
-        return await msg.reply_text("❌ Gagal membuat soal quiz (Groq error).")
+        return await msg.reply_text("Gagal membuat soal quiz (Groq error).")
 
     quiz = {
         "chat_id": chat_id,
@@ -399,7 +399,7 @@ async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=quiz["message_id"],
-                text="✅ <b>Quiz selesai!</b>\n\nMenghitung skor...",
+                text="<b>Quiz selesai!</b>\n\nMenghitung skor...",
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
