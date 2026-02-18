@@ -11,7 +11,6 @@ from handlers.caca import meta_query
 from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
 from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
-from fun.quiz import quiz_answer
 from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
 from handlers.openrouter import ask_cmd, _ASK_ACTIVE_USERS
 
@@ -111,7 +110,3 @@ def register_messages(app):
         group=-1
     )
     
-    app.add_handler(
-        MessageHandler(filters.TEXT & filters.REPLY & ~filters.COMMAND, quiz_answer),
-        group=100
-    )
