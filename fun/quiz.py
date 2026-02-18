@@ -176,6 +176,7 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
 
     async def _timeout_guard():
         await asyncio.sleep(QUIZ_TIMEOUT + 0.2)
+
         live = _ACTIVE_QUIZ.get(chat_id)
         if not live or live is not quiz:
             return
@@ -185,28 +186,51 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         quiz["lock"] = True
-        try:
-            await context.bot.send_message(chat_id=chat_id, text="⏰ Waktu habis!")
-        except Exception:
-            pass
 
         if quiz["current"] >= QUIZ_TOTAL - 1:
             _ACTIVE_QUIZ.pop(chat_id, None)
+
+            if quiz.get("timeout_task"):
+                try:
+                    quiz["timeout_task"].cancel()
+                except Exception:
+                    pass
+
             try:
                 await context.bot.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=quiz["message_id"],
                     reply_markup=None,
                 )
+            except Exception:
+                pass
+
+            try:
                 await context.bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=quiz["message_id"],
                     text="✅ <b>Quiz selesai!</b>\n\nMenghitung skor...",
                     parse_mode="HTML",
+                    disable_web_page_preview=True,
                 )
             except Exception:
                 pass
+
+            await asyncio.sleep(2)
             return await _end_quiz(context, quiz)
+
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=quiz["message_id"],
+                text="⏰ <b>Waktu habis!</b>\n\nLanjut ke soal berikutnya...",
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
+        await asyncio.sleep(1)
 
         quiz["current"] += 1
         quiz["lock"] = False
@@ -237,25 +261,41 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
 
 async def _end_quiz(context: ContextTypes.DEFAULT_TYPE, quiz: dict):
     chat_id = quiz["chat_id"]
+    msg_id = quiz.get("message_id")
+
     scores = quiz["scores"]
-
     if not scores:
-        return await context.bot.send_message(chat_id=chat_id, text="😴 Quiz selesai. Tidak ada yang menjawab.")
+        text = "😴 Quiz selesai. Tidak ada yang menjawab."
+    else:
+        ranking = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    ranking = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        lines = ["🏆 <b>HASIL QUIZ</b>\n"]
+        for i, (uid, score) in enumerate(ranking, 1):
+            try:
+                member = await context.bot.get_chat_member(chat_id, uid)
+                name = html.escape(member.user.full_name or "User")
+                lines.append(f"{i}. <a href='tg://user?id={uid}'>{name}</a> — <b>{score}</b> poin")
+            except Exception:
+                lines.append(f"{i}. <code>{uid}</code> — <b>{score}</b> poin")
 
-    lines = ["🏆 <b>HASIL QUIZ</b>\n"]
-    for i, (uid, score) in enumerate(ranking, 1):
+        text = "\n".join(lines)
+
+    if msg_id:
         try:
-            member = await context.bot.get_chat_member(chat_id, uid)
-            name = html.escape(member.user.full_name or "User")
-            lines.append(f"{i}. <a href='tg://user?id={uid}'>{name}</a> — <b>{score}</b> poin")
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=msg_id,
+                text=text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return
         except Exception:
-            lines.append(f"{i}. <code>{uid}</code> — <b>{score}</b> poin")
+            pass
 
     await context.bot.send_message(
         chat_id=chat_id,
-        text="\n".join(lines),
+        text=text,
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -352,15 +392,21 @@ async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=quiz["message_id"],
                 reply_markup=None,
             )
+        except Exception:
+            pass
+        
+        try:
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=quiz["message_id"],
                 text="✅ <b>Quiz selesai!</b>\n\nMenghitung skor...",
                 parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         except Exception:
             pass
-
+        
+        await asyncio.sleep(2)
         return await _end_quiz(context, quiz)
 
     quiz["current"] += 1
