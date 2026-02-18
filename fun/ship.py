@@ -228,7 +228,7 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
 
         if not picked:
-            return await msg.reply_text("❌ Belum nemu 2 member aktif buat di-ship (pool banyak yang udah keluar).")
+            return await msg.reply_text("❌ Belum menemukan 2 member aktif untuk di-ship.")
 
         users = [picked[0], picked[1]]
 

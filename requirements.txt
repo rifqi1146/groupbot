@@ -1,4 +1,4 @@
-python-telegram-bot[job-queue]==22.5
+python-telegram-bot[job-queue]==22.6
 python-dotenv==1.2.1
 aiohttp
 requests==2.32.5
@@ -14,7 +14,7 @@ psutil
 python-dateutil==2.9.0.post0
 six==1.17.0
 python-whois==0.9.6
-yt-dlp==2025.12.8
+yt-dlp-ejs
 deep-translator
 dnspython
 uvloop==0.22.1
