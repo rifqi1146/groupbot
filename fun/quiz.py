@@ -61,8 +61,19 @@ def _render_question(q: dict, no: int) -> str:
         f"B. {html.escape(q['options']['B'])}\n"
         f"C. {html.escape(q['options']['C'])}\n"
         f"D. {html.escape(q['options']['D'])}\n\n"
-        f"<i>Tap A / B / C / D ( {QUIZ_TIMEOUT} detik )</i>"
+        f"<i>Tap A / B / C / D ({QUIZ_TIMEOUT} detik)</i>"
     )
+
+def _strip_codeblock(s: str) -> str:
+    s = (s or "").strip()
+    if s.startswith("```"):
+        s = s.strip()
+        s = s.strip("`").strip()
+        if s.lower().startswith("json"):
+            s = s[4:].strip()
+    if s.endswith("```"):
+        s = s[:-3].strip()
+    return s
 
 async def _generate_question_bank() -> list:
     seed = random.randint(100000, 999999)
@@ -121,12 +132,9 @@ async def _generate_question_bank() -> list:
             raise RuntimeError("Gagal generate soal")
         data = await resp.json()
 
-    raw = data["choices"][0]["message"]["content"].strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        raw = raw.replace("json", "", 1).strip()
-
+    raw = _strip_codeblock(data["choices"][0]["message"]["content"])
     bank = json.loads(raw)
+
     if not isinstance(bank, list) or len(bank) < QUIZ_TOTAL:
         raise RuntimeError("Bank soal tidak valid")
 
@@ -137,16 +145,21 @@ async def _generate_question_bank() -> list:
         q = it.get("question")
         opt = it.get("options") or {}
         ans = (it.get("answer") or "").strip().upper()
+
         if not isinstance(q, str) or not q.strip():
+            continue
+        if not isinstance(opt, dict):
             continue
         if not all(k in opt for k in ("A", "B", "C", "D")):
             continue
         if ans not in ("A", "B", "C", "D"):
             continue
+
         out.append({"question": q, "options": opt, "answer": ans})
 
     if len(out) < QUIZ_TOTAL:
         raise RuntimeError("Bank soal tidak valid")
+
     return out[:QUIZ_TOTAL]
 
 async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_TYPE, quiz: dict):
@@ -160,7 +173,47 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
 
     quiz["start"] = time.time()
     quiz["answered"] = set()
-    quiz["first_correct"] = None
+    quiz["lock"] = False
+
+    if quiz.get("timeout_task"):
+        try:
+            quiz["timeout_task"].cancel()
+        except Exception:
+            pass
+
+    async def _timeout_guard():
+        await asyncio.sleep(QUIZ_TIMEOUT + 0.2)
+        live = _ACTIVE_QUIZ.get(chat_id)
+        if not live or live is not quiz:
+            return
+        if quiz.get("current") != qidx:
+            return
+        if quiz.get("lock"):
+            return
+
+        quiz["lock"] = True
+        try:
+            await context.bot.send_message(chat_id=chat_id, text="⏰ Waktu habis!")
+        except Exception:
+            pass
+
+        if quiz["current"] >= QUIZ_TOTAL - 1:
+            _ACTIVE_QUIZ.pop(chat_id, None)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=quiz["message_id"],
+                    reply_markup=None,
+                )
+            except Exception:
+                pass
+            return await _end_quiz(update, context, quiz)
+
+        quiz["current"] += 1
+        quiz["lock"] = False
+        await _send_or_edit_question(update, context, quiz)
+
+    quiz["timeout_task"] = context.application.create_task(_timeout_guard())
 
     if quiz.get("message_id"):
         try:
@@ -219,7 +272,8 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "message_id": None,
         "start": time.time(),
         "answered": set(),
-        "first_correct": None,
+        "timeout_task": None,
+        "lock": False,
     }
 
     _ACTIVE_QUIZ[chat_id] = quiz
@@ -253,30 +307,19 @@ async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     uid = q.from_user.id
     if uid in quiz["answered"]:
-        return await q.answer("Lu udah jawab 😤", show_alert=False)
+        return await q.answer("Lu udah jawab 😤", show_alert=True)
 
     if time.time() - quiz["start"] > QUIZ_TIMEOUT:
-        await q.answer("Waktu habis!", show_alert=True)
-        if quiz["current"] >= QUIZ_TOTAL - 1:
-            _ACTIVE_QUIZ.pop(chat_id, None)
-            try:
-                await context.bot.edit_message_reply_markup(chat_id=chat_id, message_id=quiz["message_id"], reply_markup=None)
-            except Exception:
-                pass
-            return await _end_quiz(update, context, quiz)
-        quiz["current"] += 1
-        return await _send_or_edit_question(update, context, quiz)
+        return await q.answer("Waktu habis!", show_alert=True)
 
     quiz["answered"].add(uid)
+
     curq = quiz["bank"][quiz["current"]]
     correct = curq["answer"]
 
     if chosen == correct:
         quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
         await q.answer("Benar!", show_alert=False)
-
-        if quiz["first_correct"] is None:
-            quiz["first_correct"] = uid
 
         try:
             await context.bot.send_message(
@@ -290,13 +333,23 @@ async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await q.answer(f"Salah. Jawaban: {correct}", show_alert=False)
 
+    if quiz.get("lock"):
+        return
+
+    quiz["lock"] = True
+
     if quiz["current"] >= QUIZ_TOTAL - 1:
         _ACTIVE_QUIZ.pop(chat_id, None)
         try:
-            await context.bot.edit_message_reply_markup(chat_id=chat_id, message_id=quiz["message_id"], reply_markup=None)
+            await context.bot.edit_message_reply_markup(
+                chat_id=chat_id,
+                message_id=quiz["message_id"],
+                reply_markup=None,
+            )
         except Exception:
             pass
         return await _end_quiz(update, context, quiz)
 
     quiz["current"] += 1
+    quiz["lock"] = False
     await _send_or_edit_question(update, context, quiz)
