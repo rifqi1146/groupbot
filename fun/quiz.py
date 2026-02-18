@@ -33,13 +33,6 @@ _QUESTION_STYLES = [
     "tebakan ilmiah ringan",
 ]
 
-def _mention(user) -> str:
-    name = html.escape(user.full_name or "User")
-    u = (user.username or "").strip()
-    if u:
-        return f"<a href='tg://user?id={user.id}'>{name}</a> (@{html.escape(u)})"
-    return f"<a href='tg://user?id={user.id}'>{name}</a>"
-
 def _quiz_keyboard(chat_id: int, qidx: int) -> InlineKeyboardMarkup:
     rows = [
         [
@@ -205,9 +198,15 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
                     message_id=quiz["message_id"],
                     reply_markup=None,
                 )
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=quiz["message_id"],
+                    text="✅ <b>Quiz selesai!</b>\n\nMenghitung skor...",
+                    parse_mode="HTML",
+                )
             except Exception:
                 pass
-            return await _end_quiz(update, context, quiz)
+            return await _end_quiz(context, quiz)
 
         quiz["current"] += 1
         quiz["lock"] = False
@@ -229,26 +228,37 @@ async def _send_or_edit_question(update: Update, context: ContextTypes.DEFAULT_T
         except Exception:
             pass
 
-    sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=kb)
+    if update.message:
+        sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        sent = await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=kb)
+
     quiz["message_id"] = sent.message_id
 
-async def _end_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, quiz: dict):
+async def _end_quiz(context: ContextTypes.DEFAULT_TYPE, quiz: dict):
+    chat_id = quiz["chat_id"]
     scores = quiz["scores"]
+
     if not scores:
-        return await update.message.reply_text("Quiz selesai. Tidak ada yang menjawab.")
+        return await context.bot.send_message(chat_id=chat_id, text="😴 Quiz selesai. Tidak ada yang menjawab.")
 
     ranking = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
     lines = ["🏆 <b>HASIL QUIZ</b>\n"]
     for i, (uid, score) in enumerate(ranking, 1):
         try:
-            member = await context.bot.get_chat_member(quiz["chat_id"], uid)
+            member = await context.bot.get_chat_member(chat_id, uid)
             name = html.escape(member.user.full_name or "User")
             lines.append(f"{i}. <a href='tg://user?id={uid}'>{name}</a> — <b>{score}</b> poin")
         except Exception:
             lines.append(f"{i}. <code>{uid}</code> — <b>{score}</b> poin")
 
-    await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="\n".join(lines),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
 
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -319,37 +329,41 @@ async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if chosen == correct:
         quiz["scores"][uid] = quiz["scores"].get(uid, 0) + 1
-        await q.answer("Benar!", show_alert=False)
-
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"✅ Jawaban benar oleh {_mention(q.from_user)}",
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        except Exception:
-            pass
+        await q.answer("✅ Benar!", show_alert=False)
     else:
-        await q.answer(f"Salah. Jawaban: {correct}", show_alert=False)
+        await q.answer(f"❌ Salah. Jawaban: {correct}", show_alert=False)
 
     if quiz.get("lock"):
         return
-
     quiz["lock"] = True
 
     if quiz["current"] >= QUIZ_TOTAL - 1:
         _ACTIVE_QUIZ.pop(chat_id, None)
+
+        if quiz.get("timeout_task"):
+            try:
+                quiz["timeout_task"].cancel()
+            except Exception:
+                pass
+
         try:
             await context.bot.edit_message_reply_markup(
                 chat_id=chat_id,
                 message_id=quiz["message_id"],
                 reply_markup=None,
             )
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=quiz["message_id"],
+                text="✅ <b>Quiz selesai!</b>\n\nMenghitung skor...",
+                parse_mode="HTML",
+            )
         except Exception:
             pass
-        return await _end_quiz(update, context, quiz)
+
+        return await _end_quiz(context, quiz)
 
     quiz["current"] += 1
     quiz["lock"] = False
     await _send_or_edit_question(update, context, quiz)
+    
