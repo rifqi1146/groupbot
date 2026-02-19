@@ -278,25 +278,87 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
 
+    msg = update.message
+    if not msg:
+        return
+
     if not context.args:
-        return await update.message.reply_text("Send a TikTok link / YT-dlp supported platform link")
+        return await msg.reply_text("Send a TikTok link / YT-dlp supported platform link")
 
-    url = context.args[0]
+    urls = [u.strip() for u in context.args if (u or "").strip()]
+    if not urls:
+        return await msg.reply_text("Send a TikTok link / YT-dlp supported platform link")
 
-    if is_premium_required(url, PREMIUM_ONLY_DOMAINS):
-        if not is_premium_user(update.effective_user.id):
-            return await update.message.reply_text("🔞 Download from this website is for premium users only")
+    if len(urls) == 1:
+        url = urls[0]
 
-    dl_id = uuid.uuid4().hex[:8]
-    DL_CACHE[dl_id] = {
-        "url": url,
-        "user": update.effective_user.id,
-        "reply_to": update.message.message_id,
-    }
+        if is_premium_required(url, PREMIUM_ONLY_DOMAINS):
+            if not is_premium_user(update.effective_user.id):
+                return await msg.reply_text("🔞 Download from this website is for premium users only")
 
-    await update.message.reply_text(
-        "📥 <b>Select format</b>",
-        reply_markup=dl_keyboard(dl_id),
+        dl_id = uuid.uuid4().hex[:8]
+        DL_CACHE[dl_id] = {
+            "url": url,
+            "user": update.effective_user.id,
+            "reply_to": msg.message_id,
+        }
+
+        return await msg.reply_text(
+            "📥 <b>Select format</b>",
+            reply_markup=dl_keyboard(dl_id),
+            parse_mode="HTML",
+        )
+
+    sent = 0
+    failed = 0
+
+    await msg.reply_text(
+        f"<b>Batch download started</b>\n\n"
+        f"Total links: <b>{len(urls)}</b>\n"
+        "I will process them one by one to avoid Telegram limits.",
+        parse_mode="HTML",
+    )
+
+    for u in urls:
+        url = u
+
+        if is_premium_required(url, PREMIUM_ONLY_DOMAINS) and not is_premium_user(update.effective_user.id):
+            failed += 1
+            continue
+
+        status = await msg.reply_text(
+            "<b>Preparing download...</b>",
+            parse_mode="HTML",
+            reply_to_message_id=msg.message_id,
+        )
+
+        try:
+            await _dl_worker(
+                app=context.application,
+                chat_id=update.effective_chat.id,
+                reply_to=msg.message_id,
+                raw_url=url,
+                fmt_key="video",
+                status_msg_id=status.message_id,
+                format_id=None,
+                has_audio=False,
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=status.message_id,
+                    text="Failed",
+                )
+            except Exception:
+                pass
+
+    await msg.reply_text(
+        "<b>Batch download finished</b>\n\n"
+        f"Success: <b>{sent}</b>\n"
+        f"Failed: <b>{failed}</b>",
         parse_mode="HTML",
     )
 
