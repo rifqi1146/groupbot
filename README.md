@@ -2,31 +2,25 @@
 [![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-22.5-blue?logo=telegram)](https://github.com/python-telegram-bot/python-telegram-bot)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](https://www.gnu.org/licenses/gpl-3.0.html)
 
-# 🤖 Telegram Multi-Function Bot
+# Telegram Multi-Function Bot
 
 Bot Telegram multifungsi
 
-## ✨ Fitur
+## Fitur
 
-- 🧠 AI Chat Bot — percakapan pintar dan responsif  
-- 📥 Downloader — unduh video, musik, dan file dari berbagai platform  
-- 🌐 Networking Tools — cek IP, koneksi, dan utilitas jaringan  
-- 🎉 Fun Commands — fitur hiburan ringan  
+- AI Chat Bot — percakapan pintar dan responsif  
+- Downloader — unduh video, musik, dan file dari berbagai platform  
+- Networking Tools — cek IP, koneksi, dan utilitas jaringan  
+- Fun Commands — fitur hiburan ringan  
 
-## 🚀 Cocok Untuk
-
-- Bot pribadi (non publik)  
-- Home server & automation  
-- Eksperimen AI dan networking  
-
-## 🚀 Quick Install (Recommended)
+## Quick Install (Recommended)
 
 ```
 git clone https://github.com/rifqi1146/groupbot.git
 cd groupbot
 sudo bash install.sh
 ```
-## 🛠 Manual Installation
+## Manual Installation
 ```
 apt install -y \
     python3 \
@@ -44,7 +38,7 @@ sudo mv speedtest /usr/bin/speedtest
 sudo chmod +x /usr/bin/speedtest
 ```
 
-### 📜 Clone repository
+### Clone repository
 ```
 git clone https://github.com/rifqi1146/groupbot.git
 ```
@@ -63,7 +57,7 @@ pip install --upgrade pip
 ```
 pip install -r requirements.txt
 ```
-## ⚙️ Environment Setup
+## Environment Setup
 
 ```
 nano .env
@@ -78,7 +72,6 @@ GOOGLE_API_KEY=
 GOOGLE_CSE_ID=
 BOT_OWNER_ID=
 LOG_CHAT_ID=
-OPENROUTER_API_KEY=
 API_ID=
 API_HASH=l
 SUPPORT_CH_ID=
@@ -88,7 +81,7 @@ DONATE_URL=
 ```
 source .env
 ```
-### 💨 Run Bot
+### Run Bot
 ```
 python bot.py
 ```

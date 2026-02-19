@@ -40,12 +40,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# open router api key
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_THINK = "openai/gpt-oss-120b:free"
-OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
-
 # groq & caca
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
