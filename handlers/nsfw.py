@@ -15,7 +15,7 @@ from utils.nsfw import _extract_prompt_from_update
 NSFW_DB = "data/nsfw.sqlite3"
 
 
-def _nsfw_db_init():
+def nsfw_db_init():
     os.makedirs("data", exist_ok=True)
     con = sqlite3.connect(NSFW_DB)
     try:
@@ -35,8 +35,8 @@ def _nsfw_db_init():
         con.close()
 
 
-def _db():
-    _nsfw_db_init()
+def db():
+    nsfw_db_init()
     return sqlite3.connect(NSFW_DB)
 
 
@@ -44,7 +44,7 @@ def is_nsfw_allowed(chat_id: int, chat_type: str) -> bool:
     if chat_type == "private":
         return True
 
-    con = _db()
+    con = db()
     try:
         cur = con.execute(
             "SELECT 1 FROM nsfw_groups WHERE chat_id=? AND enabled=1",
@@ -56,7 +56,7 @@ def is_nsfw_allowed(chat_id: int, chat_type: str) -> bool:
 
 
 def set_nsfw(chat_id: int, enabled: bool):
-    con = _db()
+    con = db()
     try:
         now = time.time()
         if enabled:
@@ -87,7 +87,7 @@ def set_nsfw(chat_id: int, enabled: bool):
 
 
 def get_all_enabled():
-    con = _db()
+    con = db()
     try:
         cur = con.execute(
             "SELECT chat_id FROM nsfw_groups WHERE enabled=1"
@@ -184,6 +184,6 @@ async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 try:
-    _nsfw_db_init()
+    nsfw_db_init()
 except Exception:
     pass
