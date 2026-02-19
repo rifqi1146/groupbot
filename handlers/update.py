@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
 
 
-def _get_changelog():
+def get_changelog():
 
     try:
         log = subprocess.run(
@@ -54,7 +54,7 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "behind" not in check.stdout:
         return await status.edit_text("The bot is already up to date.")
 
-    changelog = _get_changelog()
+    changelog = get_changelog()
 
     pull = subprocess.run(
         ["git", "pull"],

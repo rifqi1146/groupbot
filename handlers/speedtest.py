@@ -133,9 +133,9 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user.id not in OWNER_ID:
-        return await msg.reply_text("❌ Owner only.")
+        return
 
-    status = await update.message.reply_text("⏳ Running Speedtest...")
+    status = await update.message.reply_text("Running Speedtest...")
 
     try:
         data = await asyncio.to_thread(run_speedtest)
@@ -148,6 +148,6 @@ async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status.delete()
 
     except Exception as e:
-        await status.edit_text(f"❌ Failed: {e}")
+        await status.edit_text(f"Failed: {e}")
         
 

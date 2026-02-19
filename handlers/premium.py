@@ -9,7 +9,7 @@ from utils import caca_db
 from utils import caca_memory
 
 
-def _extract_user_id_from_args(args: list[str]) -> int | None:
+def extract_user_id_from_args(args: list[str]) -> int | None:
     if not args:
         return None
     raw = (args[0] or "").strip()
@@ -28,7 +28,7 @@ def _extract_user_id_from_args(args: list[str]) -> int | None:
     return None
 
 
-async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+async def resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
     msg = update.message
     if not msg:
         return None
@@ -51,7 +51,7 @@ async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_
             except Exception:
                 return None
 
-        uid = _extract_user_id_from_args([target])
+        uid = extract_user_id_from_args([target])
         if uid:
             return uid
 
@@ -76,7 +76,7 @@ async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cmd = (context.args[0] or "").lower().strip()
 
     if cmd in ("add", "del"):
-        uid = await _resolve_target_user_id(update, context)
+        uid = await resolve_target_user_id(update, context)
         if not uid:
             return await msg.reply_text(
                 "<b>Target user not found.</b>\n\n"
