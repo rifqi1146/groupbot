@@ -207,16 +207,16 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
     bot = app.bot
     path = None
 
-    async def _run_tiktok():
+    async def _tiktok_fetch() -> tuple[bool, str | None]:
         nonlocal path
 
+        url = raw_url
         try:
+            url = await resolve_tiktok_url(raw_url)
+        except Exception:
             url = raw_url
-            try:
-                url = await resolve_tiktok_url(raw_url)
-            except Exception:
-                url = raw_url
 
+        async with TIKTOK_LOCK:
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
 
@@ -226,6 +226,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                     except Exception:
                         pass
                     raise RuntimeError("Static video")
+
+                return (False, path)
 
             except Exception:
                 ok = await tiktok_fallback_send(
@@ -237,38 +239,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                     fmt_key=fmt_key,
                 )
                 if ok:
-                    return
+                    return (True, None)
+                raise
 
-            await send_downloaded_media(
-                bot=bot,
-                chat_id=chat_id,
-                reply_to=reply_to,
-                status_msg_id=status_msg_id,
-                path=path,
-                fmt_key=fmt_key,
-            )
-            await bot.delete_message(chat_id, status_msg_id)
-
-        except Exception as e:
-            try:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=f"Failed: {e}",
-                )
-            except Exception:
-                pass
-        finally:
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-
-    async def _run_non_tiktok():
-        nonlocal path
-
-        try:
+    try:
+        if is_tiktok(raw_url):
+            sent, _ = await _tiktok_fetch()
+            if sent:
+                return
+        else:
             path = await download_non_tiktok(
                 raw_url=raw_url,
                 fmt_key=fmt_key,
@@ -279,39 +258,33 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                 has_audio=has_audio,
             )
 
-            await send_downloaded_media(
-                bot=bot,
+        await send_downloaded_media(
+            bot=bot,
+            chat_id=chat_id,
+            reply_to=reply_to,
+            status_msg_id=status_msg_id,
+            path=path,
+            fmt_key=fmt_key,
+        )
+
+        await bot.delete_message(chat_id, status_msg_id)
+
+    except Exception as e:
+        try:
+            await bot.edit_message_text(
                 chat_id=chat_id,
-                reply_to=reply_to,
-                status_msg_id=status_msg_id,
-                path=path,
-                fmt_key=fmt_key,
+                message_id=status_msg_id,
+                text=f"Failed: {e}",
             )
+        except Exception:
+            pass
 
-            await bot.delete_message(chat_id, status_msg_id)
-
-        except Exception as e:
+    finally:
+        if path and os.path.exists(path):
             try:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=f"Failed: {e}",
-                )
+                os.remove(path)
             except Exception:
                 pass
-
-        finally:
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-
-    if is_tiktok(raw_url):
-        async with TIKTOK_LOCK:
-            return await _run_tiktok()
-
-    return await _run_non_tiktok()
 
 
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
