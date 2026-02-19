@@ -13,7 +13,6 @@ Mendukung:
  
         🤖 AI Commands
         • 💬 /ai — Chat with AI Gemini
-        • 🧠 /ask — ChatGPT
         • ⚡ /groq — Groq
         • 🍌 /caca — Chat Bot Caca, Si cewe ngeselin
 
