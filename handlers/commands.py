@@ -19,7 +19,6 @@ from fun.ship import ship_cmd
 from fun.reminder import reminder_cmd
 from handlers.gemini import ai_cmd
 from handlers.groq import groq_query
-from handlers.openrouter import ask_cmd
 from fun.quiz import quiz_cmd
 from handlers.caca import meta_query
 from handlers.caca_group import cacaa_cmd

@@ -12,7 +12,6 @@ from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
 from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
-from handlers.openrouter import ask_cmd, _ASK_ACTIVE_USERS
 
 async def ai_reply_router(update, context):
     msg = update.message
@@ -21,9 +20,6 @@ async def ai_reply_router(update, context):
 
     user_id = msg.from_user.id
     reply_mid = msg.reply_to_message.message_id
-
-    if _ASK_ACTIVE_USERS.get(user_id) == reply_mid:
-        return await ask_cmd(update, context)
 
     if _GROQ_ACTIVE_USERS.get(user_id) == reply_mid:
         return await groq_query(update, context)
