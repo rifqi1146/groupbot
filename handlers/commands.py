@@ -71,7 +71,6 @@ COMMAND_HANDLERS = [
     ("trlist", trlist_cmd, True),
     ("helpowner", helpowner_cmd, True),
     ("wlc", wlc_cmd, True),
-    ("ask", ask_cmd, False),
     ("ai", ai_cmd, False),
     ("groq", groq_query, False),
     ("weather", weather_cmd, False),
