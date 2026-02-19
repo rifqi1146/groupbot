@@ -270,6 +270,28 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
         await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
+        err = str(e)
+    
+        if "Flood control exceeded" in err and "Retry in" in err:
+            try:
+                import re
+                m = re.search(r"Retry in (\d+)", err)
+                wait_time = int(m.group(1)) if m else 5
+            except Exception:
+                wait_time = 5
+    
+            await asyncio.sleep(wait_time)
+            return await _dl_worker(
+                app,
+                chat_id,
+                reply_to,
+                raw_url,
+                fmt_key,
+                status_msg_id,
+                format_id,
+                has_audio,
+            )
+    
         try:
             await bot.edit_message_text(
                 chat_id=chat_id,
