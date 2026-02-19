@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-echo "== GroupBot Installer =="
+echo "== Installer =="
 echo
 
 if [[ $EUID -ne 0 ]]; then
-  echo "❌ Please run as root:"
+  echo "Please run as root:"
   echo "sudo bash install.sh"
   exit 1
 fi
@@ -18,7 +18,6 @@ apt install -y \
   python3-pip \
   git \
   ffmpeg \
-  tesseract-ocr \
   curl \
   build-essential \
   libjpeg-dev \
@@ -38,7 +37,7 @@ if ! command -v speedtest >/dev/null 2>&1; then
       SPEEDTEST_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz"
       ;;
     *)
-      echo "❌ Unsupported architecture: $ARCH"
+      echo "Unsupported architecture: $ARCH"
       exit 1
       ;;
   esac
