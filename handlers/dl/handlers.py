@@ -26,6 +26,8 @@ from .worker import download_non_tiktok, send_downloaded_media
 
 os.makedirs(TMP_DIR, exist_ok=True)
 
+TIKTOK_LOCK = asyncio.Lock()
+
 def is_youtube(url: str) -> bool:
     return any(x in (url or "") for x in ("youtube.com", "youtu.be", "music.youtube.com"))
 
@@ -205,8 +207,11 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
     bot = app.bot
     path = None
 
-    try:
-        if is_tiktok(raw_url):
+    async def _run_tiktok():
+        nonlocal path
+
+        try:
+            url = raw_url
             try:
                 url = await resolve_tiktok_url(raw_url)
             except Exception:
@@ -234,7 +239,36 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                 if ok:
                     return
 
-        else:
+            await send_downloaded_media(
+                bot=bot,
+                chat_id=chat_id,
+                reply_to=reply_to,
+                status_msg_id=status_msg_id,
+                path=path,
+                fmt_key=fmt_key,
+            )
+            await bot.delete_message(chat_id, status_msg_id)
+
+        except Exception as e:
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text=f"Failed: {e}",
+                )
+            except Exception:
+                pass
+        finally:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+
+    async def _run_non_tiktok():
+        nonlocal path
+
+        try:
             path = await download_non_tiktok(
                 raw_url=raw_url,
                 fmt_key=fmt_key,
@@ -245,33 +279,39 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                 has_audio=has_audio,
             )
 
-        await send_downloaded_media(
-            bot=bot,
-            chat_id=chat_id,
-            reply_to=reply_to,
-            status_msg_id=status_msg_id,
-            path=path,
-            fmt_key=fmt_key,
-        )
-
-        await bot.delete_message(chat_id, status_msg_id)
-
-    except Exception as e:
-        try:
-            await bot.edit_message_text(
+            await send_downloaded_media(
+                bot=bot,
                 chat_id=chat_id,
-                message_id=status_msg_id,
-                text=f"Failed: {e}",
+                reply_to=reply_to,
+                status_msg_id=status_msg_id,
+                path=path,
+                fmt_key=fmt_key,
             )
-        except Exception:
-            pass
 
-    finally:
-        if path and os.path.exists(path):
+            await bot.delete_message(chat_id, status_msg_id)
+
+        except Exception as e:
             try:
-                os.remove(path)
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=status_msg_id,
+                    text=f"Failed: {e}",
+                )
             except Exception:
                 pass
+
+        finally:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+
+    if is_tiktok(raw_url):
+        async with TIKTOK_LOCK:
+            return await _run_tiktok()
+
+    return await _run_non_tiktok()
 
 
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
