@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from utils.http import get_http_session
 
 #whois
-def _fmt_date(d):
+def fmt_date(d):
     if isinstance(d, list):
         return str(d[0]) if d else "Not available"
     return str(d) if d else "Not available"
@@ -52,9 +52,9 @@ async def whoisdomain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<b>WHOIS Server:</b> {html.escape(str(w.whois_server or 'N/A'))}\n\n"
 
             "<b>📅 Important Dates</b>\n"
-            f"<b>Created:</b> {_fmt_date(w.creation_date)}\n"
-            f"<b>Updated:</b> {_fmt_date(w.updated_date)}\n"
-            f"<b>Expires:</b> {_fmt_date(w.expiration_date)}\n\n"
+            f"<b>Created:</b> {fmt_date(w.creation_date)}\n"
+            f"<b>Updated:</b> {fmt_date(w.updated_date)}\n"
+            f"<b>Expires:</b> {fmt_date(w.expiration_date)}\n\n"
 
             "<b>👤 Registrant</b>\n"
             f"<b>Name:</b> {html.escape(str(w.name or 'N/A'))}\n"
