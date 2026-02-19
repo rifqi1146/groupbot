@@ -89,7 +89,6 @@ async def tiktok_fallback_send(
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            return
         except Exception as e:
             if "Message is not modified" in str(e):
                 return
@@ -157,64 +156,6 @@ async def tiktok_fallback_send(
         os.remove(fixed_audio)
         return True
 
-    video_url = info.get("play") or info.get("wmplay") or info.get("hdplay")
-    if video_url:
-        title = info.get("title") or info.get("desc") or "TikTok Video"
-        safe_title = sanitize_filename(title)
-        uid = uuid.uuid4().hex
-        out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
-
-        async with session.get(video_url) as r:
-            total = int(r.headers.get("Content-Length", 0))
-            downloaded = 0
-            last = 0.0
-
-            with open(out_path, "wb") as f:
-                async for chunk in r.content.iter_chunked(64 * 1024):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-
-                    import time
-                    if total and time.time() - last >= 1.2:
-                        pct = downloaded / total * 100
-                        try:
-                            await bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=status_msg_id,
-                                text=(
-                                    "<b>Downloading...</b>\n\n"
-                                    f"<code>{progress_bar(pct)}</code>"
-                                ),
-                                parse_mode="HTML",
-                            )
-                        except Exception as e:
-                            if "Message is not modified" not in str(e):
-                                pass
-                        last = time.time()
-
-        await bot.send_chat_action(chat_id=chat_id, action="upload_video")
-
-        bot_name = (await bot.get_me()).first_name or "Bot"
-        caption = f"🎬 <b>{html.escape(title.strip() or 'TikTok Video')}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
-
-        await bot.send_video(
-            chat_id=chat_id,
-            video=open(out_path, "rb"),
-            caption=caption,
-            parse_mode="HTML",
-            supports_streaming=False,
-            reply_to_message_id=reply_to,
-            disable_notification=True,
-        )
-
-        try:
-            os.remove(out_path)
-        except Exception:
-            pass
-
-        await bot.delete_message(chat_id, status_msg_id)
-        return True
-
     images = info.get("images") or []
     if images:
         CHUNK_SIZE = 10
@@ -247,6 +188,64 @@ async def tiktok_fallback_send(
                 media=media,
                 reply_to_message_id=reply_to if idx == 0 else None,
             )
+
+        await bot.delete_message(chat_id, status_msg_id)
+        return True
+
+    video_url = info.get("play") or info.get("wmplay") or info.get("hdplay")
+    if video_url:
+        title = info.get("title") or info.get("desc") or "TikTok Video"
+        safe_title = sanitize_filename(title)
+        uid = uuid.uuid4().hex
+        out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
+
+        async with session.get(video_url) as r:
+            total = int(r.headers.get("Content-Length", 0))
+            downloaded = 0
+            last = 0.0
+
+            with open(out_path, "wb") as f:
+                async for chunk in r.content.iter_chunked(64 * 1024):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    import time
+                    if total and time.time() - last >= 1.2:
+                        pct = downloaded / total * 100
+                        try:
+                            await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=status_msg_id,
+                                text=(
+                                    "<b>Downloading...</b>\n\n"
+                                    f"<code>{progress_bar(pct)}</code>"
+                                ),
+                                parse_mode="HTML",
+                            )
+                        except Exception as e:
+                            if "Message is not modified" in str(e):
+                                pass
+                        last = time.time()
+
+        await bot.send_chat_action(chat_id=chat_id, action="upload_video")
+
+        bot_name = (await bot.get_me()).first_name or "Bot"
+        caption = f"🎬 <b>{html.escape(title.strip() or 'TikTok Video')}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
+
+        await bot.send_video(
+            chat_id=chat_id,
+            video=open(out_path, "rb"),
+            caption=caption,
+            parse_mode="HTML",
+            supports_streaming=False,
+            reply_to_message_id=reply_to,
+            disable_notification=True,
+        )
+
+        try:
+            os.remove(out_path)
+        except Exception:
+            pass
 
         await bot.delete_message(chat_id, status_msg_id)
         return True
