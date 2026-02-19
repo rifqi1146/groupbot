@@ -39,14 +39,6 @@ async def ai_reply_router(update, context):
             parse_mode="HTML"
         )
 
-    if reply_mid in _ASK_ACTIVE_USERS.values():
-        return await msg.reply_text(
-            "😒 Lu siapa?\n"
-            "Gue belum ngobrol sama lu.\n"
-            "Ketik /ask dulu.",
-            parse_mode="HTML"
-        )
-
     if reply_mid in _AI_ACTIVE_USERS.values():
         return await msg.reply_text(
             "😒 Lu siapa?\n"
