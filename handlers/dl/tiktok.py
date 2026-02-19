@@ -25,13 +25,24 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
         raise RuntimeError("Douyin API error")
 
     info = data.get("data") or {}
-    video_url = info.get("play")
+
+    images = info.get("images") or info.get("image") or []
+    if isinstance(images, list) and len(images) > 0:
+        raise RuntimeError("SLIDESHOW")
+
+    video_url = (
+        info.get("hdplay")
+        or info.get("play")
+        or info.get("wmplay")
+        or info.get("play_url")
+    )
     if not video_url:
         raise RuntimeError("Video URL kosong")
 
     title = info.get("title") or "TikTok Video"
     safe_title = sanitize_filename(title)
-    out_path = f"{TMP_DIR}/{safe_title}.mp4"
+    uid = uuid.uuid4().hex
+    out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
 
     async with session.get(video_url) as r:
         total = int(r.headers.get("Content-Length", 0))
@@ -131,7 +142,61 @@ async def tiktok_fallback_send(
         os.remove(fixed_audio)
         return True
 
-    video_url = info.get("play") or info.get("wmplay") or info.get("hdplay")
+    raw_images = info.get("images") or info.get("image") or []
+    images = []
+
+    if isinstance(raw_images, list):
+        for it in raw_images:
+            if isinstance(it, str) and it.strip():
+                images.append(it.strip())
+            elif isinstance(it, dict):
+                u = (
+                    it.get("url")
+                    or it.get("play_url")
+                    or it.get("display_url")
+                    or it.get("image_url")
+                )
+                if isinstance(u, str) and u.strip():
+                    images.append(u.strip())
+
+    if images:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="🖼️ Slideshow detected, sending album...",
+            parse_mode="HTML",
+        )
+
+        CHUNK_SIZE = 10
+        chunks = [images[i : i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
+
+        bot_name = (await bot.get_me()).first_name or "Bot"
+        title = (info.get("title") or info.get("desc") or "TikTok Slideshow").strip()
+        title = html.escape(title)
+
+        caption_text = f"🖼️ <b>{title}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
+
+        for idx, chunk in enumerate(chunks):
+            media = []
+            for i, img in enumerate(chunk):
+                media.append(
+                    InputMediaPhoto(
+                        media=img,
+                        caption=caption_text if idx == 0 and i == 0 else None,
+                        parse_mode="HTML" if idx == 0 and i == 0 else None,
+                    )
+                )
+
+            await bot.send_media_group(
+                chat_id=chat_id,
+                media=media,
+                reply_to_message_id=reply_to if idx == 0 else None,
+            )
+
+        await bot.delete_message(chat_id, status_msg_id)
+        return True
+
+    video_url = info.get("hdplay") or info.get("play") or info.get("wmplay")
     if video_url:
         title = info.get("title") or info.get("desc") or "TikTok Video"
         safe_title = sanitize_filename(title)
@@ -168,7 +233,7 @@ async def tiktok_fallback_send(
         await bot.send_chat_action(chat_id=chat_id, action="upload_video")
 
         bot_name = (await bot.get_me()).first_name or "Bot"
-        caption = f"🎬 <b>{html.escape(title.strip() or 'TikTok Video')}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
+        caption = f"🎬 <b>{html.escape((title or '').strip() or 'TikTok Video')}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
 
         await bot.send_video(
             chat_id=chat_id,
@@ -184,44 +249,6 @@ async def tiktok_fallback_send(
             os.remove(out_path)
         except Exception:
             pass
-
-        await bot.delete_message(chat_id, status_msg_id)
-        return True
-
-    images = info.get("images") or []
-    if images:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="🖼️ Slideshow detected, sending album...",
-            parse_mode="HTML",
-        )
-
-        CHUNK_SIZE = 10
-        chunks = [images[i : i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
-
-        bot_name = (await bot.get_me()).first_name or "Bot"
-        title = (info.get("title") or info.get("desc") or "TikTok Slideshow").strip()
-        title = html.escape(title)
-
-        caption_text = f"🖼️ <b>{title}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
-
-        for idx, chunk in enumerate(chunks):
-            media = []
-            for i, img in enumerate(chunk):
-                media.append(
-                    InputMediaPhoto(
-                        media=img,
-                        caption=caption_text if idx == 0 and i == 0 else None,
-                        parse_mode="HTML" if idx == 0 and i == 0 else None,
-                    )
-                )
-
-            await bot.send_media_group(
-                chat_id=chat_id,
-                media=media,
-                reply_to_message_id=reply_to if idx == 0 else None,
-            )
 
         await bot.delete_message(chat_id, status_msg_id)
         return True
