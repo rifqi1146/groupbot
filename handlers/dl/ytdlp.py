@@ -100,8 +100,7 @@ async def ytdlp_download(
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
 
-    unique_id = uuid.uuid4().hex
-    out_tpl = f"{TMP_DIR}/{unique_id}_%(title)s.%(ext)s"
+    out_tpl = f"{TMP_DIR}/%(title)s.%(ext)s"
     update_interval = 3
     is_ig = _is_instagram(url)
 
@@ -260,11 +259,14 @@ async def ytdlp_download(
             return 2
         return 9
 
-    import glob
+    files = sorted(
+        (
+            os.path.join(TMP_DIR, f)
+            for f in os.listdir(TMP_DIR)
+            if f.lower().endswith((".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp"))
+        ),
+        key=lambda p: (media_priority(p), -os.path.getmtime(p)),
+    )
 
-    pattern = os.path.join(TMP_DIR, f"{unique_id}_*")
-    files = glob.glob(pattern)
-    
     print("[YTDLP OUTPUT FILES]", files)
     return files[0] if files else None
-    

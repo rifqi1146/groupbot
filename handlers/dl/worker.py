@@ -55,12 +55,7 @@ async def send_downloaded_media(
     )
 
     bot_name = (await bot.get_me()).first_name or "Bot"
-    raw_name = os.path.splitext(os.path.basename(path))[0]
-    parts = raw_name.split("_", 1)
-    if len(parts) == 2 and len(parts[0]) == 32:
-        caption = parts[1]
-    else:
-        caption = raw_name
+    caption = os.path.splitext(os.path.basename(path))[0]
     media_type = detect_media_type(path)
 
     if fmt_key == "mp3":

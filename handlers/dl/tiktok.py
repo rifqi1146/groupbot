@@ -31,8 +31,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
 
     title = info.get("title") or "TikTok Video"
     safe_title = sanitize_filename(title)
-    uid = uuid.uuid4().hex
-    out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
+    out_path = f"{TMP_DIR}/{safe_title}.mp4"
 
     async with session.get(video_url) as r:
         total = int(r.headers.get("Content-Length", 0))
