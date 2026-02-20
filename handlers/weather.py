@@ -1,7 +1,6 @@
 import time
 import asyncio
 import aiohttp
-import html
 
 from telegram import Update
 from telegram.ext import ContextTypes
