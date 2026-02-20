@@ -244,7 +244,7 @@ async def _expire_asupan_job(context: ContextTypes.DEFAULT_TYPE):
         )
 
     except Exception:
-        pass
+        log.exception("[ASUPAN EXPIRE] Error")
 
     ASUPAN_DELETE_JOBS.pop(asupan_msg_id, None)
     ASUPAN_MESSAGE_KEYWORD.pop(asupan_msg_id, None)
