@@ -1,12 +1,18 @@
+import logging
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 
 from utils.config import SUPPORT_CHANNEL_ID, SUPPORT_CHANNEL_LINK
 
+log = logging.getLogger(__name__)
+
 async def is_joined_support_channel(
     user_id: int,
     context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
+    if not SUPPORT_CHANNEL_ID:
+        return True
+
     try:
         member = await context.bot.get_chat_member(
             SUPPORT_CHANNEL_ID,
@@ -15,7 +21,7 @@ async def is_joined_support_channel(
         return member.status in ("member", "administrator", "creator")
 
     except Exception as e:
-        print("[JOIN CHECK ERROR]", e)
+        log.warning(f"[JOIN CHECK ERROR] {e}")
         return False
 
 
@@ -50,6 +56,10 @@ async def require_join_or_block(
     if joined:
         return True
 
+    if not SUPPORT_CHANNEL_LINK:
+        log.warning("SUPPORT_CHANNEL_ID is set but SUPPORT_CHANNEL_LINK is missing. Allowing access.")
+        return True
+
     text = (
         "<b>To use the download feature</b>\n"
         "you must join the support channel first."
@@ -69,6 +79,6 @@ async def require_join_or_block(
         )
 
     except Exception as e:
-        print("[JOIN BLOCK ERROR]", e)
+        log.warning(f"[JOIN BLOCK ERROR] {e}")
 
     return False
