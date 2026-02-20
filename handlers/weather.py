@@ -1,14 +1,11 @@
 import time
 import asyncio
 import aiohttp
-import html
 
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.http import get_http_session
 
-#weather
-WEATHER_SPIN_FRAMES = ["🌤", "⛅", "🌥", "☁️"]
 
 async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
