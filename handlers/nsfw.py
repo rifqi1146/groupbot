@@ -36,7 +36,6 @@ def nsfw_db_init():
 
 
 def db():
-    nsfw_db_init()
     return sqlite3.connect(NSFW_DB)
 
 
@@ -182,8 +181,3 @@ async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<code>/nsfw list</code>",
         parse_mode="HTML"
     )
-
-try:
-    nsfw_db_init()
-except Exception:
-    pass
