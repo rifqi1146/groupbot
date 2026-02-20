@@ -1,4 +1,5 @@
 import html
+import re
 import socket
 import aiohttp
 import whois
@@ -30,6 +31,12 @@ async def whoisdomain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         .replace("https://", "")
         .split("/")[0]
     )
+
+    if not re.match(r"^[\w.-]+$", domain) or domain.startswith("-"):
+        return await update.message.reply_text(
+            "❌ <b>Invalid domain format</b>",
+            parse_mode="HTML"
+        )
 
     msg = await update.message.reply_text(
         f"🔄 <b>Fetching WHOIS for {html.escape(domain)}...</b>",
@@ -171,6 +178,12 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     domain = context.args[0]
     domain = domain.replace("http://", "").replace("https://", "").split("/")[0]
+
+    if not re.match(r"^[\w.-]+$", domain) or domain.startswith("-"):
+        return await msg.reply_text(
+            "❌ <b>Invalid domain format</b>",
+            parse_mode="HTML"
+        )
 
     loading = await msg.reply_text(
         f"🔄 <b>Analyzing domain:</b> <code>{html.escape(domain)}</code>",
