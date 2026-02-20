@@ -4,6 +4,7 @@ import os
 import asyncio
 import random
 import html
+import logging
 from typing import List, Optional
 
 import aiohttp
@@ -19,6 +20,7 @@ from utils.http import get_http_session
 from utils import caca_db
 from utils import caca_memory
 
+log = logging.getLogger(__name__)
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 _URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
@@ -47,6 +49,7 @@ async def _fetch_article(url: str) -> Optional[str]:
         ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
         return ("\n\n".join(ps))[:12000] or None
     except Exception:
+        log.exception("Error fetching article")
         return None
 
 
