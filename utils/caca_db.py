@@ -92,6 +92,27 @@ def _caca_db_save_modes(modes: dict[int, str]):
         con.close()
 
 
+def _caca_db_upsert_mode(user_id: int, mode: str):
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        now = time.time()
+        con.execute(
+            """
+            INSERT INTO caca_mode (user_id, mode, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              mode=excluded.mode,
+              updated_at=excluded.updated_at
+            """,
+            (user_id, mode, now),
+        )
+        con.commit()
+    except Exception:
+        raise
+    finally:
+        con.close()
+
+
 def _caca_db_load_groups() -> set[int]:
     con = sqlite3.connect(CACA_DB_PATH)
     try:
@@ -144,9 +165,9 @@ def get_mode(user_id: int) -> str:
     return _MODE_CACHE.get(int(user_id), "default")
 
 
-def set_mode(user_id: int, mode: str):
+async def set_mode(user_id: int, mode: str):
     _MODE_CACHE[int(user_id)] = str(mode)
-    _caca_db_save_modes(_MODE_CACHE)
+    await asyncio.to_thread(_caca_db_upsert_mode, int(user_id), str(mode))
 
 
 def remove_mode(user_id: int):
