@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
+from utils.fonts import get_font
 
 
 #speedtest
@@ -118,11 +119,11 @@ def generate_image(data):
 # =========================
 # LOAD FONTS
 # =========================
-FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
-FONT_BIG   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
-FONT_UNIT  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
-FONT_LABEL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-FONT_SMALL = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+FONT_TITLE = get_font("DejaVuSans-Bold.ttf", 34)
+FONT_BIG   = get_font("DejaVuSans-Bold.ttf", 44)
+FONT_UNIT  = get_font("DejaVuSans.ttf", 18)
+FONT_LABEL = get_font("DejaVuSans.ttf", 20)
+FONT_SMALL = get_font("DejaVuSans.ttf", 16)
 
 #cmd speedtest
 async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):

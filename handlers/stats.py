@@ -8,6 +8,8 @@ import io
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from utils.fonts import get_font
+
 try:
     import psutil
 except Exception:
@@ -107,27 +109,10 @@ def _safe_pct(x):
 def _load_font(size: int, mono: bool = False):
     if not ImageFont:
         return None
-    candidates = []
     if mono:
-        candidates += [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
-        ]
-    candidates += [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    ]
-    for p in candidates:
-        try:
-            if os.path.exists(p):
-                return ImageFont.truetype(p, size=size)
-        except Exception:
-            pass
-    try:
-        return ImageFont.load_default()
-    except Exception:
-        return None
+        return get_font(["DejaVuSansMono.ttf", "LiberationMono-Regular.ttf", "FreeMono.ttf"], size)
+    else:
+        return get_font(["DejaVuSans.ttf", "LiberationSans-Regular.ttf"], size)
 
 
 def _gather_stats():

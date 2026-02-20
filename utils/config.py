@@ -52,3 +52,6 @@ META_MEMORY = {}
 
 # donate
 DONATE_URL = os.getenv("DONATE_URL")
+
+# fonts
+FONT_DIR = os.getenv("FONT_DIR")
