@@ -2,6 +2,7 @@ import os
 import random
 import time
 import sqlite3
+import logging
 
 from telegram import (
     Update,
@@ -21,6 +22,8 @@ VERIFIED_USERS = {}
 
 PENDING_VERIFY = {}
 WELCOME_MESSAGES = {}
+
+logger = logging.getLogger(__name__)
 
 
 def _wv_db_init():
@@ -140,6 +143,7 @@ def save_welcome_chats():
         try:
             con.execute("ROLLBACK")
         except Exception:
+            logger.exception("Failed to rollback transaction")
             pass
         raise
     finally:
