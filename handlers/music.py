@@ -5,6 +5,7 @@ import os
 import shutil
 import glob
 import html
+import aiofiles
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
@@ -129,9 +130,13 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         file_path = max(mp3_files, key=os.path.getmtime)
 
+        async with aiofiles.open(file_path, "rb") as f:
+            audio_data = await f.read()
+
         await context.bot.send_audio(
             chat_id=chat_id,
-            audio=open(file_path, "rb"),
+            audio=audio_data,
+            filename=os.path.basename(file_path),
             title=entry.get("title") or "Audio",
             performer=entry.get("uploader", "Unknown"),
             duration=entry.get("duration"),
