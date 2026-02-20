@@ -1,15 +1,9 @@
-import os, io, time, html, urllib.parse, sqlite3
-import aiohttp
+import os, time, html, sqlite3
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from utils.http import get_http_session
 from utils.config import OWNER_ID
-from utils.text import bold, code
-
-from handlers.groq import _emo, _can
-from utils.nsfw import _extract_prompt_from_update
 
 
 NSFW_DB = "data/nsfw.sqlite3"
