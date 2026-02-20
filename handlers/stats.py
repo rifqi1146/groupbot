@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 import html
 import shutil
 import platform
@@ -216,7 +217,7 @@ def _bar(draw, x, y, w, h, pct, bg, fg, border, r=10):
         _draw_round_rect(draw, (x, y, x + fw, y + h), r, fill=fg, outline=None, width=0)
 
 
-def _render_dashboard(stats):
+async def _render_dashboard(stats):
     if not Image or not ImageDraw or not ImageFont:
         return None
 
@@ -353,7 +354,7 @@ def _render_dashboard(stats):
             rx0b = int(pio.bytes_recv)
             tx0b = int(pio.bytes_sent)
             t0 = time.time()
-            time.sleep(0.25)
+            await asyncio.sleep(0.25)
             pio2 = psutil.net_io_counters()
             rx1b = int(pio2.bytes_recv)
             tx1b = int(pio2.bytes_sent)
@@ -417,7 +418,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     stats = _gather_stats()
-    bio = _render_dashboard(stats)
+    bio = await _render_dashboard(stats)
 
     if bio:
         return await msg.reply_photo(photo=bio)
