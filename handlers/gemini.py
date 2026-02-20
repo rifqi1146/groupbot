@@ -55,7 +55,7 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> tuple[b
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={GEMINI_API_KEY}"
+        f"{model}:generateContent"
     )
 
     payload = {
@@ -87,7 +87,10 @@ async def ask_ai_gemini(prompt: str, model: str = "gemini-2.5-flash") -> tuple[b
         async with session.post(
             url,
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": GEMINI_API_KEY,
+            },
             timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             if resp.status != 200:
