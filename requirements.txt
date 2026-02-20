@@ -19,4 +19,3 @@ deep-translator
 dnspython
 uvloop==0.22.1
 aiofiles
-yt-dlp

@@ -2,6 +2,7 @@ import os
 import uuid
 import html
 import aiohttp
+import aiofiles
 from telegram import InputMediaPhoto
 from utils.http import get_http_session
 from .constants import TMP_DIR
@@ -49,9 +50,9 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
         downloaded = 0
         last = 0
 
-        with open(out_path, "wb") as f:
+        async with aiofiles.open(out_path, "wb") as f:
             async for chunk in r.content.iter_chunked(64 * 1024):
-                f.write(chunk)
+                await f.write(chunk)
                 downloaded += len(chunk)
 
                 import time
@@ -126,9 +127,9 @@ async def tiktok_fallback_send(
         tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
 
         async with session.get(music_url) as r:
-            with open(tmp_audio, "wb") as f:
+            async with aiofiles.open(tmp_audio, "wb") as f:
                 async for chunk in r.content.iter_chunked(64 * 1024):
-                    f.write(chunk)
+                    await f.write(chunk)
 
         title = (
             info.get("title")
@@ -204,9 +205,9 @@ async def tiktok_fallback_send(
             downloaded = 0
             last = 0.0
 
-            with open(out_path, "wb") as f:
+            async with aiofiles.open(out_path, "wb") as f:
                 async for chunk in r.content.iter_chunked(64 * 1024):
-                    f.write(chunk)
+                    await f.write(chunk)
                     downloaded += len(chunk)
 
                     import time
