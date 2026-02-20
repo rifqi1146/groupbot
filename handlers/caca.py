@@ -4,6 +4,7 @@ import os
 import asyncio
 import random
 import html
+import logging
 from typing import List, Optional
 
 import aiohttp
@@ -18,6 +19,9 @@ from utils.http import get_http_session
 
 from utils import caca_db
 from utils import caca_memory
+
+
+logger = logging.getLogger(__name__)
 
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
@@ -55,7 +59,7 @@ def _cleanup_memory():
         loop = asyncio.get_event_loop()
         loop.create_task(caca_memory.cleanup())
     except Exception:
-        pass
+        logger.error("Failed to schedule memory cleanup", exc_info=True)
 
 
 async def _typing_loop(bot, chat_id, stop: asyncio.Event):
