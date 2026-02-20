@@ -4,6 +4,7 @@ import os
 import asyncio
 import random
 import html
+import logging
 from typing import List, Optional
 
 import aiohttp
@@ -18,6 +19,9 @@ from utils.http import get_http_session
 
 from utils import caca_db
 from utils import caca_memory
+
+
+logger = logging.getLogger(__name__)
 
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
@@ -63,8 +67,8 @@ async def _typing_loop(bot, chat_id, stop: asyncio.Event):
         while not stop.is_set():
             await bot.send_chat_action(chat_id, "typing")
             await asyncio.sleep(4)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Error in typing loop: {e}")
 
 
 async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
