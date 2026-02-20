@@ -8,7 +8,7 @@ from handlers.asupan import (
     load_autodel_groups,
 )
 
-from handlers.welcome import load_welcome_chats
+from handlers.welcome import load_welcome_chats, init_welcome_db, load_verified
 from handlers.nsfw import nsfw_db_init
 
 from utils import premium_service
@@ -22,8 +22,10 @@ async def startup_tasks(app):
 
     try:
         nsfw_db_init()
+        init_welcome_db()
         load_asupan_groups()
         load_welcome_chats()
+        load_verified()
         load_autodel_groups()
         log.info("✓ NSFW, Asupan & welcome cache loaded")
     except Exception as e:

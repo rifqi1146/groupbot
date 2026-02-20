@@ -23,7 +23,7 @@ PENDING_VERIFY = {}
 WELCOME_MESSAGES = {}
 
 
-def _wv_db_init():
+def init_welcome_db():
     os.makedirs("data", exist_ok=True)
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
@@ -108,7 +108,6 @@ def _wv_db_init():
 
 def load_welcome_chats():
     global WELCOME_ENABLED_CHATS
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         cur = con.execute("SELECT chat_id FROM welcome_chats WHERE enabled=1")
@@ -118,7 +117,6 @@ def load_welcome_chats():
 
 
 def save_welcome_chats():
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
@@ -148,7 +146,6 @@ def save_welcome_chats():
 
 def load_verified():
     global VERIFIED_USERS
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         cur = con.execute("SELECT chat_id, user_id FROM verified_users")
@@ -161,7 +158,6 @@ def load_verified():
 
 
 def save_verified_user(chat_id: int, user_id: int):
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
@@ -189,7 +185,6 @@ def save_verified_user(chat_id: int, user_id: int):
 
 
 def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
@@ -215,7 +210,6 @@ def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
 
 
 def pop_pending_welcome(chat_id: int, user_id: int) -> int | None:
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         cur = con.execute(
@@ -520,17 +514,3 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
 
-try:
-    _wv_db_init()
-except Exception:
-    pass
-
-try:
-    load_welcome_chats()
-except Exception:
-    pass
-
-try:
-    load_verified()
-except Exception:
-    pass
