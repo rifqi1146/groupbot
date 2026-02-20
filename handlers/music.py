@@ -5,6 +5,8 @@ import os
 import shutil
 import glob
 import html
+import asyncio
+from functools import partial
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_PATH = os.path.join(BASE_DIR, "..", "data", "cookies.txt")
@@ -38,7 +40,11 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch5:{query}", download=False)
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(
+                None,
+                partial(ydl.extract_info, f"ytsearch5:{query}", download=False)
+            )
             if not info or not info.get("entries"):
                 raise Exception("No matching songs or videos were found.")
             entries = info["entries"][:5]
@@ -115,9 +121,14 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(
-                f"https://www.youtube.com/watch?v={video_id}",
-                download=True
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(
+                None,
+                partial(
+                    ydl.extract_info,
+                    f"https://www.youtube.com/watch?v={video_id}",
+                    download=True
+                )
             )
             if not info:
                 raise Exception("Failed to download the song.")
