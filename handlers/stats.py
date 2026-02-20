@@ -115,9 +115,7 @@ def _load_font(size: int, mono: bool = False):
         return get_font(["DejaVuSans.ttf", "LiberationSans-Regular.ttf"], size)
 
 
-def _gather_stats():
-    now = time.time()
-
+def _get_cpu_stats():
     cpu_cores = os.cpu_count() or 0
     try:
         cpu_load = psutil.cpu_percent(interval=None) if psutil else 0.0
@@ -130,6 +128,10 @@ def _gather_stats():
     except Exception:
         cpu_freq = "N/A"
 
+    return {"cores": cpu_cores or "N/A", "load": float(cpu_load), "freq": cpu_freq}
+
+
+def _get_ram_stats():
     ram_total = ram_used = ram_free = 0
     ram_pct = 0.0
     try:
@@ -152,6 +154,10 @@ def _gather_stats():
     except Exception:
         pass
 
+    return {"total": ram_total, "used": ram_used, "free": ram_free, "pct": float(ram_pct)}
+
+
+def _get_swap_stats():
     swap_total = swap_used = 0
     swap_pct = 0.0
     try:
@@ -163,6 +169,10 @@ def _gather_stats():
     except Exception:
         pass
 
+    return {"total": swap_total, "used": swap_used, "pct": float(swap_pct)}
+
+
+def _get_disk_stats():
     disk_total = disk_used = disk_free = 0
     disk_pct = 0.0
     try:
@@ -174,6 +184,10 @@ def _gather_stats():
     except Exception:
         pass
 
+    return {"total": disk_total, "used": disk_used, "free": disk_free, "pct": float(disk_pct)}
+
+
+def _get_net_stats():
     rx = tx = 0
     try:
         if psutil:
@@ -183,19 +197,27 @@ def _gather_stats():
     except Exception:
         pass
 
+    return {"rx": rx, "tx": tx}
+
+
+def _get_sys_info():
     os_name = _get_os_name()
     kernel = platform.release() or "N/A"
     pyver = platform.python_version() or "N/A"
     uptime = get_pretty_uptime()
 
+    return {"os": os_name, "kernel": kernel, "python": pyver, "uptime": uptime}
+
+
+def _gather_stats():
     return {
-        "ts": now,
-        "cpu": {"cores": cpu_cores or "N/A", "load": float(cpu_load), "freq": cpu_freq},
-        "ram": {"total": ram_total, "used": ram_used, "free": ram_free, "pct": float(ram_pct)},
-        "swap": {"total": swap_total, "used": swap_used, "pct": float(swap_pct)},
-        "disk": {"total": disk_total, "used": disk_used, "free": disk_free, "pct": float(disk_pct)},
-        "net": {"rx": rx, "tx": tx},
-        "sys": {"os": os_name, "kernel": kernel, "python": pyver, "uptime": uptime},
+        "ts": time.time(),
+        "cpu": _get_cpu_stats(),
+        "ram": _get_ram_stats(),
+        "swap": _get_swap_stats(),
+        "disk": _get_disk_stats(),
+        "net": _get_net_stats(),
+        "sys": _get_sys_info(),
     }
 
 
