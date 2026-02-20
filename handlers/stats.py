@@ -4,11 +4,14 @@ import html
 import shutil
 import platform
 import io
+import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from utils.fonts import get_font
+
+logger = logging.getLogger(__name__)
 
 try:
     import psutil
@@ -121,13 +124,15 @@ def _gather_stats():
     cpu_cores = os.cpu_count() or 0
     try:
         cpu_load = psutil.cpu_percent(interval=None) if psutil else 0.0
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to gather CPU load: {e}", exc_info=True)
         cpu_load = 0.0
 
     try:
         freq = psutil.cpu_freq() if psutil else None
         cpu_freq = f"{freq.current:.0f} MHz" if freq else "N/A"
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to gather CPU freq: {e}", exc_info=True)
         cpu_freq = "N/A"
 
     ram_total = ram_used = ram_free = 0
@@ -149,7 +154,8 @@ def _gather_stats():
             ram_free = int(mem.get("MemAvailable", mem.get("MemFree", 0)))
             ram_used = int(max(0, ram_total - ram_free))
             ram_pct = (ram_used / ram_total * 100) if ram_total else 0.0
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to gather RAM stats: {e}", exc_info=True)
         pass
 
     swap_total = swap_used = 0
@@ -160,7 +166,8 @@ def _gather_stats():
             swap_total = int(sw.total)
             swap_used = int(sw.used)
             swap_pct = float(sw.percent)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to gather Swap stats: {e}", exc_info=True)
         pass
 
     disk_total = disk_used = disk_free = 0
@@ -171,7 +178,8 @@ def _gather_stats():
         disk_free = int(st.free)
         disk_used = int(st.total - st.free)
         disk_pct = (disk_used / disk_total * 100) if disk_total else 0.0
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to gather Disk stats: {e}", exc_info=True)
         pass
 
     rx = tx = 0
@@ -180,7 +188,8 @@ def _gather_stats():
             net = psutil.net_io_counters()
             rx = int(net.bytes_recv)
             tx = int(net.bytes_sent)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to gather Network stats: {e}", exc_info=True)
         pass
 
     os_name = _get_os_name()
