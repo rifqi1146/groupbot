@@ -123,7 +123,7 @@ async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 c = await context.bot.get_chat(gid)
                 title = html.escape(c.title or str(gid))
                 lines.append(f"• {title}")
-            except:
+            except Exception:
                 lines.append(f"• <code>{gid}</code>")
 
         return await update.message.reply_text(
