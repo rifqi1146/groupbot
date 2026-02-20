@@ -209,9 +209,6 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def init_background():
-    try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(caca_memory.init())
-        loop.create_task(caca_db.init())
-    except Exception:
-        pass
+    loop = asyncio.get_event_loop()
+    loop.create_task(caca_memory.init())
+    loop.create_task(caca_db.init())
