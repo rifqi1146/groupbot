@@ -2,10 +2,12 @@ import os
 import time
 import sqlite3
 import asyncio
+import logging
 
 CACA_DB_PATH = "data/caca.sqlite3"
 
 _MODE_CACHE: dict[int, str] = {}
+log = logging.getLogger(__name__)
 
 
 def _caca_db_init():
@@ -137,6 +139,7 @@ async def reload_modes():
     try:
         _MODE_CACHE = await asyncio.to_thread(_caca_db_load_modes)
     except Exception:
+        log.exception("Error reloading modes")
         _MODE_CACHE = {}
 
 
@@ -158,6 +161,7 @@ def load_groups() -> set[int]:
     try:
         return _caca_db_load_groups()
     except Exception:
+        log.exception("Error loading groups")
         return set()
 
 
