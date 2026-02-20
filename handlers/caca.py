@@ -79,7 +79,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     em = _emo()
 
     if chat and chat.type in ("group", "supergroup"):
-        groups = caca_db.load_groups()
+        groups = await caca_db.load_groups()
         if chat.id not in groups:
             return await msg.reply_text(
                 "<b>Caca tidak tersedia di grup ini</b>",

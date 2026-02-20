@@ -111,6 +111,25 @@ def _caca_db_save_groups(groups: set[int]):
             raise
 
 
+def _caca_db_add_group(chat_id: int):
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        now = time.time()
+        con.execute("INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)", (int(chat_id), now))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _caca_db_remove_group(chat_id: int):
+    con = sqlite3.connect(CACA_DB_PATH)
+    try:
+        con.execute("DELETE FROM caca_groups WHERE chat_id = ?", (int(chat_id),))
+        con.commit()
+    finally:
+        con.close()
+
+
 async def init():
     await asyncio.to_thread(_caca_db_init)
     await reload_modes()
@@ -138,12 +157,20 @@ def remove_mode(user_id: int):
     _caca_db_save_modes(_MODE_CACHE)
 
 
-def load_groups() -> set[int]:
+async def load_groups() -> set[int]:
     try:
-        return _caca_db_load_groups()
+        return await asyncio.to_thread(_caca_db_load_groups)
     except Exception:
         return set()
 
 
-def save_groups(groups: set[int]):
-    _caca_db_save_groups(groups)
+async def save_groups(groups: set[int]):
+    await asyncio.to_thread(_caca_db_save_groups, groups)
+
+
+async def add_group(chat_id: int):
+    await asyncio.to_thread(_caca_db_add_group, chat_id)
+
+
+async def remove_group(chat_id: int):
+    await asyncio.to_thread(_caca_db_remove_group, chat_id)
