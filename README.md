@@ -66,7 +66,6 @@ nano .env
 BOT_TOKEN=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
-GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}
 GROQ_API_KEY=
 GOOGLE_API_KEY=
 GOOGLE_CSE_ID=
