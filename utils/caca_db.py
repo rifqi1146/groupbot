@@ -1,7 +1,7 @@
-import os
 import time
-import sqlite3
 import asyncio
+
+from utils.db import db_session
 
 CACA_DB_PATH = "data/caca.sqlite3"
 
@@ -9,11 +9,7 @@ _MODE_CACHE: dict[int, str] = {}
 
 
 def _caca_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
+    with db_session(CACA_DB_PATH) as con:
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS caca_mode (
@@ -40,13 +36,10 @@ def _caca_db_init():
             """
         )
         con.commit()
-    finally:
-        con.close()
 
 
 def _caca_db_load_modes() -> dict[int, str]:
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
+    with db_session(CACA_DB_PATH) as con:
         cur = con.execute("SELECT user_id, mode FROM caca_mode")
         rows = cur.fetchall()
         out = {}
@@ -56,75 +49,66 @@ def _caca_db_load_modes() -> dict[int, str]:
             except Exception:
                 pass
         return out
-    finally:
-        con.close()
 
 
 def _caca_db_save_modes(modes: dict[int, str]):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("BEGIN")
-        keys = list(modes.keys())
-        if not keys:
-            con.execute("DELETE FROM caca_mode")
-        else:
-            placeholders = ",".join(["?"] * len(keys))
-            con.execute(f"DELETE FROM caca_mode WHERE user_id NOT IN ({placeholders})", tuple(keys))
-        now = time.time()
-        con.executemany(
-            """
-            INSERT INTO caca_mode (user_id, mode, updated_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              mode=excluded.mode,
-              updated_at=excluded.updated_at
-            """,
-            [(int(uid), str(modes[uid]), now) for uid in keys],
-        )
-        con.execute("COMMIT")
-    except Exception:
+    with db_session(CACA_DB_PATH) as con:
         try:
-            con.execute("ROLLBACK")
+            con.execute("BEGIN")
+            keys = list(modes.keys())
+            if not keys:
+                con.execute("DELETE FROM caca_mode")
+            else:
+                placeholders = ",".join(["?"] * len(keys))
+                con.execute(f"DELETE FROM caca_mode WHERE user_id NOT IN ({placeholders})", tuple(keys))
+            now = time.time()
+            con.executemany(
+                """
+                INSERT INTO caca_mode (user_id, mode, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                  mode=excluded.mode,
+                  updated_at=excluded.updated_at
+                """,
+                [(int(uid), str(modes[uid]), now) for uid in keys],
+            )
+            con.execute("COMMIT")
         except Exception:
-            pass
-        raise
-    finally:
-        con.close()
+            try:
+                con.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
 
 def _caca_db_load_groups() -> set[int]:
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
+    with db_session(CACA_DB_PATH) as con:
         cur = con.execute("SELECT chat_id FROM caca_groups")
         rows = cur.fetchall()
         return {int(r[0]) for r in rows if r and r[0] is not None}
-    finally:
-        con.close()
 
 
 def _caca_db_save_groups(groups: set[int]):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
-        con.execute("BEGIN")
-        if not groups:
-            con.execute("DELETE FROM caca_groups")
-        else:
-            placeholders = ",".join(["?"] * len(groups))
-            con.execute(f"DELETE FROM caca_groups WHERE chat_id NOT IN ({placeholders})", tuple(groups))
-        now = time.time()
-        con.executemany(
-            "INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)",
-            [(int(gid), now) for gid in groups],
-        )
-        con.execute("COMMIT")
-    except Exception:
+    with db_session(CACA_DB_PATH) as con:
         try:
-            con.execute("ROLLBACK")
+            con.execute("BEGIN")
+            if not groups:
+                con.execute("DELETE FROM caca_groups")
+            else:
+                placeholders = ",".join(["?"] * len(groups))
+                con.execute(f"DELETE FROM caca_groups WHERE chat_id NOT IN ({placeholders})", tuple(groups))
+            now = time.time()
+            con.executemany(
+                "INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)",
+                [(int(gid), now) for gid in groups],
+            )
+            con.execute("COMMIT")
         except Exception:
-            pass
-        raise
-    finally:
-        con.close()
+            try:
+                con.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
 
 async def init():

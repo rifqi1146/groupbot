@@ -1,4 +1,4 @@
-import os, io, time, html, urllib.parse, sqlite3
+import os, io, time, html, urllib.parse
 import aiohttp
 
 from telegram import Update
@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from utils.http import get_http_session
 from utils.config import OWNER_ID
 from utils.text import bold, code
+from utils.db import db_session
 
 from handlers.groq import _emo, _can
 from utils.nsfw import _extract_prompt_from_update
@@ -16,11 +17,7 @@ NSFW_DB = "data/nsfw.sqlite3"
 
 
 def nsfw_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(NSFW_DB)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
+    with db_session(NSFW_DB) as con:
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS nsfw_groups (
@@ -31,32 +28,22 @@ def nsfw_db_init():
             """
         )
         con.commit()
-    finally:
-        con.close()
-
-
-def db():
-    return sqlite3.connect(NSFW_DB)
 
 
 def is_nsfw_allowed(chat_id: int, chat_type: str) -> bool:
     if chat_type == "private":
         return True
 
-    con = db()
-    try:
+    with db_session(NSFW_DB) as con:
         cur = con.execute(
             "SELECT 1 FROM nsfw_groups WHERE chat_id=? AND enabled=1",
             (int(chat_id),),
         )
         return cur.fetchone() is not None
-    finally:
-        con.close()
 
 
 def set_nsfw(chat_id: int, enabled: bool):
-    con = db()
-    try:
+    with db_session(NSFW_DB) as con:
         now = time.time()
         if enabled:
             con.execute(
@@ -81,19 +68,14 @@ def set_nsfw(chat_id: int, enabled: bool):
                 (int(chat_id), now),
             )
         con.commit()
-    finally:
-        con.close()
 
 
 def get_all_enabled():
-    con = db()
-    try:
+    with db_session(NSFW_DB) as con:
         cur = con.execute(
             "SELECT chat_id FROM nsfw_groups WHERE enabled=1"
         )
         return [int(r[0]) for r in cur.fetchall()]
-    finally:
-        con.close()
 
 
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
