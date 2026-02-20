@@ -2,6 +2,7 @@ import html
 import socket
 import aiohttp
 import whois
+import ipaddress
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -196,18 +197,36 @@ async def domain_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info["expires"] = "Not available"
         info["nameservers"] = []
 
-    try:
-        session = await get_http_session()
-        async with session.get(
-            f"http://{domain}",
-            timeout=aiohttp.ClientTimeout(total=10),
-            allow_redirects=True
-        ) as r:
-            info["http_status"] = r.status
-            info["server"] = r.headers.get("server", "Not available")
-    except Exception:
-        info["http_status"] = "Not available"
-        info["server"] = "Not available"
+    is_safe = False
+    if info["ip"] != "Not found":
+        try:
+            ip = ipaddress.ip_address(info["ip"])
+            if not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast):
+                is_safe = True
+        except ValueError:
+            pass
+
+    if not is_safe:
+        if info["ip"] == "Not found":
+            info["http_status"] = "Not available"
+            info["server"] = "Not available"
+        else:
+            info["http_status"] = "Blocked (Unsafe IP)"
+            info["server"] = "N/A"
+    else:
+        try:
+            session = await get_http_session()
+            async with session.get(
+                f"http://{info['ip']}",
+                headers={"Host": domain},
+                timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False
+            ) as r:
+                info["http_status"] = r.status
+                info["server"] = r.headers.get("server", "Not available")
+        except Exception:
+            info["http_status"] = "Not available"
+            info["server"] = "Not available"
 
     if info["nameservers"]:
         ns_text = "\n".join(
