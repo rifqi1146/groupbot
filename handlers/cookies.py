@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from telegram import Update
@@ -69,8 +70,11 @@ async def cookies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tg_file = await doc.get_file()
         await tg_file.download_to_drive(custom_path=tmp_path)
 
-        with open(tmp_path, "rb") as f:
-            raw = f.read()
+        def _read_file():
+            with open(tmp_path, "rb") as f:
+                return f.read()
+
+        raw = await asyncio.to_thread(_read_file)
 
         if not raw:
             raise RuntimeError("File is empty")
