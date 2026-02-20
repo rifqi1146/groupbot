@@ -2,6 +2,7 @@ import os
 import random
 import time
 import sqlite3
+import logging
 
 from telegram import (
     Update,
@@ -12,6 +13,8 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WELCOME_VERIFY_DB = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "welcome_verify.sqlite3"))
@@ -360,8 +363,8 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_id=user.id,
                 permissions=ChatPermissions(can_send_messages=False)
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"Failed to restrict user {user.id} in chat {chat.id}: {e}")
 
         username = f"@{user.username}" if user.username else "—"
         fullname = user.full_name
