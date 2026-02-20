@@ -33,7 +33,6 @@ def get_font(font_names, size):
     ]
 
     for name in font_names:
-        # 1. Try environment variable
         if custom_dir:
             path = os.path.join(custom_dir, name)
             if os.path.exists(path):
@@ -42,13 +41,11 @@ def get_font(font_names, size):
                 except Exception:
                     pass
 
-        # 2. Try loading by name (PIL searches system paths)
         try:
             return ImageFont.truetype(name, size)
         except Exception:
             pass
 
-        # 3. Try common system paths
         for base in common_paths:
             path = os.path.join(base, name)
             if os.path.exists(path):
@@ -57,14 +54,12 @@ def get_font(font_names, size):
                 except Exception:
                     pass
 
-        # 4. Try if name is already an absolute path (keep compatibility but discouragement)
         if os.path.isabs(name) and os.path.exists(name):
             try:
                 return ImageFont.truetype(name, size)
             except Exception:
                 pass
 
-    # 5. Final fallback to default
     log.warning(f"Could not find any of fonts {font_names}, falling back to default.")
     try:
         return ImageFont.load_default()
