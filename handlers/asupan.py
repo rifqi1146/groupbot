@@ -1,4 +1,3 @@
-import os
 import json
 import html
 import time
@@ -6,7 +5,6 @@ import random
 import asyncio
 import logging
 import aiohttp
-import sqlite3
 
 from telegram import (
     InlineKeyboardMarkup,
@@ -21,6 +19,7 @@ from telegram import Update
 
 from utils.http import get_http_session
 from utils.config import OWNER_ID, LOG_CHAT_ID
+from utils.db import db_session
 
 log = logging.getLogger(__name__)
 
@@ -41,11 +40,7 @@ AUTODEL_ENABLED_CHATS = set()
 
 
 def _asupan_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(ASUPAN_DB_PATH)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
+    with db_session(ASUPAN_DB_PATH) as con:
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS asupan_groups (
@@ -68,13 +63,10 @@ def _asupan_db_init():
             """
         )
         con.commit()
-    finally:
-        con.close()
 
 
 def _db_load_enabled(table: str) -> set[int]:
-    con = sqlite3.connect(ASUPAN_DB_PATH)
-    try:
+    with db_session(ASUPAN_DB_PATH) as con:
         if table == "asupan_autodel":
             cur = con.execute("SELECT chat_id FROM asupan_autodel WHERE enabled=1")
             rows = cur.fetchall()
@@ -89,58 +81,53 @@ def _db_load_enabled(table: str) -> set[int]:
         rows = cur.fetchall()
         return {int(r[0]) for r in rows if r and r[0] is not None}
 
-    finally:
-        con.close()
-
 
 def _db_set_enabled(table: str, s: set[int]):
-    con = sqlite3.connect(ASUPAN_DB_PATH)
-    try:
-        con.execute("BEGIN")
-        now = time.time()
-        src = "runtime"
-
-        if table == "asupan_autodel":
-            con.execute("UPDATE asupan_autodel SET enabled=0, updated_at=?", (now,))
-            if s:
-                con.executemany(
-                    """
-                    INSERT INTO asupan_autodel (source_file, chat_id, enabled, updated_at)
-                    VALUES (?, ?, 1, ?)
-                    ON CONFLICT(source_file, chat_id) DO UPDATE SET
-                      enabled=1,
-                      updated_at=excluded.updated_at
-                    """,
-                    [(src, int(cid), now) for cid in s],
-                )
-
-        else:
-            if s:
-                con.executemany(
-                    """
-                    INSERT INTO asupan_groups (source_file, chat_id, added_at)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(source_file, chat_id) DO UPDATE SET
-                      added_at=excluded.added_at
-                    """,
-                    [(src, int(cid), now) for cid in s],
-                )
-
-            con.execute(
-                "DELETE FROM asupan_groups WHERE source_file=? AND chat_id NOT IN (%s)"
-                % (",".join("?" * len(s)) if s else "-1"),
-                (src, *[int(cid) for cid in s]) if s else (src,),
-            )
-
-        con.execute("COMMIT")
-    except Exception:
+    with db_session(ASUPAN_DB_PATH) as con:
         try:
-            con.execute("ROLLBACK")
+            con.execute("BEGIN")
+            now = time.time()
+            src = "runtime"
+
+            if table == "asupan_autodel":
+                con.execute("UPDATE asupan_autodel SET enabled=0, updated_at=?", (now,))
+                if s:
+                    con.executemany(
+                        """
+                        INSERT INTO asupan_autodel (source_file, chat_id, enabled, updated_at)
+                        VALUES (?, ?, 1, ?)
+                        ON CONFLICT(source_file, chat_id) DO UPDATE SET
+                          enabled=1,
+                          updated_at=excluded.updated_at
+                        """,
+                        [(src, int(cid), now) for cid in s],
+                    )
+
+            else:
+                if s:
+                    con.executemany(
+                        """
+                        INSERT INTO asupan_groups (source_file, chat_id, added_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(source_file, chat_id) DO UPDATE SET
+                          added_at=excluded.added_at
+                        """,
+                        [(src, int(cid), now) for cid in s],
+                    )
+
+                con.execute(
+                    "DELETE FROM asupan_groups WHERE source_file=? AND chat_id NOT IN (%s)"
+                    % (",".join("?" * len(s)) if s else "-1"),
+                    (src, *[int(cid) for cid in s]) if s else (src,),
+                )
+
+            con.execute("COMMIT")
         except Exception:
-            pass
-        raise
-    finally:
-        con.close()
+            try:
+                con.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
 
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
