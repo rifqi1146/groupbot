@@ -1,6 +1,7 @@
 import os
 import time
 import asyncio
+import functools
 import html
 import shutil
 import platform
@@ -110,6 +111,7 @@ def _safe_pct(x):
     return v
 
 
+@functools.lru_cache(maxsize=32)
 def _load_font(size: int, mono: bool = False):
     if not ImageFont:
         return None
@@ -226,7 +228,27 @@ def _bar(draw, x, y, w, h, pct, bg, fg, border, r=10):
         _draw_round_rect(draw, (x, y, x + fw, y + h), r, fill=fg, outline=None, width=0)
 
 
-async def _render_dashboard(stats):
+async def _measure_net_speed():
+    if not psutil:
+        return 0.0, 0.0
+    try:
+        pio = psutil.net_io_counters()
+        rx0b = int(pio.bytes_recv)
+        tx0b = int(pio.bytes_sent)
+        t0 = time.time()
+        await asyncio.sleep(0.25)
+        pio2 = psutil.net_io_counters()
+        rx1b = int(pio2.bytes_recv)
+        tx1b = int(pio2.bytes_sent)
+        dt = max(0.001, time.time() - t0)
+        rxps = (rx1b - rx0b) / dt
+        txps = (tx1b - tx0b) / dt
+        return rxps, txps
+    except Exception:
+        return 0.0, 0.0
+
+
+def _render_dashboard_sync(stats, net_speed=(0.0, 0.0)):
     if not Image or not ImageDraw or not ImageFont:
         return None
 
@@ -359,17 +381,7 @@ async def _render_dashboard(stats):
 
     if psutil:
         try:
-            pio = psutil.net_io_counters()
-            rx0b = int(pio.bytes_recv)
-            tx0b = int(pio.bytes_sent)
-            t0 = time.time()
-            await asyncio.sleep(0.25)
-            pio2 = psutil.net_io_counters()
-            rx1b = int(pio2.bytes_recv)
-            tx1b = int(pio2.bytes_sent)
-            dt = max(0.001, time.time() - t0)
-            rxps = (rx1b - rx0b) / dt
-            txps = (tx1b - tx0b) / dt
+            rxps, txps = net_speed
 
             d.text((nx0 + int(18 * S), ny0 + int(120 * S)), "Speed", font=f, fill=text)
             d.text((nx0 + int(18 * S), ny0 + int(144 * S)), f"RX/s: {humanize_bytes(int(rxps))}/s", font=f_mono, fill=muted)
@@ -426,8 +438,14 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    stats = _gather_stats()
-    bio = await _render_dashboard(stats)
+    # Gather stats in thread (prevent blocking on file I/O)
+    stats = await asyncio.to_thread(_gather_stats)
+
+    # Measure network speed asynchronously (non-blocking)
+    net_speed = await _measure_net_speed()
+
+    # Render dashboard in thread (CPU heavy task + image I/O)
+    bio = await asyncio.to_thread(_render_dashboard_sync, stats, net_speed)
 
     if bio:
         return await msg.reply_photo(photo=bio)
