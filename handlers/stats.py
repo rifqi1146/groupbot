@@ -438,13 +438,10 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    # Gather stats in thread (prevent blocking on file I/O)
     stats = await asyncio.to_thread(_gather_stats)
 
-    # Measure network speed asynchronously (non-blocking)
     net_speed = await _measure_net_speed()
 
-    # Render dashboard in thread (CPU heavy task + image I/O)
     bio = await asyncio.to_thread(_render_dashboard_sync, stats, net_speed)
 
     if bio:
