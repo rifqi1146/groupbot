@@ -35,6 +35,15 @@ def _find_urls(text: str) -> List[str]:
     return _URL_RE.findall(text) if text else []
 
 
+def _parse_html(html_text: str) -> Optional[str]:
+    soup = BeautifulSoup(html_text, "html.parser")
+    for t in soup(["script", "style", "iframe", "noscript"]):
+        t.decompose()
+
+    ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
+    return ("\n\n".join(ps))[:12000] or None
+
+
 async def _fetch_article(url: str) -> Optional[str]:
     try:
         session = await get_http_session()
@@ -43,12 +52,8 @@ async def _fetch_article(url: str) -> Optional[str]:
                 return None
             html_text = await r.text(errors="ignore")
 
-        soup = BeautifulSoup(html_text, "html.parser")
-        for t in soup(["script", "style", "iframe", "noscript"]):
-            t.decompose()
-
-        ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
-        return ("\n\n".join(ps))[:12000] or None
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _parse_html, html_text)
     except Exception:
         return None
 
