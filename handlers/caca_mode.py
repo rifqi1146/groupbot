@@ -39,7 +39,7 @@ async def mode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode not in PERSONAS:
         return await msg.reply_text("❌ Unknown mode.")
 
-    caca_db.set_mode(user_id, mode)
+    await caca_db.set_mode(user_id, mode)
     await caca_memory.clear(user_id)
 
     return await msg.reply_text(

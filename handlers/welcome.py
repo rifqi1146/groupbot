@@ -2,6 +2,7 @@ import os
 import random
 import time
 import sqlite3
+import logging
 
 from telegram import (
     Update,
@@ -13,6 +14,8 @@ from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
 
+log = logging.getLogger(__name__)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WELCOME_VERIFY_DB = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "welcome_verify.sqlite3"))
 
@@ -22,8 +25,10 @@ VERIFIED_USERS = {}
 PENDING_VERIFY = {}
 WELCOME_MESSAGES = {}
 
+logger = logging.getLogger(__name__)
 
-def _wv_db_init():
+
+def init_welcome_db():
     os.makedirs("data", exist_ok=True)
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
@@ -108,7 +113,6 @@ def _wv_db_init():
 
 def load_welcome_chats():
     global WELCOME_ENABLED_CHATS
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         cur = con.execute("SELECT chat_id FROM welcome_chats WHERE enabled=1")
@@ -118,7 +122,6 @@ def load_welcome_chats():
 
 
 def save_welcome_chats():
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
@@ -140,6 +143,7 @@ def save_welcome_chats():
         try:
             con.execute("ROLLBACK")
         except Exception:
+            logger.exception("Failed to rollback transaction")
             pass
         raise
     finally:
@@ -148,7 +152,6 @@ def save_welcome_chats():
 
 def load_verified():
     global VERIFIED_USERS
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         cur = con.execute("SELECT chat_id, user_id FROM verified_users")
@@ -161,7 +164,6 @@ def load_verified():
 
 
 def save_verified_user(chat_id: int, user_id: int):
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
@@ -189,7 +191,6 @@ def save_verified_user(chat_id: int, user_id: int):
 
 
 def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         now = time.time()
@@ -215,7 +216,6 @@ def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
 
 
 def pop_pending_welcome(chat_id: int, user_id: int) -> int | None:
-    _wv_db_init()
     con = sqlite3.connect(WELCOME_VERIFY_DB)
     try:
         cur = con.execute(
@@ -360,8 +360,8 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_id=user.id,
                 permissions=ChatPermissions(can_send_messages=False)
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"Failed to restrict user {user.id} in chat {chat.id}: {e}")
 
         username = f"@{user.username}" if user.username else "—"
         fullname = user.full_name
@@ -520,17 +520,3 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
 
-try:
-    _wv_db_init()
-except Exception:
-    pass
-
-try:
-    load_welcome_chats()
-except Exception:
-    pass
-
-try:
-    load_verified()
-except Exception:
-    pass

@@ -35,7 +35,6 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return
 
-    groups = caca_db.load_groups()
     cmd = (context.args[0].lower() if context.args else "")
 
     if not cmd:
@@ -50,16 +49,15 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cmd == "enable":
         if chat.type == "private":
             return await msg.reply_text("<b>Group only.</b>", parse_mode="HTML")
-        groups.add(chat.id)
-        caca_db.save_groups(groups)
+        await caca_db.add_group(chat.id)
         return await msg.reply_text("<b>Caca has been enabled in this group.</b>", parse_mode="HTML")
 
     if cmd == "disable":
-        groups.discard(chat.id)
-        caca_db.save_groups(groups)
+        await caca_db.remove_group(chat.id)
         return await msg.reply_text("<b>Caca has been disabled in this group.</b>", parse_mode="HTML")
 
     if cmd == "status":
+        groups = await caca_db.load_groups()
         if chat.id in groups:
             return await msg.reply_text("<b>Caca status in this group: ENABLED</b>", parse_mode="HTML")
         return await msg.reply_text("<b>Caca status in this group: DISABLED</b>", parse_mode="HTML")
@@ -68,6 +66,7 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.id not in OWNER_ID:
             return
 
+        groups = await caca_db.load_groups()
         if not groups:
             return await msg.reply_text("<b>No active groups yet.</b>", parse_mode="HTML")
 

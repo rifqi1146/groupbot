@@ -177,14 +177,14 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #ack
     try:
         await q.answer()
-    except:
+    except Exception:
         pass
 
     #close
     if data == "help:close":
         try:
             await q.message.delete()
-        except:
+        except Exception:
             pass
         return
 

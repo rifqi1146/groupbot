@@ -4,6 +4,7 @@ import os
 import asyncio
 import random
 import html
+import logging
 from typing import List, Optional
 
 import aiohttp
@@ -19,6 +20,8 @@ from utils.http import get_http_session
 from utils import caca_db
 from utils import caca_memory
 
+
+logger = logging.getLogger(__name__)
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 _URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
@@ -79,7 +82,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     em = _emo()
 
     if chat and chat.type in ("group", "supergroup"):
-        groups = caca_db.load_groups()
+        groups = await caca_db.load_groups()
         if chat.id not in groups:
             return await msg.reply_text(
                 "<b>Caca tidak tersedia di grup ini</b>",
@@ -127,21 +130,26 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if use_search:
             try:
                 ok, results = await google_search(prompt, limit=5)
-                if ok and results:
-                    lines = []
-                    for r in results:
-                        lines.append(
-                            f"- {r['title']}\n"
-                            f"  {r['snippet']}\n"
-                            f"  Sumber: {r['link']}"
+                if ok:
+                    if results:
+                        lines = []
+                        for r in results:
+                            lines.append(
+                                f"- {r['title']}\n"
+                                f"  {r['snippet']}\n"
+                                f"  Sumber: {r['link']}"
+                            )
+                        search_context = (
+                            "Ini hasil search, pake buat nambah konteks, anggap ini adalah sumber terbaru."
+                            "Jawab tetap sebagai Caca.\n\n"
+                            + "\n\n".join(lines)
                         )
-                    search_context = (
-                        "Ini hasil search, pake buat nambah konteks, anggap ini adalah sumber terbaru."
-                        "Jawab tetap sebagai Caca.\n\n"
-                        + "\n\n".join(lines)
-                    )
-            except Exception:
-                pass
+                    else:
+                        logger.info(f"Google Search returned no results for query: {prompt}")
+                else:
+                    logger.warning(f"Google Search failed for query '{prompt}': {results}")
+            except Exception as e:
+                logger.error(f"Unexpected error during Google Search for '{prompt}': {e}", exc_info=True)
 
         history = await caca_memory.get_history(user_id)
 
@@ -201,9 +209,6 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def init_background():
-    try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(caca_memory.init())
-        loop.create_task(caca_db.init())
-    except Exception:
-        pass
+    loop = asyncio.get_event_loop()
+    loop.create_task(caca_memory.init())
+    loop.create_task(caca_db.init())

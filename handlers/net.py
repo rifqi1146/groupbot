@@ -113,11 +113,12 @@ def _extract_host_port(raw: str):
     return None, host, port
 
 
-def _resolve_ips(host: str):
+async def _resolve_ips(host: str):
     ips_v4 = []
     ips_v6 = []
     try:
-        infos = socket.getaddrinfo(host, None)
+        loop = asyncio.get_running_loop()
+        infos = await loop.getaddrinfo(host, None)
         for fam, _, _, _, sockaddr in infos:
             if fam == socket.AF_INET:
                 ip = sockaddr[0]
@@ -132,9 +133,10 @@ def _resolve_ips(host: str):
     return ips_v4, ips_v6
 
 
-def _reverse_ptr(ip: str):
+async def _reverse_ptr(ip: str):
     try:
-        host, _, _ = socket.gethostbyaddr(ip)
+        loop = asyncio.get_running_loop()
+        host, _ = await loop.getnameinfo((ip, 0), socket.NI_NAMEREQD)
         return host
     except Exception:
         return None
@@ -264,10 +266,10 @@ async def net_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ptr = None
 
     if target_is_ip:
-        ptr = _reverse_ptr(host)
+        ptr = await _reverse_ptr(host)
         ip_for_geo = host
     else:
-        ips_v4, ips_v6 = _resolve_ips(host)
+        ips_v4, ips_v6 = await _resolve_ips(host)
         ip_for_geo = (ips_v4[0] if ips_v4 else (ips_v6[0] if ips_v6 else None))
 
     ip_info = await _fetch_ip_info(ip_for_geo) if ip_for_geo else None
