@@ -13,7 +13,6 @@ from utils.config import GEMINI_API_KEY
 from utils.http import get_http_session
 
 from rag.retriever import retrieve_context
-from rag.prompt import build_rag_prompt
 from rag.loader import load_local_contexts
 
 LOCAL_CONTEXTS = load_local_contexts()
