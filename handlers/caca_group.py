@@ -35,7 +35,7 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return
 
-    groups = caca_db.load_groups()
+    groups = await caca_db.load_groups()
     cmd = (context.args[0].lower() if context.args else "")
 
     if not cmd:
@@ -43,7 +43,8 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<b>⚙️ Caca Group Control</b>\n\n"
             "<code>/cacaa enable</code> — enable in this group\n"
             "<code>/cacaa disable</code> — disable in this group\n"
-            "<code>/cacaa status</code> — check status",
+            "<code>/cacaa status</code> — check status\n"
+            "<code>/cacaa list</code> — list active groups (owner only)",
             parse_mode="HTML"
         )
 
@@ -51,12 +52,12 @@ async def cacaa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat.type == "private":
             return await msg.reply_text("<b>Group only.</b>", parse_mode="HTML")
         groups.add(chat.id)
-        caca_db.save_groups(groups)
+        await caca_db.save_groups(groups)
         return await msg.reply_text("<b>Caca has been enabled in this group.</b>", parse_mode="HTML")
 
     if cmd == "disable":
         groups.discard(chat.id)
-        caca_db.save_groups(groups)
+        await caca_db.save_groups(groups)
         return await msg.reply_text("<b>Caca has been disabled in this group.</b>", parse_mode="HTML")
 
     if cmd == "status":
