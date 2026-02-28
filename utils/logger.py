@@ -26,7 +26,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cmd = text[1:].split()[0].split("@")[0].lower()
         if cmd not in BOT_COMMANDS:
             return
-        title = "👀 <b>Command Log</b>"
+        title = "<b>Command Log</b>"
         content = f"<code>{html.escape(text)}</code>"
 
     elif msg.reply_to_message:
@@ -34,7 +34,7 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         replied = msg.reply_to_message
         if not replied.from_user or replied.from_user.id != bot.id:
             return
-        title = "💬 <b>Reply Log</b>"
+        title = "<b>Reply Log</b>"
         content = html.escape(text) if text else "<i>(non-text message)</i>"
 
     else:
@@ -42,10 +42,10 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = (
         f"{title}\n"
-        f"👤 <b>Name</b> : {html.escape(name)}\n"
-        f"🆔 <b>User ID</b> : <code>{uid}</code>\n"
-        f"🏷 <b>Chat</b> : {chat_type} | {html.escape(chat_name)}\n"
-        f"✉️ <b>Message</b> : {content}"
+        f"<b>Name</b> : {html.escape(name)}\n"
+        f"<b>User ID</b> : <code>{uid}</code>\n"
+        f"<b>Chat</b> : {chat_type} | {html.escape(chat_name)}\n"
+        f"<b>Message</b> : {content}"
     )
 
     try:
