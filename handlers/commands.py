@@ -32,7 +32,7 @@ from handlers.kurs import kurs_cmd
 from handlers.net import net_cmd
 from handlers.cookies import cookies_cmd
 from handlers.donate import donate_cmd
-from handlers.moderation import moderation_cmd, ban_cmd, unban_cmd
+from handlers.moderation import moderation_cmd, ban_cmd, unban_cmd, mute_cmd, unmute_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -44,6 +44,8 @@ COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("cookies", cookies_cmd, False),
     ("moderation", moderation_cmd, False),
+    ("mute", mute_cmd, False),
+    ("unmute", unmute_cmd, False),
     ("ban", ban_cmd, False),
     ("unban", unban_cmd, False),
     ("net", net_cmd, False),
