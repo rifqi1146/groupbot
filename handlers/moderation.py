@@ -252,6 +252,24 @@ async def _resolve_target_user_obj_for_display(update: Update, context: ContextT
     return None
 
 
+async def _resolve_user_obj_for_display_by_id(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    chat = update.effective_chat
+
+    if chat and chat.type in ("group", "supergroup"):
+        try:
+            cm = await context.bot.get_chat_member(chat.id, int(user_id))
+            u = getattr(cm, "user", None)
+            if u:
+                return u
+        except Exception:
+            pass
+
+    try:
+        return await context.bot.get_chat(int(user_id))
+    except Exception:
+        return None
+
+
 def _display_name_from_token(token: str | None) -> str:
     t = (token or "").strip()
     if not t:
@@ -328,11 +346,14 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    if not obj and target_id:
+        obj = await _resolve_user_obj_for_display_by_id(update, context, int(target_id))
+
     name = _display_name(obj) or _display_name_from_token(target_token)
-    who = _mention_html(target_id, name)
+    who = _mention_html(int(target_id), name)
 
     try:
-        await context.bot.ban_chat_member(chat_id=chat.id, user_id=target_id, until_date=until)
+        await context.bot.ban_chat_member(chat_id=chat.id, user_id=int(target_id), until_date=until)
         dur_txt = f"<b>Duration:</b> {html.escape(dur_human)}\n" if dur_human else "<b>Duration:</b> Permanent\n"
         return await msg.reply_text(
             "<b>Banned</b>\n"
@@ -372,11 +393,14 @@ async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    if not obj and target_id:
+        obj = await _resolve_user_obj_for_display_by_id(update, context, int(target_id))
+
     name = _display_name(obj) or _display_name_from_token(target_token)
-    who = _mention_html(target_id, name)
+    who = _mention_html(int(target_id), name)
 
     try:
-        await context.bot.unban_chat_member(chat_id=chat.id, user_id=target_id)
+        await context.bot.unban_chat_member(chat_id=chat.id, user_id=int(target_id))
         return await msg.reply_text(
             "<b>Unbanned</b>\n"
             f"<b>User:</b> {who}",
@@ -432,13 +456,16 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    if not obj and target_id:
+        obj = await _resolve_user_obj_for_display_by_id(update, context, int(target_id))
+
     name = _display_name(obj) or _display_name_from_token(target_token)
-    who = _mention_html(target_id, name)
+    who = _mention_html(int(target_id), name)
 
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat.id,
-            user_id=target_id,
+            user_id=int(target_id),
             permissions=perms,
             until_date=until,
         )
@@ -498,13 +525,16 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    if not obj and target_id:
+        obj = await _resolve_user_obj_for_display_by_id(update, context, int(target_id))
+
     name = _display_name(obj) or _display_name_from_token(target_token)
-    who = _mention_html(target_id, name)
+    who = _mention_html(int(target_id), name)
 
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat.id,
-            user_id=target_id,
+            user_id=int(target_id),
             permissions=perms,
             until_date=None,
         )
