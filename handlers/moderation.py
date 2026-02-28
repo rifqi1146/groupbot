@@ -27,6 +27,15 @@ def _db_init():
             )
             """
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS moderation_user_cache (
+                username TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
         con.commit()
     finally:
         con.close()
@@ -75,6 +84,65 @@ def moderation_set(chat_id: int, enabled: bool):
         con.close()
 
 
+def _cache_username(user_id: int, username: str | None):
+    u = (username or "").strip().lstrip("@").lower()
+    if not u:
+        return
+    con = _db()
+    try:
+        now = float(time.time())
+        con.execute("BEGIN")
+        con.execute(
+            """
+            INSERT INTO moderation_user_cache (username, user_id, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET
+              user_id=excluded.user_id,
+              updated_at=excluded.updated_at
+            """,
+            (u, int(user_id), now),
+        )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+    finally:
+        con.close()
+
+
+def _lookup_user_id(username: str) -> int | None:
+    u = (username or "").strip().lstrip("@").lower()
+    if not u:
+        return None
+    con = _db()
+    try:
+        row = con.execute(
+            "SELECT user_id FROM moderation_user_cache WHERE username=? LIMIT 1",
+            (u,),
+        ).fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+    finally:
+        con.close()
+
+
+def _warm_cache_from_update(update: Update):
+    msg = update.message
+    u = update.effective_user
+    if u and getattr(u, "id", None):
+        _cache_username(int(u.id), getattr(u, "username", None))
+
+    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
+        ru = msg.reply_to_message.from_user
+        _cache_username(int(ru.id), getattr(ru, "username", None))
+
+    if msg and getattr(msg, "entities", None):
+        for ent in msg.entities:
+            if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+                _cache_username(int(ent.user.id), getattr(ent.user, "username", None))
+
+
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
     chat = update.effective_chat
@@ -93,31 +161,6 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception:
         return False
 
-def _entity_target_user(msg, token: str | None):
-    if not msg or not getattr(msg, "entities", None):
-        return None
-
-    if not token:
-        for ent in msg.entities:
-            if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
-                return ent.user
-        return None
-
-    t = (token or "").strip()
-    if not t:
-        return None
-
-    text = msg.text or ""
-    for ent in msg.entities:
-        if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
-            try:
-                part = text[ent.offset : ent.offset + ent.length]
-            except Exception:
-                continue
-            if part == t:
-                return ent.user
-
-    return None
 
 def _parse_duration(token: str) -> tuple[datetime | None, str | None]:
     t = (token or "").strip().lower()
@@ -164,70 +207,38 @@ def _display_name(obj) -> str:
         return ""
     first = getattr(obj, "first_name", "") or ""
     last = getattr(obj, "last_name", "") or ""
-    title = getattr(obj, "title", "") or ""
     username = getattr(obj, "username", "") or ""
     name = (first + (" " + last if last else "")).strip()
     if name:
         return name
-    if title:
-        return title
     if username:
         return f"@{username}"
     return ""
 
 
-async def _resolve_target_user(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None):
-    msg = update.message
-    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
-        return msg.reply_to_message.from_user
-
-    ent_user = _entity_target_user(msg, token)
-    if ent_user:
-        return ent_user
-
-    raw = (token or "").strip()
-    if not raw:
+def _text_mention_user_from_message(msg, token: str | None):
+    if not msg or not getattr(msg, "entities", None):
         return None
 
-    if raw.isdigit():
-        try:
-            return await context.bot.get_chat(int(raw))
-        except Exception:
-            return None
-
-    if not raw.startswith("@"):
-        raw = "@" + raw
-
-    try:
-        return await context.bot.get_chat(raw)
-    except Exception:
+    if not token:
+        for ent in msg.entities:
+            if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+                return ent.user
         return None
 
-async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None) -> int | None:
-    msg = update.message
-    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
-        return int(msg.reply_to_message.from_user.id)
-
-    ent_user = _entity_target_user(msg, token)
-    if ent_user and getattr(ent_user, "id", None):
-        return int(ent_user.id)
-
-    raw = (token or "").strip()
-    if not raw:
+    t = (token or "").strip()
+    if not t:
         return None
 
-    if raw.isdigit():
-        return int(raw)
-
-    if not raw.startswith("@"):
-        raw = "@" + raw
-
-    try:
-        c = await context.bot.get_chat(raw)
-        if c and getattr(c, "id", None):
-            return int(c.id)
-    except Exception:
-        pass
+    text = msg.text or ""
+    for ent in msg.entities:
+        if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+            try:
+                part = text[ent.offset : ent.offset + ent.length]
+            except Exception:
+                continue
+            if part == t:
+                return ent.user
 
     return None
 
@@ -254,6 +265,53 @@ def _extract_duration_target_reason(args: list[str], has_reply_target: bool) -> 
     target = a[0]
     reason = " ".join(a[1:]).strip() or "-"
     return None, None, target, reason
+
+
+async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None) -> int | None:
+    msg = update.message
+    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
+        return int(msg.reply_to_message.from_user.id)
+
+    ent_user = _text_mention_user_from_message(msg, token)
+    if ent_user and getattr(ent_user, "id", None):
+        return int(ent_user.id)
+
+    raw = (token or "").strip()
+    if not raw:
+        return None
+
+    if raw.isdigit():
+        return int(raw)
+
+    if raw.startswith("@"):
+        raw = raw[1:].strip()
+
+    cached = _lookup_user_id(raw)
+    if cached:
+        return cached
+
+    return None
+
+
+async def _resolve_target_user_obj_for_display(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None):
+    msg = update.message
+    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
+        return msg.reply_to_message.from_user
+
+    ent_user = _text_mention_user_from_message(msg, token)
+    if ent_user:
+        return ent_user
+
+    return None
+
+
+def _display_name_from_token(token: str | None) -> str:
+    t = (token or "").strip()
+    if not t:
+        return "User"
+    if t.startswith("@"):
+        return t
+    return "User"
 
 
 async def moderation_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -310,24 +368,24 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
+    _warm_cache_from_update(update)
+
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target = await _resolve_target_user(update, context, target_token)
-    target_id = int(getattr(target, "id", 0) or 0)
-    if not target_id:
-        target_id = await _resolve_target_user_id(update, context, target_token) or 0
-        target = None
-
+    target_id = await _resolve_target_user_id(update, context, target_token)
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use:\n"
-            "<code>/ban 7d @username toxic</code>\n"
-            "<code>/ban 7d user_id toxic</code>",
+            "<code>/ban 7d user_id toxic</code>\n"
+            "<code>/ban 7d @username toxic</code>",
             parse_mode="HTML",
         )
 
-    who = _mention_html(target_id, _display_name(target) or "User")
+    obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    name = _display_name(obj) or _display_name_from_token(target_token)
+    who = _mention_html(target_id, name)
+
     try:
         await context.bot.ban_chat_member(chat_id=chat.id, user_id=target_id, until_date=until)
         dur_txt = f"<b>Duration:</b> {html.escape(dur_human)}\n" if dur_human else "<b>Duration:</b> Permanent\n"
@@ -358,22 +416,22 @@ async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
+    _warm_cache_from_update(update)
+
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target = await _resolve_target_user(update, context, target_token)
-    target_id = int(getattr(target, "id", 0) or 0)
-    if not target_id:
-        target_id = await _resolve_target_user_id(update, context, target_token) or 0
-        target = None
-
+    target_id = await _resolve_target_user_id(update, context, target_token)
     if not target_id:
         return await msg.reply_text(
-            "Reply to a user or use: <code>/unban @username</code> / <code>/unban user_id</code>",
+            "Reply to a user or use: <code>/unban user_id</code> / <code>/unban @username</code>",
             parse_mode="HTML",
         )
 
-    who = _mention_html(target_id, _display_name(target) or "User")
+    obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    name = _display_name(obj) or _display_name_from_token(target_token)
+    who = _mention_html(target_id, name)
+
     try:
         await context.bot.unban_chat_member(chat_id=chat.id, user_id=target_id)
         return await msg.reply_text(
@@ -401,20 +459,17 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
+    _warm_cache_from_update(update)
+
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target = await _resolve_target_user(update, context, target_token)
-    target_id = int(getattr(target, "id", 0) or 0)
-    if not target_id:
-        target_id = await _resolve_target_user_id(update, context, target_token) or 0
-        target = None
-
+    target_id = await _resolve_target_user_id(update, context, target_token)
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use:\n"
-            "<code>/mute 10m @username rusuh</code>\n"
-            "<code>/mute 10m user_id rusuh</code>",
+            "<code>/mute 10m user_id rusuh</code>\n"
+            "<code>/mute 10m @username rusuh</code>\n",
             parse_mode="HTML",
         )
 
@@ -435,7 +490,10 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         can_manage_topics=False,
     )
 
-    who = _mention_html(target_id, _display_name(target) or "User")
+    obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    name = _display_name(obj) or _display_name_from_token(target_token)
+    who = _mention_html(target_id, name)
+
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat.id,
@@ -471,18 +529,15 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
+    _warm_cache_from_update(update)
+
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target = await _resolve_target_user(update, context, target_token)
-    target_id = int(getattr(target, "id", 0) or 0)
-    if not target_id:
-        target_id = await _resolve_target_user_id(update, context, target_token) or 0
-        target = None
-
+    target_id = await _resolve_target_user_id(update, context, target_token)
     if not target_id:
         return await msg.reply_text(
-            "Reply to a user or use: <code>/unmute @username</code> / <code>/unmute user_id</code>",
+            "Reply to a user or use: <code>/unmute user_id</code> / <code>/unmute @username</code>",
             parse_mode="HTML",
         )
 
@@ -503,7 +558,10 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         can_manage_topics=False,
     )
 
-    who = _mention_html(target_id, _display_name(target) or "User")
+    obj = await _resolve_target_user_obj_for_display(update, context, target_token)
+    name = _display_name(obj) or _display_name_from_token(target_token)
+    who = _mention_html(target_id, name)
+
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat.id,
