@@ -128,6 +128,52 @@ def _parse_duration(token: str) -> tuple[datetime | None, str | None]:
     return until, human
 
 
+def _mention_html(user_id: int, name: str) -> str:
+    safe = html.escape(name or "User")
+    return f'<a href="tg://user?id={int(user_id)}">{safe}</a>'
+
+
+def _display_name(obj) -> str:
+    if not obj:
+        return ""
+    first = getattr(obj, "first_name", "") or ""
+    last = getattr(obj, "last_name", "") or ""
+    title = getattr(obj, "title", "") or ""
+    username = getattr(obj, "username", "") or ""
+    name = (first + (" " + last if last else "")).strip()
+    if name:
+        return name
+    if title:
+        return title
+    if username:
+        return f"@{username}"
+    return ""
+
+
+async def _resolve_target_user(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None):
+    msg = update.message
+    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
+        return msg.reply_to_message.from_user
+
+    raw = (token or "").strip()
+    if not raw:
+        return None
+
+    if raw.startswith("@"):
+        raw = raw[1:].strip()
+
+    if raw.isdigit():
+        try:
+            return await context.bot.get_chat(int(raw))
+        except Exception:
+            return None
+
+    try:
+        return await context.bot.get_chat(raw)
+    except Exception:
+        return None
+
+
 async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None) -> int | None:
     msg = update.message
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
@@ -234,7 +280,12 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target_id = await _resolve_target_user_id(update, context, target_token)
+    target = await _resolve_target_user(update, context, target_token)
+    target_id = int(getattr(target, "id", 0) or 0)
+    if not target_id:
+        target_id = await _resolve_target_user_id(update, context, target_token) or 0
+        target = None
+
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use:\n"
@@ -243,15 +294,17 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
+    who = _mention_html(target_id, _display_name(target) or "User")
     try:
         await context.bot.ban_chat_member(chat_id=chat.id, user_id=target_id, until_date=until)
         dur_txt = f"<b>Duration:</b> {html.escape(dur_human)}\n" if dur_human else "<b>Duration:</b> Permanent\n"
         return await msg.reply_text(
             "<b>Banned</b>\n"
-            f"<b>User:</b> <code>{target_id}</code>\n"
+            f"<b>User:</b> {who}\n"
             f"{dur_txt}"
             f"<b>Reason:</b> <code>{html.escape(reason)}</code>",
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
     except Exception as e:
         return await msg.reply_text(f"Failed: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
@@ -275,19 +328,26 @@ async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target_id = await _resolve_target_user_id(update, context, target_token)
+    target = await _resolve_target_user(update, context, target_token)
+    target_id = int(getattr(target, "id", 0) or 0)
+    if not target_id:
+        target_id = await _resolve_target_user_id(update, context, target_token) or 0
+        target = None
+
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use: <code>/unban @username</code> / <code>/unban user_id</code>",
             parse_mode="HTML",
         )
 
+    who = _mention_html(target_id, _display_name(target) or "User")
     try:
         await context.bot.unban_chat_member(chat_id=chat.id, user_id=target_id)
         return await msg.reply_text(
             "<b>Unbanned</b>\n"
-            f"<b>User:</b> <code>{target_id}</code>",
+            f"<b>User:</b> {who}",
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
     except Exception as e:
         return await msg.reply_text(f"Failed: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
@@ -311,7 +371,12 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target_id = await _resolve_target_user_id(update, context, target_token)
+    target = await _resolve_target_user(update, context, target_token)
+    target_id = int(getattr(target, "id", 0) or 0)
+    if not target_id:
+        target_id = await _resolve_target_user_id(update, context, target_token) or 0
+        target = None
+
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use:\n"
@@ -337,6 +402,7 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         can_manage_topics=False,
     )
 
+    who = _mention_html(target_id, _display_name(target) or "User")
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat.id,
@@ -347,10 +413,11 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dur_txt = f"<b>Duration:</b> {html.escape(dur_human)}\n" if dur_human else "<b>Duration:</b> Permanent\n"
         return await msg.reply_text(
             "<b>Muted</b>\n"
-            f"<b>User:</b> <code>{target_id}</code>\n"
+            f"<b>User:</b> {who}\n"
             f"{dur_txt}"
             f"<b>Reason:</b> <code>{html.escape(reason)}</code>",
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
     except Exception as e:
         return await msg.reply_text(f"Failed: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
@@ -374,7 +441,12 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = _extract_duration_target_reason(context.args or [], has_reply)
 
-    target_id = await _resolve_target_user_id(update, context, target_token)
+    target = await _resolve_target_user(update, context, target_token)
+    target_id = int(getattr(target, "id", 0) or 0)
+    if not target_id:
+        target_id = await _resolve_target_user_id(update, context, target_token) or 0
+        target = None
+
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use: <code>/unmute @username</code> / <code>/unmute user_id</code>",
@@ -398,6 +470,7 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         can_manage_topics=False,
     )
 
+    who = _mention_html(target_id, _display_name(target) or "User")
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat.id,
@@ -407,8 +480,9 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return await msg.reply_text(
             "<b>Unmuted</b>\n"
-            f"<b>User:</b> <code>{target_id}</code>",
+            f"<b>User:</b> {who}",
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
     except Exception as e:
         return await msg.reply_text(f"Failed: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
