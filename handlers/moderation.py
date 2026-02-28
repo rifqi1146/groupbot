@@ -155,7 +155,7 @@ async def _resolve_target_user(update: Update, context: ContextTypes.DEFAULT_TYP
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
         return msg.reply_to_message.from_user
 
-    raw = (token or "").strip()
+    raw = (token or "").strip().lower()
     if not raw:
         return None
 
@@ -165,33 +165,28 @@ async def _resolve_target_user(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             return None
 
-    if raw.startswith("@"):
-        raw = "@" + raw[1:].lower()
-    else:
-        raw = "@" + raw.lower()
+    if not raw.startswith("@"):
+        raw = "@" + raw
 
     try:
         return await context.bot.get_chat(raw)
     except Exception:
         return None
 
-
 async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None) -> int | None:
     msg = update.message
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
         return int(msg.reply_to_message.from_user.id)
 
-    raw = (token or "").strip()
+    raw = (token or "").strip().lower()
     if not raw:
         return None
 
     if raw.isdigit():
         return int(raw)
 
-    if raw.startswith("@"):
-        raw = "@" + raw[1:].lower()
-    else:
-        raw = "@" + raw.lower()
+    if not raw.startswith("@"):
+        raw = "@" + raw
 
     try:
         c = await context.bot.get_chat(raw)
