@@ -4,6 +4,7 @@ import html
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+from telegram.constants import MessageEntityType
 from telegram import Update, ChatPermissions
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
@@ -92,6 +93,31 @@ async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception:
         return False
 
+def _entity_target_user(msg, token: str | None):
+    if not msg or not getattr(msg, "entities", None):
+        return None
+
+    if not token:
+        for ent in msg.entities:
+            if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+                return ent.user
+        return None
+
+    t = (token or "").strip()
+    if not t:
+        return None
+
+    text = msg.text or ""
+    for ent in msg.entities:
+        if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+            try:
+                part = text[ent.offset : ent.offset + ent.length]
+            except Exception:
+                continue
+            if part == t:
+                return ent.user
+
+    return None
 
 def _parse_duration(token: str) -> tuple[datetime | None, str | None]:
     t = (token or "").strip().lower()
@@ -155,7 +181,11 @@ async def _resolve_target_user(update: Update, context: ContextTypes.DEFAULT_TYP
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
         return msg.reply_to_message.from_user
 
-    raw = (token or "").strip().lower()
+    ent_user = _entity_target_user(msg, token)
+    if ent_user:
+        return ent_user
+
+    raw = (token or "").strip()
     if not raw:
         return None
 
@@ -178,7 +208,11 @@ async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
         return int(msg.reply_to_message.from_user.id)
 
-    raw = (token or "").strip().lower()
+    ent_user = _entity_target_user(msg, token)
+    if ent_user and getattr(ent_user, "id", None):
+        return int(ent_user.id)
+
+    raw = (token or "").strip()
     if not raw:
         return None
 
