@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
 
 MODERATION_DB = "data/moderation.sqlite3"
+BROADCAST_DB = "data/broadcast.sqlite3"
 
 
 def _db_init():
@@ -23,15 +24,6 @@ def _db_init():
             CREATE TABLE IF NOT EXISTS moderation_groups (
                 chat_id INTEGER PRIMARY KEY,
                 enabled INTEGER NOT NULL DEFAULT 0,
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS moderation_user_cache (
-                username TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
                 updated_at REAL NOT NULL
             )
             """
@@ -84,63 +76,22 @@ def moderation_set(chat_id: int, enabled: bool):
         con.close()
 
 
-def _cache_username(user_id: int, username: str | None):
-    u = (username or "").strip().lstrip("@").lower()
-    if not u:
-        return
-    con = _db()
-    try:
-        now = float(time.time())
-        con.execute("BEGIN")
-        con.execute(
-            """
-            INSERT INTO moderation_user_cache (username, user_id, updated_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET
-              user_id=excluded.user_id,
-              updated_at=excluded.updated_at
-            """,
-            (u, int(user_id), now),
-        )
-        con.execute("COMMIT")
-    except Exception:
-        try:
-            con.execute("ROLLBACK")
-        except Exception:
-            pass
-    finally:
-        con.close()
-
-
 def _lookup_user_id(username: str) -> int | None:
     u = (username or "").strip().lstrip("@").lower()
     if not u:
         return None
-    con = _db()
+
+    con = sqlite3.connect(BROADCAST_DB)
     try:
         row = con.execute(
-            "SELECT user_id FROM moderation_user_cache WHERE username=? LIMIT 1",
+            "SELECT user_id FROM broadcast_user_cache WHERE username=? LIMIT 1",
             (u,),
         ).fetchone()
         return int(row[0]) if row and row[0] is not None else None
+    except Exception:
+        return None
     finally:
         con.close()
-
-
-def _warm_cache_from_update(update: Update):
-    msg = update.message
-    u = update.effective_user
-    if u and getattr(u, "id", None):
-        _cache_username(int(u.id), getattr(u, "username", None))
-
-    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
-        ru = msg.reply_to_message.from_user
-        _cache_username(int(ru.id), getattr(ru, "username", None))
-
-    if msg and getattr(msg, "entities", None):
-        for ent in msg.entities:
-            if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
-                _cache_username(int(ent.user.id), getattr(ent.user, "username", None))
 
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -286,11 +237,7 @@ async def _resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_
     if raw.startswith("@"):
         raw = raw[1:].strip()
 
-    cached = _lookup_user_id(raw)
-    if cached:
-        return cached
-
-    return None
+    return _lookup_user_id(raw)
 
 
 async def _resolve_target_user_obj_for_display(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None):
@@ -368,8 +315,6 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
-    _warm_cache_from_update(update)
-
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = _extract_duration_target_reason(context.args or [], has_reply)
 
@@ -416,8 +361,6 @@ async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
-    _warm_cache_from_update(update)
-
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = _extract_duration_target_reason(context.args or [], has_reply)
 
@@ -459,8 +402,6 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
 
-    _warm_cache_from_update(update)
-
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = _extract_duration_target_reason(context.args or [], has_reply)
 
@@ -468,8 +409,8 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not target_id:
         return await msg.reply_text(
             "Reply to a user or use:\n"
-            "<code>/mute 10m user_id rusuh</code>\n"
-            "<code>/mute 10m @username rusuh</code>\n",
+            "<code>/mute 10m user_id reason</code>\n"
+            "<code>/mute 10m @username reason</code>",
             parse_mode="HTML",
         )
 
@@ -528,8 +469,6 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await _is_admin_or_owner(update, context):
         return await msg.reply_text("You are not an admin.")
-
-    _warm_cache_from_update(update)
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = _extract_duration_target_reason(context.args or [], has_reply)

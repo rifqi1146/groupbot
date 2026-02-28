@@ -27,6 +27,13 @@ def _db_init():
                 updated_at REAL NOT NULL
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_user_cache (
+                username TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
         con.commit()
     finally:
         con.close()
@@ -69,6 +76,34 @@ def _add_group(chat_id: int):
         con.close()
 
 
+def cache_username(user_id: int, username: str | None):
+    u = (username or "").strip().lstrip("@").lower()
+    if not u:
+        return
+    con = _db()
+    try:
+        now = float(time.time())
+        con.execute("BEGIN")
+        con.execute(
+            """
+            INSERT INTO broadcast_user_cache (username, user_id, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET
+              user_id=excluded.user_id,
+              updated_at=excluded.updated_at
+            """,
+            (u, int(user_id), now),
+        )
+        con.execute("COMMIT")
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+    finally:
+        con.close()
+
+
 async def collect_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if not chat:
@@ -78,6 +113,15 @@ async def collect_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _add_user(chat.id)
     else:
         _add_group(chat.id)
+
+    u = update.effective_user
+    if u and getattr(u, "id", None):
+        cache_username(int(u.id), getattr(u, "username", None))
+
+    msg = update.message
+    if msg and msg.reply_to_message and msg.reply_to_message.from_user:
+        ru = msg.reply_to_message.from_user
+        cache_username(int(ru.id), getattr(ru, "username", None))
 
 
 try:
