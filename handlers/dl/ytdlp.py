@@ -52,6 +52,7 @@ def _probe_total_size_sync(url: str, fmt: str) -> int:
         YT_DLP,
         "--cookies", COOKIES_PATH,
         "--no-playlist",
+        "--extractor-args", "youtube:player_client=web",
         "-J",
         "-f", fmt,
         url,
@@ -175,6 +176,7 @@ async def ytdlp_download(
             YT_DLP,
             "--cookies", COOKIES_PATH,
             "--js-runtimes", "deno:/root/.deno/bin/deno",
+            "--extractor-args", "youtube:player_client=web",
             "--no-playlist",
             "-f", "bestaudio/best",
             "--extract-audio",
@@ -204,6 +206,7 @@ async def ytdlp_download(
         cmd = [
             YT_DLP,
             "--cookies", COOKIES_PATH,
+            "--extractor-args", "youtube:player_client=web",
             "--js-runtimes", "deno:/root/.deno/bin/deno",
             "--no-playlist",
             "-f", fmt,
