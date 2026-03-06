@@ -203,16 +203,15 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     if not q or not q.message:
         return
-    await q.answer()
 
     parsed = _parse_cb(q.data)
     if not parsed:
-        return
+        return await q.answer()
 
     chat_id, owner_id, action = parsed
     user = update.effective_user
     if not user:
-        return
+        return await q.answer()
 
     if user.id != owner_id:
         return await q.answer("Bukan punya lu goblok.", show_alert=True)
@@ -225,7 +224,7 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if status != 200:
         return await q.answer("API error", show_alert=True)
     if not img:
-        return await q.answer("Waifu kosong memek", show_alert=True)
+        return await q.answer("Waifu kosong.", show_alert=True)
 
     _push(key, img)
 
@@ -237,22 +236,22 @@ async def waifu_next_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         reply_markup=_build_kb(chat_id, owner_id, img)
     )
+    await q.answer()
 
 
 async def waifu_pref_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     if not q or not q.message:
         return
-    await q.answer()
 
     parsed = _parse_cb(q.data)
     if not parsed:
-        return
+        return await q.answer()
 
     chat_id, owner_id, action = parsed
     user = update.effective_user
     if not user:
-        return
+        return await q.answer()
 
     if user.id != owner_id:
         return await q.answer("Bukan punya lu goblok.", show_alert=True)
@@ -260,7 +259,7 @@ async def waifu_pref_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = _state_key(chat_id, owner_id)
     img = _pop(key)
     if not img:
-        return await q.answer("Ga ada waifu sebelumnya anjing", show_alert=True)
+        return await q.answer("Ga ada waifu sebelumnya.", show_alert=True)
 
     tag = _WAIFU_LAST_TAG.get(key)
 
@@ -272,6 +271,7 @@ async def waifu_pref_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         reply_markup=_build_kb(chat_id, owner_id, img)
     )
+    await q.answer()
 
 
 try:
