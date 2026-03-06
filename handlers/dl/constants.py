@@ -27,6 +27,16 @@ PREMIUM_ONLY_DOMAINS = {
 }
 
 AUTO_DOWNLOAD_DOMAINS = {
+    "pornhub.com",
+    "xnxx.com",
+    "redtube.com",
+    "xvideos.com",
+    "vjav.com",
+    "japanhdv.com",
+    "youporn.com",
+    "eporner.com",
+    "japaneseporn.xxx",
+    "xhsocial.com",
     "youtube.com",
     "youtu.be",
     "music.youtube.com",
