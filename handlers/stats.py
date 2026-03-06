@@ -287,7 +287,7 @@ def _render_dashboard_sync(stats, net_speed=(0.0, 0.0)):
     pad = int(28 * S)
     gap = int(18 * S)
 
-    d.text((pad, int(pad - 2 * S)), "📈 System Stats", font=f_title, fill=text)
+    d.text((pad, int(pad - 2 * S)), "System Stats", font=f_title, fill=text)
 
     x0 = pad
     y0 = pad + int(78 * S)
@@ -308,7 +308,7 @@ def _render_dashboard_sync(stats, net_speed=(0.0, 0.0)):
         _draw_round_rect(d, rect, int(18 * S), fill=fillc, outline=border, width=1)
 
     cx0, cy0, cx1, cy1 = cpu_card
-    d.text((cx0 + int(18 * S), cy0 + int(16 * S)), "⚙️ CPU", font=f_h, fill=text)
+    d.text((cx0 + int(18 * S), cy0 + int(16 * S)), "CPU", font=f_h, fill=text)
 
     cpu = stats["cpu"]
     cpu_load = _safe_pct(cpu["load"])
@@ -335,7 +335,7 @@ def _render_dashboard_sync(stats, net_speed=(0.0, 0.0)):
         pass
 
     sx0, sy0, sx1, sy1 = sys_card
-    d.text((sx0 + int(18 * S), sy0 + int(16 * S)), "🖥️ System", font=f_h, fill=text)
+    d.text((sx0 + int(18 * S), sy0 + int(16 * S)), "System", font=f_h, fill=text)
 
     sysi = stats["sys"]
     d.text((sx0 + int(18 * S), sy0 + int(56 * S)), f"OS     : {sysi['os']}", font=f_small, fill=muted)
@@ -347,7 +347,7 @@ def _render_dashboard_sync(stats, net_speed=(0.0, 0.0)):
     tx = stats["net"]["tx"]
     
     rx0, ry0, rx1, ry1 = res_card
-    d.text((rx0 + int(18 * S), ry0 + int(16 * S)), "🧠 Memory + 💾 Disk", font=f_h, fill=text)
+    d.text((rx0 + int(18 * S), ry0 + int(16 * S)), "Memory + Disk", font=f_h, fill=text)
 
     ram = stats["ram"]
     ram_pct = _safe_pct(ram["pct"])
@@ -375,7 +375,7 @@ def _render_dashboard_sync(stats, net_speed=(0.0, 0.0)):
     d.text((rx0 + int(18 * S), ry0 + int(288 * S)), f"{disk_pct:.1f}% free {humanize_bytes(disk['free'])}", font=f_small_mono, fill=muted)
 
     nx0, ny0, nx1, ny1 = net_card
-    d.text((nx0 + int(18 * S), ny0 + int(16 * S)), "🌐 Network", font=f_h, fill=text)
+    d.text((nx0 + int(18 * S), ny0 + int(16 * S)), "Network", font=f_h, fill=text)
     d.text((nx0 + int(18 * S), ny0 + int(58 * S)), f"RX Total: {humanize_bytes(rx)}", font=f_mono, fill=muted)
     d.text((nx0 + int(18 * S), ny0 + int(82 * S)), f"TX Total: {humanize_bytes(tx)}", font=f_mono, fill=muted)
 
@@ -415,7 +415,7 @@ def _fallback_text(stats):
     sysi = stats["sys"]
 
     lines = []
-    lines.append("📈 System Stats")
+    lines.append("System Stats")
     lines.append("")
     lines.append(f"CPU: {cpu['load']:.1f}%  | Cores: {cpu['cores']} | Freq: {cpu['freq']}")
     lines.append(f"RAM: {humanize_bytes(ram['used'])}/{humanize_bytes(ram['total'])} ({ram['pct']:.1f}%)")
@@ -447,5 +447,5 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if bio:
         return await msg.reply_photo(photo=bio)
 
-    out = "<b>📈 System Stats</b>\n\n<pre>" + html.escape(_fallback_text(stats)) + "</pre>"
+    out = "<b>System Stats</b>\n\n<pre>" + html.escape(_fallback_text(stats)) + "</pre>"
     return await msg.reply_text(out, parse_mode="HTML")
