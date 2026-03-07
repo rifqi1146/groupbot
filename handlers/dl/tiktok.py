@@ -141,6 +141,25 @@ async def tiktok_fallback_send(
                 return
             raise
 
+    async def _set_uploading(kind: str):
+        label = {
+            "audio": "🎵 <b>Uploading audio...</b>",
+            "video": "🎬 <b>Uploading video...</b>",
+            "album": "🖼️ <b>Uploading slideshow...</b>",
+        }.get(kind, "<b>Uploading...</b>")
+
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=label,
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            if "Message is not modified" in str(e):
+                return
+            raise
+
     last_data = None
     for attempt in range(3):
         try:
@@ -186,6 +205,7 @@ async def tiktok_fallback_send(
         bot_name = (await bot.get_me()).first_name or "Bot"
         fixed_audio = reencode_mp3(tmp_audio)
 
+        await _set_uploading("audio")
         await bot.send_chat_action(chat_id=chat_id, action="upload_audio")
 
         await bot.send_audio(
@@ -214,12 +234,9 @@ async def tiktok_fallback_send(
 
         caption_text = f"🖼️ <b>{title}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
 
-        await _safe_edit(f"🖼️ <b>Slideshow detected</b>\n\nSending album 1/{len(chunks)}...")
+        await _set_uploading("album")
 
         for idx, chunk in enumerate(chunks):
-            if idx > 0:
-                await _safe_edit(f"🖼️ <b>Slideshow detected</b>\n\nSending album {idx + 1}/{len(chunks)}...")
-
             media = []
             for i, img in enumerate(chunk):
                 media.append(
@@ -275,6 +292,7 @@ async def tiktok_fallback_send(
                                 pass
                         last = time.time()
 
+        await _set_uploading("video")
         await bot.send_chat_action(chat_id=chat_id, action="upload_video")
 
         bot_name = (await bot.get_me()).first_name or "Bot"
