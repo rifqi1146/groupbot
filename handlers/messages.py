@@ -43,7 +43,7 @@ async def ai_reply_router(update, context):
         return await msg.reply_text(
             "😒 Lu siapa?\n"
             "Gue belum ngobrol sama lu.\n"
-            "Ketik /ai dulu.",
+            "Ketik /ask dulu.",
             parse_mode="HTML"
         )
 

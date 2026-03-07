@@ -129,8 +129,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not prompt:
             return await msg.reply_text(
                 "Contoh:\n"
-                "/ai apa itu relativitas?\n"
-                "atau reply jawaban AI untuk lanjut"
+                "/ask apa itu relativitas?"
             )
 
     elif msg.reply_to_message:
@@ -138,7 +137,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await msg.reply_text(
                 "😒 Lu siapa?\n"
                 "Gue belum ngobrol sama lu.\n"
-                "Ketik /ai dulu.",
+                "Ketik /ask dulu.",
                 parse_mode="HTML"
             )
         prompt = msg.text.strip()
