@@ -120,7 +120,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     prompt = ""
 
-    if msg.text and msg.text.startswith("/ai"):
+    if msg.text and msg.text.startswith("/ask"):
         prompt = " ".join(context.args) if context.args else ""
 
         AI_MEMORY.pop(user_id, None)
