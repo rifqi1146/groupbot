@@ -12,7 +12,7 @@ Mendukung:
         • 🧭 /reminder — Schedule reminder
  
         🤖 AI Commands
-        • 💬 /ai — Chat with AI Gemini
+        • 💬 /ask — Chat with AI Gemini
         • ⚡ /groq — Groq
         • 🍌 /caca — Chat Bot Caca, Si cewe ngeselin
 

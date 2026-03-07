@@ -62,7 +62,7 @@ async def post_init(app):
             ("ship", "Choose couple"),
             ("stats", "System statistics"),
             ("dl", "Download video"),
-            ("ai", "Ask Gemini AI"),
+            ("ask", "Ask Gemini AI"),
             ("music", "Search music"),            
             ("caca", "Chat sama caca 😍"),
             ("groq", "Ask Groq AI"),
