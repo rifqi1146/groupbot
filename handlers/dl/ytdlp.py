@@ -10,7 +10,12 @@ from .utils import progress_bar
 
 _SIZE_100MB = 100 * 1024 * 1024
 
-
+def _extract_title_from_path(path: str, prefix: str) -> str:
+    base = os.path.splitext(os.path.basename(path))[0]
+    if base.startswith(prefix + "_"):
+        base = base[len(prefix) + 1:]
+    return base.strip() or "Media"
+    
 def _is_instagram(url: str) -> bool:
     try:
         h = (urlparse((url or "").strip()).hostname or "").lower()
@@ -253,7 +258,10 @@ async def ytdlp_download(
             if is_ig:
                 picked = _pick_latest_media_file(start_ts, job_id)
                 if picked:
-                    return picked
+                    return {
+                        "path": picked,
+                        "title": _extract_title_from_path(picked, job_id),
+                    }
 
             print("[YTDLP] video failed → trying bestimage")
             update_interval = 2
@@ -277,7 +285,10 @@ async def ytdlp_download(
                 if is_ig:
                     picked = _pick_latest_media_file(start_ts, job_id)
                     if picked:
-                        return picked
+                        return {
+                            "path": picked,
+                            "title": _extract_title_from_path(picked, job_id),
+                        }
                 return None
 
     def media_priority(p):
@@ -303,6 +314,12 @@ async def ytdlp_download(
     print("[YTDLP OUTPUT FILES]", files)
     if not files:
         return None
-    
-    final_path = _strip_job_prefix(files[0], job_id)
-    return final_path
+
+    picked = files[0]
+    title = _extract_title_from_path(picked, job_id)
+    final_path = _strip_job_prefix(picked, job_id)
+
+    return {
+        "path": final_path,
+        "title": title,
+    }

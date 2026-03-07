@@ -14,7 +14,7 @@ def progress_bar(percent: float, length: int = 12) -> str:
     bar = "█" * filled + "░" * empty
     return f"{bar} {p:.1f}%"
 
-def sanitize_filename(name: str, max_len: int = 150) -> str:
+def sanitize_filename(name: str, max_len: int = 100) -> str:
     name = (name or "").strip()
     name = re.sub(r'[\\/:*?"<>|]', "", name)
     name = re.sub(r"\s+", " ", name)

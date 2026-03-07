@@ -95,10 +95,14 @@ async def send_downloaded_media(
     path,
     fmt_key,
 ):
-    if not path or not os.path.exists(path):
+    meta = path if isinstance(path, dict) else {"path": path, "title": None}
+    file_path = meta.get("path")
+    original_title = (meta.get("title") or "").strip()
+
+    if not file_path or not os.path.exists(file_path):
         raise RuntimeError("Download gagal")
 
-    if os.path.exists(path) and os.path.getsize(path) > MAX_TG_SIZE:
+    if os.path.exists(file_path) and os.path.getsize(file_path) > MAX_TG_SIZE:
         raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
 
     await bot.edit_message_text(
@@ -109,11 +113,11 @@ async def send_downloaded_media(
     )
 
     bot_name = (await bot.get_me()).first_name or "Bot"
-    caption_text = _clean_caption_from_path(path)
-    media_type = detect_media_type(path)
+    caption_text = original_title or _clean_caption_from_path(file_path)
+    media_type = detect_media_type(file_path)
 
     if fmt_key == "mp3":
-        fixed_audio = reencode_mp3(path)
+        fixed_audio = reencode_mp3(file_path)
         await bot.send_audio(
             chat_id=chat_id,
             audio=fixed_audio,
@@ -129,7 +133,7 @@ async def send_downloaded_media(
     if media_type == "photo":
         await bot.send_photo(
             chat_id=chat_id,
-            photo=path,
+            photo=file_path,
             caption=_build_safe_photo_caption(caption_text, bot_name),
             parse_mode="HTML",
             reply_to_message_id=reply_to,
@@ -140,7 +144,7 @@ async def send_downloaded_media(
     if media_type == "video":
         await bot.send_video(
             chat_id=chat_id,
-            video=path,
+            video=file_path,
             caption=_build_safe_caption(caption_text, bot_name),
             parse_mode="HTML",
             supports_streaming=False,

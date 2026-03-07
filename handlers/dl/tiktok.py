@@ -82,7 +82,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     if not video_url:
         raise RuntimeError("Video URL kosong")
 
-    title = info.get("title") or "TikTok Video"
+    title = info.get("title") or info.get("desc") or "TikTok Video"
     safe_title = sanitize_filename(title)
     uid = uuid.uuid4().hex
     out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
@@ -111,7 +111,10 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
                     )
                     last = time.time()
 
-    return out_path
+    return {
+        "path": out_path,
+        "title": title.strip() or "TikTok Video",
+    }
 
 
 async def tiktok_fallback_send(
