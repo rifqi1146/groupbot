@@ -6,6 +6,7 @@ from .constants import TMP_DIR, MAX_TG_SIZE
 from .utils import detect_media_type
 from .ytdlp import ytdlp_download
 
+
 def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
 
@@ -33,6 +34,59 @@ def reencode_mp3(src_path: str) -> str:
 
     return fixed_path
 
+
+def _clean_caption_from_path(path: str) -> str:
+    raw_name = os.path.splitext(os.path.basename(path))[0]
+    parts = raw_name.split("_", 1)
+
+    if len(parts) == 2 and len(parts[0]) >= 10 and all(c in "0123456789abcdef" for c in parts[0].lower()):
+        text = parts[1]
+    else:
+        text = raw_name
+
+    return text.strip() or "Media"
+
+
+def _build_safe_caption(title: str, bot_name: str, max_len: int = 1024) -> str:
+    clean_title = (title or "Media").strip()
+    safe_bot = html.escape(bot_name or "Bot")
+
+    suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
+    prefix = "🎬 <b>"
+    closing = "</b>"
+
+    full = f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
+    if len(full) <= max_len:
+        return full
+
+    allowed = max_len - len(prefix) - len(closing) - len(suffix) - 3
+    if allowed < 1:
+        allowed = 1
+
+    short_title = clean_title[:allowed].rstrip() + "..."
+    return f"{prefix}{html.escape(short_title)}{closing}{suffix}"
+
+
+def _build_safe_photo_caption(title: str, bot_name: str, max_len: int = 1024) -> str:
+    clean_title = (title or "Image").strip()
+    safe_bot = html.escape(bot_name or "Bot")
+
+    suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
+    prefix = "🖼️ <b>"
+    closing = "</b>"
+
+    full = f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
+    if len(full) <= max_len:
+        return full
+
+    allowed = max_len - len(prefix) - len(closing) - len(suffix) - 3
+    if allowed < 1:
+        allowed = 1
+
+    short_title = clean_title[:allowed].rstrip() + "..."
+    return f"{prefix}{html.escape(short_title)}{closing}{suffix}"
+
+
 async def send_downloaded_media(
     bot,
     chat_id,
@@ -55,13 +109,7 @@ async def send_downloaded_media(
     )
 
     bot_name = (await bot.get_me()).first_name or "Bot"
-    raw_name = os.path.splitext(os.path.basename(path))[0]
-    parts = raw_name.split("_", 1)
-    
-    if len(parts) == 2 and len(parts[0]) >= 16 and all(c in "0123456789abcdef" for c in parts[0].lower()):
-        caption = parts[1]
-    else:
-        caption = raw_name
+    caption_text = _clean_caption_from_path(path)
     media_type = detect_media_type(path)
 
     if fmt_key == "mp3":
@@ -69,9 +117,9 @@ async def send_downloaded_media(
         await bot.send_audio(
             chat_id=chat_id,
             audio=fixed_audio,
-            title=caption[:64],
+            title=caption_text[:64],
             performer=bot_name,
-            filename=f"{caption[:50]}.mp3",
+            filename=f"{caption_text[:50]}.mp3",
             reply_to_message_id=reply_to,
             disable_notification=True,
         )
@@ -82,10 +130,7 @@ async def send_downloaded_media(
         await bot.send_photo(
             chat_id=chat_id,
             photo=path,
-            caption=(
-                f"🖼️ <b>{html.escape(caption)}</b>\n\n"
-                f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
-            ),
+            caption=_build_safe_photo_caption(caption_text, bot_name),
             parse_mode="HTML",
             reply_to_message_id=reply_to,
             disable_notification=True,
@@ -96,10 +141,7 @@ async def send_downloaded_media(
         await bot.send_video(
             chat_id=chat_id,
             video=path,
-            caption=(
-                f"🎬 <b>{html.escape(caption)}</b>\n\n"
-                f"🪄 <i>Powered by {html.escape(bot_name)}</i>"
-            ),
+            caption=_build_safe_caption(caption_text, bot_name),
             parse_mode="HTML",
             supports_streaming=False,
             reply_to_message_id=reply_to,
@@ -108,6 +150,7 @@ async def send_downloaded_media(
         return
 
     raise RuntimeError("Media tidak didukung")
+
 
 async def download_non_tiktok(
     raw_url,
