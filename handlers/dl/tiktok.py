@@ -15,29 +15,43 @@ def is_tiktok(url: str) -> bool:
     return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))
 
 
-def _build_expandable_caption(title: str, desc: str, bot_name: str, max_len: int = 1024) -> str:
+def _build_safe_caption(title: str, desc: str, bot_name: str, max_len: int = 1024) -> str:
     clean_title = (title or "TikTok Video").strip()
     clean_desc = (desc or "").strip()
     safe_bot = html.escape(bot_name or "Bot")
 
     if not clean_desc or clean_desc == clean_title:
-        clean_desc = "Tap to expand."
+        caption = (
+            f"🎬 <b>{html.escape(clean_title)}</b>\n\n"
+            f"🪄 <i>Powered by {safe_bot}</i>"
+        )
+        if len(caption) <= max_len:
+            return caption
+
+        allowed = max_len - len("🎬 <b></b>\n\n") - len(f"\n\n🪄 <i>Powered by {safe_bot}</i>") - 3
+        if allowed < 1:
+            allowed = 1
+
+        short_title = clean_title[:allowed].rstrip() + "..."
+        return (
+            f"🎬 <b>{html.escape(short_title)}</b>\n\n"
+            f"🪄 <i>Powered by {safe_bot}</i>"
+        )
 
     prefix = f"🎬 <b>{html.escape(clean_title)}</b>\n\n"
     suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
-    block_open = "<blockquote expandable>"
-    block_close = "</blockquote>"
+    body = html.escape(clean_desc)
 
-    full = f"{prefix}{block_open}{html.escape(clean_desc)}{block_close}{suffix}"
+    full = f"{prefix}{body}{suffix}"
     if len(full) <= max_len:
         return full
 
-    allowed = max_len - len(prefix) - len(suffix) - len(block_open) - len(block_close) - 3
+    allowed = max_len - len(prefix) - len(suffix) - 3
     if allowed < 1:
         allowed = 1
 
     short_desc = clean_desc[:allowed].rstrip() + "..."
-    return f"{prefix}{block_open}{html.escape(short_desc)}{block_close}{suffix}"
+    return f"{prefix}{html.escape(short_desc)}{suffix}"
 
 
 async def douyin_download(url, bot, chat_id, status_msg_id):
@@ -225,7 +239,7 @@ async def tiktok_fallback_send(
     video_url = info.get("play") or info.get("wmplay") or info.get("hdplay")
     if video_url:
         title = info.get("title") or info.get("desc") or "TikTok Video"
-        desc = info.get("desc") or info.get("title") or "TikTok Video"
+        desc = info.get("desc") or info.get("title") or ""
         safe_title = sanitize_filename(title)
         uid = uuid.uuid4().hex
         out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
@@ -261,7 +275,7 @@ async def tiktok_fallback_send(
         await bot.send_chat_action(chat_id=chat_id, action="upload_video")
 
         bot_name = (await bot.get_me()).first_name or "Bot"
-        caption = _build_expandable_caption(title, desc, bot_name)
+        caption = _build_safe_caption(title, desc, bot_name)
 
         await bot.send_video(
             chat_id=chat_id,
