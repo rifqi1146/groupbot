@@ -100,7 +100,12 @@ def _load_avatar(avatar_bytes: Optional[bytes], size: int) -> Optional[Image.Ima
         return None
     try:
         avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-        avatar = ImageOps.fit(avatar, (size, size), method=Image.LANCZOS)
+        avatar = ImageOps.fit(
+            avatar,
+            (size, size),
+            method=Image.LANCZOS,
+            centering=(0.5, 0.35),
+        )
         mask = Image.new("L", (size, size), 0)
         mask_draw = ImageDraw.Draw(mask)
         mask_draw.ellipse((0, 0, size, size), fill=255)
@@ -157,11 +162,11 @@ def _render_quote_webp(author_name: str, text: str, avatar_bytes: Optional[bytes
     max_canvas_w = 512
     max_canvas_h = 512
 
-    avatar_size = 82
-    bubble_pad_x = 26
-    bubble_pad_y = 22
-    overlap = 30
-    max_text_width = 320
+    avatar_size = 72
+    bubble_pad_x = 24
+    bubble_pad_y = 20
+    overlap = 22
+    max_text_width = 330
 
     font_name = _pick_font(FONT_BOLD_CANDIDATES, 28)
     font_text = _pick_font(FONT_REGULAR_CANDIDATES, 30)
@@ -181,8 +186,8 @@ def _render_quote_webp(author_name: str, text: str, avatar_bytes: Optional[bytes
     bubble_w = min(bubble_w, max_canvas_w - 40 - avatar_size // 2)
     bubble_h = min(bubble_h, max_canvas_h - 40)
 
-    bubble_x = avatar_size - overlap + 12
-    bubble_y = 20
+    bubble_x = avatar_size - overlap + 8
+    bubble_y = 18
 
     canvas_w = min(max_canvas_w, bubble_x + bubble_w + 20)
     canvas_h = min(max_canvas_h, bubble_y + bubble_h + 20)
@@ -202,8 +207,8 @@ def _render_quote_webp(author_name: str, text: str, avatar_bytes: Optional[bytes
     if avatar is None:
         avatar = _make_fallback_avatar(author_name, avatar_size)
 
-    avatar_y = bubble_y + 16
-    avatar_x = 8
+    avatar_y = bubble_y + 10
+    avatar_x = 2
     canvas.alpha_composite(avatar, (avatar_x, avatar_y))
 
     draw = ImageDraw.Draw(canvas)
@@ -266,7 +271,12 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(text) > 400:
         text = text[:400].rstrip() + "..."
 
-    author_name = source_user.username or source_user.full_name or source_user.first_name or "User"
+    author_name = (
+        (source_user.first_name or "").strip()
+        or (source_user.full_name or "").strip()
+        or (source_user.username or "").strip()
+        or "User"
+    )
 
     wait = await msg.reply_text("Bentar, lagi bikin sticker...")
 
