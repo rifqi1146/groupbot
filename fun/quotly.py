@@ -4,7 +4,7 @@ import tempfile
 import asyncio
 from typing import Optional
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -35,58 +35,64 @@ def _pick_font(paths: list[str], size: int):
 def _measure_text(draw: ImageDraw.ImageDraw, text: str, font) -> tuple[int, int]:
     if not text:
         return 0, 0
-    box = draw.multiline_textbbox((0, 0), text, font=font, spacing=6)
+    box = draw.multiline_textbbox((0, 0), text, font=font, spacing=8)
     return box[2] - box[0], box[3] - box[1]
 
 
 def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font, max_width: int, max_lines: int) -> str:
-    text = (text or "").strip()
-    if not text:
+    raw = (text or "").replace("\r", "").strip()
+    if not raw:
         return ""
 
-    words = text.split()
-    if not words:
-        return ""
+    paragraphs = raw.split("\n")
+    out_lines = []
 
-    lines = []
-    current = words[0]
+    for para in paragraphs:
+        words = para.split()
+        if not words:
+            if len(out_lines) < max_lines:
+                out_lines.append("")
+            continue
 
-    for word in words[1:]:
-        trial = f"{current} {word}"
-        w, _ = _measure_text(draw, trial, font)
-        if w <= max_width:
-            current = trial
-        else:
-            lines.append(current)
-            current = word
-            if len(lines) >= max_lines:
+        current = words[0]
+
+        for word in words[1:]:
+            trial = f"{current} {word}"
+            w, _ = _measure_text(draw, trial, font)
+            if w <= max_width:
+                current = trial
+            else:
+                out_lines.append(current)
+                current = word
+                if len(out_lines) >= max_lines:
+                    break
+
+        if len(out_lines) < max_lines:
+            out_lines.append(current)
+
+        if len(out_lines) >= max_lines:
+            break
+
+    wrapped = "\n".join(out_lines[:max_lines]).strip()
+
+    original_joined = " ".join(raw.split())
+    current_joined = " ".join(wrapped.split())
+
+    if current_joined != original_joined:
+        while True:
+            candidate = wrapped.rstrip()
+            if len(candidate) <= 3:
+                wrapped = "..."
+                break
+            if candidate.endswith("..."):
+                break
+            candidate = candidate[:-1].rstrip() + "..."
+            w, _ = _measure_text(draw, candidate, font)
+            if w <= max_width * max_lines:
+                wrapped = candidate
                 break
 
-    if len(lines) < max_lines and current:
-        lines.append(current)
-
-    joined = "\n".join(lines[:max_lines])
-
-    while True:
-        w, _ = _measure_text(draw, joined, font)
-        if w <= max_width:
-            break
-        if len(joined) <= 3:
-            break
-        joined = joined[:-4].rstrip() + "..."
-
-    if len(lines) == max_lines and " ".join(words) != joined.replace("\n", " "):
-        if not joined.endswith("..."):
-            if len(joined) > 3:
-                joined = joined[:-3].rstrip() + "..."
-            else:
-                joined = "..."
-
-    return joined
-
-
-def _round_rect(draw: ImageDraw.ImageDraw, xy, radius: int, fill):
-    draw.rounded_rectangle(xy, radius=radius, fill=fill)
+    return wrapped
 
 
 def _load_avatar(avatar_bytes: Optional[bytes], size: int) -> Optional[Image.Image]:
@@ -104,118 +110,118 @@ def _load_avatar(avatar_bytes: Optional[bytes], size: int) -> Optional[Image.Ima
         return None
 
 
-def _render_quote_webp(
-    author_name: str,
-    text: str,
-    reply_name: str,
-    reply_text: str,
-    avatar_bytes: Optional[bytes],
-) -> str:
-    width = 512
-    height = 512
-    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
+def _make_fallback_avatar(name: str, size: int) -> Image.Image:
+    avatar = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(avatar)
+    draw.ellipse((0, 0, size, size), fill=(83, 60, 137, 255))
+
+    initials = (name or "U").strip()[:1].upper()
+    font = _pick_font(FONT_BOLD_CANDIDATES, int(size * 0.45))
+    box = draw.textbbox((0, 0), initials, font=font)
+    tw = box[2] - box[0]
+    th = box[3] - box[1]
+    draw.text(
+        ((size - tw) / 2, (size - th) / 2 - 4),
+        initials,
+        font=font,
+        fill=(255, 255, 255, 255),
+    )
+    return avatar
+
+
+def _rounded_gradient(size: tuple[int, int], radius: int) -> Image.Image:
+    w, h = size
+    base = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    px = base.load()
+
+    c1 = (58, 40, 92, 245)
+    c2 = (37, 29, 56, 245)
+
+    for y in range(h):
+        t = y / max(h - 1, 1)
+        r = int(c1[0] * (1 - t) + c2[0] * t)
+        g = int(c1[1] * (1 - t) + c2[1] * t)
+        b = int(c1[2] * (1 - t) + c2[2] * t)
+        a = int(c1[3] * (1 - t) + c2[3] * t)
+        for x in range(w):
+            px[x, y] = (r, g, b, a)
+
+    mask = Image.new("L", (w, h), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle((0, 0, w, h), radius=radius, fill=255)
+    base.putalpha(mask)
+    return base
+
+
+def _render_quote_webp(author_name: str, text: str, avatar_bytes: Optional[bytes]) -> str:
+    max_canvas_w = 512
+    max_canvas_h = 512
+
+    avatar_size = 82
+    bubble_pad_x = 26
+    bubble_pad_y = 22
+    overlap = 30
+    max_text_width = 320
 
     font_name = _pick_font(FONT_BOLD_CANDIDATES, 28)
-    font_reply_name = _pick_font(FONT_BOLD_CANDIDATES, 18)
-    font_text = _pick_font(FONT_REGULAR_CANDIDATES, 26)
-    font_reply = _pick_font(FONT_REGULAR_CANDIDATES, 18)
-
-    bubble_x = 20
-    bubble_y = 20
-    bubble_w = width - 40
-    avatar_size = 64
-    inner_pad = 22
-    text_left = bubble_x + inner_pad + avatar_size + 16
-    text_right = bubble_x + bubble_w - inner_pad
-    text_width = text_right - text_left
+    font_text = _pick_font(FONT_REGULAR_CANDIDATES, 30)
 
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
 
-    wrapped_main = _wrap_text(probe, text, font_text, text_width, 10)
-    wrapped_reply = _wrap_text(probe, reply_text, font_reply, text_width - 24, 3) if reply_text else ""
+    wrapped_text = _wrap_text(probe, text, font_text, max_text_width, 8)
+    if not wrapped_text:
+        wrapped_text = "..."
 
-    _, author_h = _measure_text(probe, author_name, font_name)
-    _, main_h = _measure_text(probe, wrapped_main, font_text)
+    name_w, name_h = _measure_text(probe, author_name, font_name)
+    text_w, text_h = _measure_text(probe, wrapped_text, font_text)
 
-    reply_block_h = 0
-    if wrapped_reply:
-        _, reply_name_h = _measure_text(probe, reply_name, font_reply_name)
-        _, reply_text_h = _measure_text(probe, wrapped_reply, font_reply)
-        reply_block_h = 16 + reply_name_h + 6 + reply_text_h + 16
+    bubble_w = max(name_w, text_w) + bubble_pad_x * 2
+    bubble_h = bubble_pad_y * 2 + name_h + 10 + text_h
 
-    content_h = max(avatar_size, author_h + 12 + reply_block_h + main_h)
-    bubble_h = inner_pad * 2 + content_h
-    bubble_h = min(bubble_h, height - 40)
+    bubble_w = min(bubble_w, max_canvas_w - 40 - avatar_size // 2)
+    bubble_h = min(bubble_h, max_canvas_h - 40)
 
-    _round_rect(
-        draw,
-        (bubble_x, bubble_y, bubble_x + bubble_w, bubble_y + bubble_h),
-        radius=28,
-        fill=(34, 39, 46, 245),
-    )
+    bubble_x = avatar_size - overlap + 12
+    bubble_y = 20
+
+    canvas_w = min(max_canvas_w, bubble_x + bubble_w + 20)
+    canvas_h = min(max_canvas_h, bubble_y + bubble_h + 20)
+
+    canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+
+    shadow = Image.new("RGBA", (bubble_w + 20, bubble_h + 20), (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.rounded_rectangle((10, 10, bubble_w + 10, bubble_h + 10), radius=32, fill=(0, 0, 0, 110))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(10))
+    canvas.alpha_composite(shadow, (bubble_x - 10, bubble_y - 2))
+
+    bubble = _rounded_gradient((bubble_w, bubble_h), 30)
+    canvas.alpha_composite(bubble, (bubble_x, bubble_y))
 
     avatar = _load_avatar(avatar_bytes, avatar_size)
-    if avatar:
-        canvas.alpha_composite(avatar, (bubble_x + inner_pad, bubble_y + inner_pad))
-    else:
-        fallback_x = bubble_x + inner_pad
-        fallback_y = bubble_y + inner_pad
-        draw.ellipse(
-            (fallback_x, fallback_y, fallback_x + avatar_size, fallback_y + avatar_size),
-            fill=(72, 84, 96, 255),
-        )
+    if avatar is None:
+        avatar = _make_fallback_avatar(author_name, avatar_size)
 
-    cursor_x = text_left
-    cursor_y = bubble_y + inner_pad - 2
+    avatar_y = bubble_y + 16
+    avatar_x = 8
+    canvas.alpha_composite(avatar, (avatar_x, avatar_y))
+
+    draw = ImageDraw.Draw(canvas)
+
+    text_x = bubble_x + bubble_pad_x
+    name_y = bubble_y + bubble_pad_y - 2
+    body_y = name_y + name_h + 10
 
     draw.text(
-        (cursor_x, cursor_y),
+        (text_x, name_y),
         author_name,
         font=font_name,
-        fill=(151, 196, 255, 255),
+        fill=(205, 151, 255, 255),
     )
-    cursor_y += author_h + 12
-
-    if wrapped_reply:
-        reply_x1 = cursor_x
-        reply_y1 = cursor_y
-        reply_x2 = bubble_x + bubble_w - inner_pad
-        reply_y2 = reply_y1 + reply_block_h
-
-        _round_rect(
-            draw,
-            (reply_x1, reply_y1, reply_x2, reply_y2),
-            radius=18,
-            fill=(49, 56, 66, 255),
-        )
-
-        draw.rounded_rectangle(
-            (reply_x1 + 10, reply_y1 + 10, reply_x1 + 16, reply_y2 - 10),
-            radius=3,
-            fill=(151, 196, 255, 255),
-        )
-
-        draw.text(
-            (reply_x1 + 28, reply_y1 + 10),
-            reply_name,
-            font=font_reply_name,
-            fill=(151, 196, 255, 255),
-        )
-
-        draw.multiline_text(
-            (reply_x1 + 28, reply_y1 + 10 + 24),
-            wrapped_reply,
-            font=font_reply,
-            fill=(214, 220, 230, 255),
-            spacing=6,
-        )
-
-        cursor_y = reply_y2 + 14
 
     draw.multiline_text(
-        (cursor_x, cursor_y),
-        wrapped_main,
+        (text_x, body_y),
+        wrapped_text,
         font=font_text,
         fill=(255, 255, 255, 255),
         spacing=8,
@@ -257,18 +263,10 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return await msg.reply_text("Pesan itu nggak punya teks.")
 
-    if len(text) > 1200:
-        text = text[:1200].rstrip() + "..."
+    if len(text) > 400:
+        text = text[:400].rstrip() + "..."
 
-    reply_name = ""
-    reply_text = ""
-    if target.reply_to_message and target.reply_to_message.from_user:
-        reply_name = target.reply_to_message.from_user.first_name or "User"
-        reply_text = (target.reply_to_message.text or target.reply_to_message.caption or "").strip()
-        if len(reply_text) > 220:
-            reply_text = reply_text[:220].rstrip() + "..."
-
-    author_name = source_user.full_name or source_user.first_name or "User"
+    author_name = source_user.username or source_user.full_name or source_user.first_name or "User"
 
     wait = await msg.reply_text("Bentar, lagi bikin sticker...")
 
@@ -279,8 +277,6 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _render_quote_webp,
             author_name,
             text,
-            reply_name,
-            reply_text,
             avatar_bytes,
         )
 
