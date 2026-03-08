@@ -34,6 +34,7 @@ from handlers.cookies import cookies_cmd
 from handlers.donate import donate_cmd
 from handlers.moderation import moderation_cmd, ban_cmd, unban_cmd, mute_cmd, unmute_cmd
 from fun.quotly import q_cmd
+from fun.kang import kang_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -44,6 +45,7 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("q", q_cmd, False),
+    ("kang", kang_cmd, False),
     ("cookies", cookies_cmd, False),
     ("moderation", moderation_cmd, False),
     ("mute", mute_cmd, False),
