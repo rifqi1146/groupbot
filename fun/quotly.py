@@ -30,7 +30,7 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     target = msg.reply_to_message
     if not target:
-        return await msg.reply_text("Reply ke pesan yang mau dijadiin sticker.")
+        return await msg.reply_text("Reply pesan untuk membuat sticker.")
 
     if not QUOTE_API_URI:
         return await msg.reply_text("QUOTE_API_URI belum diset.")
@@ -41,7 +41,7 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (target.text or target.caption or "").strip()
     if not text:
-        return await msg.reply_text("Pesan itu nggak punya teks.")
+        return await msg.reply_text("Pesan itu tidak punya teks.")
 
     entities = target.entities if target.text else target.caption_entities
 
@@ -70,7 +70,7 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
     }
 
-    wait = await msg.reply_text("Bentar, lagi bikin sticker...")
+    wait = await msg.reply_text("Sedang membuat sticker...")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -81,7 +81,7 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ) as resp:
                 if resp.status != 200:
                     err = await resp.text()
-                    return await wait.edit_text(f"Gagal bikin sticker: {resp.status}\n{err[:300]}")
+                    return await wait.edit_text(f"Gagal membuat sticker: {resp.status}\n{err[:300]}")
                 image_bytes = await resp.read()
 
         sticker = io.BytesIO(image_bytes)
@@ -100,4 +100,4 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await wait.delete()
     except Exception as e:
-        await wait.edit_text(f"Gagal bikin sticker: {e}")
+        await wait.edit_text(f"Gagal membuat sticker: {e}")
