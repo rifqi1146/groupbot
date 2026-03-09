@@ -14,6 +14,49 @@ from .worker import reencode_mp3
 def is_tiktok(url: str) -> bool:
     return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))
 
+def _cut_text(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 3)].rstrip() + "..."
+
+
+def _build_expandable_album_caption(title: str, desc: str, bot_name: str, max_len: int = 1024) -> str:
+    clean_title = (title or "TikTok Slideshow").strip()
+    clean_desc = (desc or "").strip()
+    safe_bot = html.escape(bot_name or "Bot")
+
+    prefix = f"🖼️ <b>{html.escape(_cut_text(clean_title, 120))}</b>"
+    suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
+
+    if not clean_desc or clean_desc == clean_title:
+        caption = f"{prefix}{suffix}"
+        if len(caption) <= max_len:
+            return caption
+
+        fallback_title = _cut_text(clean_title, 60)
+        return f"🖼️ <b>{html.escape(fallback_title)}</b>{suffix}"
+
+    desc_budget = max_len - len(prefix) - len(suffix) - len("\n\n<blockquote expandable></blockquote>")
+    desc_budget = max(1, desc_budget - 3)
+
+    short_desc = _cut_text(clean_desc, desc_budget)
+
+    caption = (
+        f"{prefix}\n\n"
+        f"<blockquote expandable>{html.escape(short_desc)}</blockquote>"
+        f"{suffix}"
+    )
+
+    if len(caption) <= max_len:
+        return caption
+
+    short_desc = _cut_text(clean_desc, 300)
+    return (
+        f"{prefix}\n\n"
+        f"<blockquote expandable>{html.escape(short_desc)}</blockquote>"
+        f"{suffix}"
+    )
 
 def _build_safe_caption(title: str, desc: str, bot_name: str, max_len: int = 1024) -> str:
     clean_title = (title or "TikTok Video").strip()
@@ -227,15 +270,15 @@ async def tiktok_fallback_send(
     if images:
         CHUNK_SIZE = 10
         chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
-
+    
         bot_name = (await bot.get_me()).first_name or "Bot"
         title = (info.get("title") or info.get("desc") or "TikTok Slideshow").strip()
-        title = html.escape(title)
-
-        caption_text = f"🖼️ <b>{title}</b>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
-
+        desc = (info.get("desc") or info.get("title") or "").strip()
+    
+        caption_text = _build_expandable_album_caption(title, desc, bot_name)
+    
         await _set_uploading("album")
-
+    
         for idx, chunk in enumerate(chunks):
             media = []
             for i, img in enumerate(chunk):
@@ -244,15 +287,16 @@ async def tiktok_fallback_send(
                         media=img,
                         caption=caption_text if idx == 0 and i == 0 else None,
                         parse_mode="HTML" if idx == 0 and i == 0 else None,
+                        show_caption_above_media=True if idx == 0 and i == 0 else None,
                     )
                 )
-
+    
             await bot.send_media_group(
                 chat_id=chat_id,
                 media=media,
                 reply_to_message_id=reply_to if idx == 0 else None,
             )
-
+    
         await bot.delete_message(chat_id, status_msg_id)
         return True
 
