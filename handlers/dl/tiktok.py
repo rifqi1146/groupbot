@@ -232,7 +232,7 @@ async def tiktok_fallback_send(
         title = (info.get("title") or info.get("desc") or "TikTok Slideshow").strip()
         title = html.escape(title)
 
-        caption_text = f"🖼️ <blockquote>{title}</blockquote>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
+        caption_text = f"<blockquote>🖼️ {title}</blockquote>\n\n🪄 <i>Powered by {html.escape(bot_name)}</i>"
 
         await _set_uploading("album")
 
