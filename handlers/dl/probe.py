@@ -76,7 +76,7 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         except Exception:
             continue
 
-        if h < 144 or h > 2160:
+        if h < 480 or h > 2160:
             continue
 
         vcodec = str(f.get("vcodec") or "")
