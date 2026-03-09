@@ -453,7 +453,7 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     label = f"{height}p" if height else "video"
     await q.edit_message_text(
-        f"⏳ <b>Preparing 🎥 Video ({html.escape(label)})...</b>",
+        f"<b>Preparing Video ({html.escape(label)})...</b>",
         parse_mode="HTML",
     )
 
