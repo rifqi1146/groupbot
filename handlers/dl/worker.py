@@ -52,8 +52,8 @@ def _build_safe_caption(title: str, bot_name: str, max_len: int = 1024) -> str:
     safe_bot = html.escape(bot_name or "Bot")
 
     suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
-    prefix = "🎬 <b>"
-    closing = "</b>"
+    prefix = "<blockquote>🎬"
+    closing = "</blockquote>"
 
     full = f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
     if len(full) <= max_len:
@@ -72,8 +72,8 @@ def _build_safe_photo_caption(title: str, bot_name: str, max_len: int = 1024) ->
     safe_bot = html.escape(bot_name or "Bot")
 
     suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
-    prefix = "🖼️ <b>"
-    closing = "</b>"
+    prefix = "<blockquote>🖼️"
+    closing = "</blockquote>"
 
     full = f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
     if len(full) <= max_len:
