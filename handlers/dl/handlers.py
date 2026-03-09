@@ -115,7 +115,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not groups:
             return await msg.reply_text("No groups with auto-detect enabled.", parse_mode="HTML")
 
-        lines = ["📋 <b>Groups with Auto-detect Enabled:</b>\n"]
+        lines = ["<b>Groups with Auto-detect Enabled:</b>\n"]
         for gid in groups:
             try:
                 c = await context.bot.get_chat(gid)
@@ -127,7 +127,7 @@ async def autodl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("\n".join(lines), parse_mode="HTML")
 
     return await msg.reply_text(
-        "⚙️ <b>Usage:</b>\n"
+        "<b>Usage:</b>\n"
         "<code>/autodl enable</code>\n"
         "<code>/autodl disable</code>\n"
         "<code>/autodl status</code>\n"

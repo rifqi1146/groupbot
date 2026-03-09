@@ -6,7 +6,7 @@ COOKIES_PATH = os.path.join(BASE_DIR, "..", "..", "data", "cookies.txt")
 TMP_DIR = "downloads"
 AUTO_DL_DB = "data/auto_dl.sqlite3"
 
-MAX_TG_SIZE = 1900 * 1024 * 1024
+MAX_TG_SIZE = 1999 * 1024 * 1024
 
 DL_FORMATS = {
     "video": {"label": "🎥 Video"},
