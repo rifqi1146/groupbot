@@ -99,7 +99,13 @@ async def send_downloaded_media(
     meta = path if isinstance(path, dict) else {"path": path, "title": None}
     file_path = meta.get("path")
     original_title = (meta.get("title") or "").strip()
-
+    
+    for i, entry in enumerate(entries, 1):
+            title = entry.get("title") or "Untitled"
+            video_id = entry.get("id")
+            uploader = entry.get("uploader") or "Unknown"
+            duration = entry.get("duration") or 0
+            
     if not file_path or not os.path.exists(file_path):
         raise RuntimeError("Download gagal")
 
