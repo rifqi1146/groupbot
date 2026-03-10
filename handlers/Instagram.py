@@ -320,38 +320,52 @@ async def _fetch_via_web_json(session: aiohttp.ClientSession, shortcode: str, ki
     raise RuntimeError(f"web json gagal: {last_error}")
 
 
-async def _fetch_via_embed(session: aiohttp.ClientSession, shortcode: str) -> dict:
-    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned"
+async def _fetch_via_embed(session: aiohttp.ClientSession, shortcode: str, kind: str) -> dict:
+    candidates = []
 
-    async with session.get(
-        embed_url,
-        headers=_headers(),
-        timeout=aiohttp.ClientTimeout(total=20),
-    ) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"embed HTTP {resp.status}")
-        body = await resp.text()
+    if kind in ("p", "reel", "tv"):
+        candidates.append(f"https://www.instagram.com/{kind}/{shortcode}/embed/captioned")
 
-    video_url = _meta_content(body, "og:video")
-    image_url = _meta_content(body, "og:image")
-    title = _meta_content(body, "og:title") or "Instagram"
-    desc = _meta_content(body, "og:description") or ""
+    if kind != "p":
+        candidates.append(f"https://www.instagram.com/p/{shortcode}/embed/captioned")
 
-    media_url = video_url or image_url
-    if not media_url:
-        raise RuntimeError("embed media tidak ditemukan")
+    last_error = None
 
-    return {
-        "title": title,
-        "caption": desc,
-        "items": [
-            {
-                "type": "video" if video_url else "photo",
-                "url": media_url,
-                "thumbnail": image_url or media_url,
+    for embed_url in candidates:
+        try:
+            async with session.get(
+                embed_url,
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"embed HTTP {resp.status}")
+                body = await resp.text()
+
+            video_url = _meta_content(body, "og:video")
+            image_url = _meta_content(body, "og:image")
+            title = _meta_content(body, "og:title") or "Instagram"
+            desc = _meta_content(body, "og:description") or ""
+
+            media_url = video_url or image_url
+            if not media_url:
+                raise RuntimeError("embed media tidak ditemukan")
+
+            return {
+                "title": title,
+                "caption": desc,
+                "items": [
+                    {
+                        "type": "video" if video_url else "photo",
+                        "url": media_url,
+                        "thumbnail": image_url or media_url,
+                    }
+                ],
             }
-        ],
-    }
+        except Exception as e:
+            last_error = e
+
+    raise RuntimeError(f"embed gagal: {last_error}")
 
 
 def _flatten_candidate_container(payload):
