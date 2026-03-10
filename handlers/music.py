@@ -104,7 +104,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "outtmpl": "downloads/%(title)s.%(ext)s",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
+                "preferredcodec": "flac",
                 "preferredquality": "192",
             }],
             "quiet": True,
@@ -124,7 +124,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise Exception("Failed to download the song.")
             entry = info
 
-        mp3_files = glob.glob("downloads/*.mp3")
+        mp3_files = glob.glob("downloads/*.flac")
         if not mp3_files:
             raise Exception("Audio file not found.")
 
