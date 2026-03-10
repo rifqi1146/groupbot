@@ -44,7 +44,6 @@ from fun.asupan import (
 
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
-    ("ig", ig_cmd, False),
     ("q", q_cmd, False),
     ("kang", kang_cmd, False),
     ("cookies", cookies_cmd, False),
