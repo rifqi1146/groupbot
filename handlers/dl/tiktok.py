@@ -64,13 +64,13 @@ def _build_safe_caption(title: str, desc: str, bot_name: str, max_len: int = 102
 
     if short_desc:
         return (
-            f"<blockquote>🎬 {html.escape(short_title)}</blockquote>\n\n"
+            f"<blockquote expandable>🎬 {html.escape(short_title)}</blockquote>\n\n"
             f"{html.escape(short_desc)}\n\n"
             f"🪄 <i>Powered by {html.escape(clean_bot)}</i>"
         )
 
     return (
-        f"<blockquote>🎬 {html.escape(short_title)}</blockquote>\n\n"
+        f"<blockquote expandable>🎬 {html.escape(short_title)}</blockquote>\n\n"
         f"🪄 <i>Powered by {html.escape(clean_bot)}</i>"
     )
 
@@ -87,7 +87,7 @@ def _build_safe_album_caption(title: str, bot_name: str, max_len: int = 1024) ->
         short_title = "TikTok Slideshow"
 
     return (
-        f"<blockquote>🖼️ {html.escape(short_title)}</blockquote>\n\n"
+        f"<blockquote expandable>🖼️ {html.escape(short_title)}</blockquote>\n\n"
         f"🪄 <i>Powered by {html.escape(clean_bot)}</i>"
     )
 
