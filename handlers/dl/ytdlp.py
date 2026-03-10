@@ -306,7 +306,7 @@ async def ytdlp_download(
             os.path.join(TMP_DIR, f)
             for f in os.listdir(TMP_DIR)
             if f.startswith(job_id + "_")
-            and f.lower().endswith((".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp"))
+            and f.lower().endswith((".mp4", ".mp3", ".jpg", ".flac", ".jpeg", ".png", ".webp"))
         ),
         key=lambda p: (media_priority(p), -os.path.getmtime(p)),
     )
