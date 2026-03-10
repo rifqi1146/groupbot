@@ -111,7 +111,10 @@ async def send_downloaded_media(
         text="<b>Uploading...</b>",
         parse_mode="HTML",
     )
-
+    
+    async with aiofiles.open(file_path, "rb") as f:
+            audio_data = await f.read()
+            
     bot_name = (await bot.get_me()).first_name or "Bot"
     caption_text = original_title or _clean_caption_from_path(file_path)
     media_type = detect_media_type(file_path)
