@@ -100,6 +100,10 @@ async def send_downloaded_media(
     file_path = meta.get("path")
     original_title = (meta.get("title") or "").strip()
     
+    if not info or not info.get("entries"):
+        raise Exception("No matching songs or videos were found.")
+    entries = info["entries"][:5]
+    
     for i, entry in enumerate(entries, 1):
             title = entry.get("title") or "Untitled"
             video_id = entry.get("id")
