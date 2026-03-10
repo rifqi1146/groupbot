@@ -120,16 +120,17 @@ async def send_downloaded_media(
         fixed_audio = reencode_mp3(file_path)
         await bot.send_audio(
             chat_id=chat_id,
-            audio=fixed_audio,
+            audio=audio_data,
             title=caption_text[:64],
-            performer=bot_name,
+            performer=entry.get("uploader", "Unknown"),
+            duration=entry.get("duration"),
             filename=f"{caption_text[:50]}.mp3",
             reply_to_message_id=reply_to,
             disable_notification=True,
         )
         os.remove(fixed_audio)
         return
-
+        
     if media_type == "photo":
         await bot.send_photo(
             chat_id=chat_id,
