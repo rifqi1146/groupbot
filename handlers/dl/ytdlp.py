@@ -44,7 +44,7 @@ def _fallback_title_from_url(url: str) -> str:
         return "Instagram Media"
 
 
-def _human_title_from_path(path: str, prefix: str, url: str = "") -> str:
+def title_gallerydl(path: str, prefix: str, url: str = "") -> str:
     title = _extract_title_from_path(path, prefix)
     title = title.replace("_", " ").strip(" -_.")
 
@@ -215,7 +215,7 @@ async def gallerydl_fallback(
             print("[GALLERY-DL] moved file missing:", final_path)
             return None
 
-        title = _human_title_from_path(final_path, job_id, url)
+        title = title_gallerydl(final_path, job_id, url)
 
         return {
             "path": final_path,
@@ -472,7 +472,7 @@ async def ytdlp_download(
         return None
 
     picked = files[0]
-    title = _human_title_from_path(picked, job_id, url)
+    title = title_gallerydl(picked, job_id, url)
     final_path = _strip_job_prefix(picked, job_id)
 
     return {
