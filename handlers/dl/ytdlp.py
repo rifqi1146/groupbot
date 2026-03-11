@@ -271,7 +271,8 @@ async def ytdlp_download(
                 "--cookies", COOKIES_PATH,
                 "--extractor-args", "youtube:player_client=web",
                 "--no-playlist",
-                "-f", "bestimage",
+                "--skip-download",
+                "--write-thumbnail",
                 "-o", out_tpl,
                 url,
             ]
