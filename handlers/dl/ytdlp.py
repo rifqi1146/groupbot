@@ -16,6 +16,47 @@ def _extract_title_from_path(path: str, prefix: str) -> str:
         base = base[len(prefix) + 1:]
     return base.strip() or "Media"
     
+def _looks_like_media_id(text: str) -> bool:
+    s = (text or "").strip()
+    return bool(s) and len(s) >= 8 and s.isdigit()
+
+
+def _fallback_title_from_url(url: str) -> str:
+    try:
+        path = (urlparse((url or "").strip()).path or "").strip("/")
+        parts = [x for x in path.split("/") if x]
+
+        if len(parts) >= 2 and parts[0] in ("p", "reel", "reels", "tv"):
+            kind = parts[0]
+            if kind in ("reel", "reels"):
+                return "Instagram Reel"
+            if kind == "p":
+                return "Instagram Post"
+            if kind == "tv":
+                return "Instagram TV"
+
+        if len(parts) >= 3 and parts[0] == "stories":
+            return f"Instagram Story @{parts[1]}"
+
+        return "Instagram Media"
+    except Exception:
+        return "Instagram Media"
+
+
+def _human_title_from_path(path: str, prefix: str, url: str = "") -> str:
+    title = _extract_title_from_path(path, prefix)
+    title = title.replace("_", " ").strip(" -_.")
+
+    if title and not _looks_like_media_id(title):
+        return title
+
+    parent = os.path.basename(os.path.dirname(path))
+    parent = (parent or "").replace("_", " ").strip(" -_.")
+    if parent and "gallerydl" not in parent.lower() and not _looks_like_media_id(parent):
+        return parent
+
+    return _fallback_title_from_url(url)
+    
 def _is_instagram(url: str) -> bool:
     try:
         h = (urlparse((url or "").strip()).hostname or "").lower()
@@ -166,7 +207,7 @@ async def _gallerydl_fallback_download(
                 final_path = os.path.join(TMP_DIR, f"{stem}_{uuid.uuid4().hex[:6]}{ext}")
             shutil.move(picked, final_path)
 
-        title = _extract_title_from_path(final_path, job_id)
+        title = _human_title_from_path(final_path, job_id, url)
 
         return {
             "path": final_path,
@@ -423,7 +464,7 @@ async def ytdlp_download(
         return None
 
     picked = files[0]
-    title = _extract_title_from_path(picked, job_id)
+    title = _human_title_from_path(picked, job_id, url)
     final_path = _strip_job_prefix(picked, job_id)
 
     return {
