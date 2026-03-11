@@ -9,7 +9,7 @@ from utils.http import get_http_session
 from .constants import TMP_DIR
 from .utils import sanitize_filename, progress_bar, is_invalid_video
 from .worker import reencode_mp3
-
+from telegram.error import RetryAfter
 
 def is_tiktok(url: str) -> bool:
     return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))
@@ -264,6 +264,7 @@ async def tiktok_fallback_send(
     images = info.get("images") or []
     if images:
         CHUNK_SIZE = 10
+        ALBUM_COOLDOWN = 3
         chunks = [images[i:i + CHUNK_SIZE] for i in range(0, len(images), CHUNK_SIZE)]
 
         bot_name = (await bot.get_me()).first_name or "Bot"
@@ -283,11 +284,20 @@ async def tiktok_fallback_send(
                     )
                 )
 
-            await bot.send_media_group(
-                chat_id=chat_id,
-                media=media,
-                reply_to_message_id=reply_to if idx == 0 else None,
-            )
+            while True:
+                try:
+                    await bot.send_media_group(
+                        chat_id=chat_id,
+                        media=media,
+                        reply_to_message_id=reply_to if idx == 0 else None,
+                    )
+                    break
+                except RetryAfter as e:
+                    wait_time = int(getattr(e, "retry_after", ALBUM_COOLDOWN)) + 1
+                    await asyncio.sleep(wait_time)
+
+            if idx < len(chunks) - 1:
+                await asyncio.sleep(ALBUM_COOLDOWN)
 
         await bot.delete_message(chat_id, status_msg_id)
         return True
