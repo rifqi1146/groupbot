@@ -69,6 +69,118 @@ def _pick_latest_media_file(since_ts: float, prefix: str) -> str | None:
     except Exception:
         return None
 
+def _pick_latest_media_file_recursive(root_dir: str) -> str | None:
+    exts = (".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
+    try:
+        files = []
+        for root, _, names in os.walk(root_dir):
+            for name in names:
+                if not name.lower().endswith(exts):
+                    continue
+                p = os.path.join(root, name)
+                if not os.path.isfile(p):
+                    continue
+                try:
+                    mt = os.path.getmtime(p)
+                except Exception:
+                    continue
+                files.append((mt, p))
+
+        if not files:
+            return None
+
+        files.sort(key=lambda x: x[0], reverse=True)
+        return files[0][1]
+    except Exception:
+        return None
+
+
+async def _gallerydl_fallback_download(
+    url: str,
+    job_id: str,
+    bot,
+    chat_id,
+    status_msg_id,
+):
+    GALLERY_DL = shutil.which("gallery-dl")
+    if not GALLERY_DL:
+        print("[GALLERY-DL] not found in PATH")
+        return None
+
+    job_dir = os.path.join(TMP_DIR, f"{job_id}_gallerydl")
+    os.makedirs(job_dir, exist_ok=True)
+
+    try:
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text="<b>yt-dlp failed, fallback to gallery-dl...</b>",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            print("[TG EDIT ERROR]", e)
+
+        cmd = [GALLERY_DL]
+
+        if COOKIES_PATH and os.path.exists(COOKIES_PATH):
+            cmd += ["--cookies", COOKIES_PATH]
+
+        cmd += [url]
+
+        print("\n[GALLERY-DL CMD]")
+        print(" ".join(cmd))
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=job_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await proc.communicate()
+
+        if stdout:
+            print("\n[GALLERY-DL STDOUT]")
+            print(stdout.decode(errors="ignore"))
+
+        if stderr:
+            print("\n[GALLERY-DL STDERR]")
+            print(stderr.decode(errors="ignore"))
+
+        print("[GALLERY-DL EXIT CODE]", proc.returncode)
+
+        if proc.returncode != 0:
+            return None
+
+        picked = _pick_latest_media_file_recursive(job_dir)
+        if not picked or not os.path.exists(picked):
+            return None
+
+        final_name = f"{job_id}_{os.path.basename(picked)}"
+        final_path = os.path.join(TMP_DIR, final_name)
+
+        if os.path.abspath(picked) != os.path.abspath(final_path):
+            if os.path.exists(final_path):
+                stem, ext = os.path.splitext(final_name)
+                final_path = os.path.join(TMP_DIR, f"{stem}_{uuid.uuid4().hex[:6]}{ext}")
+            shutil.move(picked, final_path)
+
+        title = _extract_title_from_path(final_path, job_id)
+
+        return {
+            "path": final_path,
+            "title": title,
+        }
+
+    except Exception as e:
+        print("[GALLERY-DL FALLBACK ERROR]", e)
+        return None
+    finally:
+        try:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 def _probe_total_size_sync(url: str, fmt: str) -> int:
     YT_DLP = shutil.which("yt-dlp")
@@ -263,26 +375,19 @@ async def ytdlp_download(
                         "title": _extract_title_from_path(picked, job_id),
                     }
 
-            print("[YTDLP] video failed → trying bestimage")
-            update_interval = 2
+            print("[YTDLP] video failed → trying gallery-dl fallback")
 
-            cmd2 = [
-                YT_DLP,
-                "--cookies", COOKIES_PATH,
-                "--extractor-args", "youtube:player_client=web",
-                "--no-playlist",
-                "--skip-download",
-                "--write-thumbnail",
-                "-o", out_tpl,
-                url,
-            ]
-            if is_ig:
-                cmd2.insert(1, "--ignore-errors")
-                cmd2.insert(2, "--no-abort-on-error")
-
-            code2 = await run(cmd2)
-
-            if code2 != 0:
+                fallback = await _gallerydl_fallback_download(
+                    url=url,
+                    job_id=job_id,
+                    bot=bot,
+                    chat_id=chat_id,
+                    status_msg_id=status_msg_id,
+                )
+                
+                if fallback:
+                    return fallback
+                
                 if is_ig:
                     picked = _pick_latest_media_file(start_ts, job_id)
                     if picked:
@@ -290,6 +395,7 @@ async def ytdlp_download(
                             "path": picked,
                             "title": _extract_title_from_path(picked, job_id),
                         }
+                
                 return None
 
     def media_priority(p):
