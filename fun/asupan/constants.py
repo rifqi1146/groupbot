@@ -1,0 +1,51 @@
+import logging
+
+log = logging.getLogger(__name__)
+
+ASUPAN_DB_PATH = "data/asupan.sqlite3"
+
+ASUPAN_PREFETCH_SIZE = 5
+ASUPAN_AUTO_DELETE_SEC = 300
+ASUPAN_COOLDOWN_SEC = 5
+
+DEFAULT_ASUPAN_KEYWORDS = [
+    "cacaaaja39",
+    "bancolmu0",
+    "teerzas",
+    "danisaanr",
+    "mellyn022",
+    "ecceuuu",
+    "callistaaraww",
+    "auliaaizumiii_",
+    "inipavanaml24",
+    "tante holic",
+    "alaa.sabillaa",
+    "meyturuu_",
+    "urvelsyn",
+    "user94772038",
+    "araasshr",
+    "sweetykidiepy_",
+    "keiz1a",
+    "tataaasiuu20",
+    "nasluvt",
+    "dimpledtataww",
+    "lvme4awaa",
+    "liveid63",
+    "cewe cantik",
+    "cewe sma",
+    "rerereyaaa",
+    "cewe smp",
+    "cewe tanktop",
+    "#tanteholic",
+    "shsshlla",
+    "Seeazeee",
+    "iniitataajugaa_",
+    "billaazz",
+    "innova.kasih.4",
+    "tobrut",
+    "tanktopstyle",
+    "tanktop",
+    "zaraxhel",
+    "verllyyaling",
+    "eunicetjoaa",
+]
