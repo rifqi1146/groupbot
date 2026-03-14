@@ -29,9 +29,6 @@ os.makedirs(TMP_DIR, exist_ok=True)
 TIKTOK_LOCK = asyncio.Lock()
 YTDLP_SEM = asyncio.Semaphore(3)
 
-def is_youtube(url: str) -> bool:
-    return any(x in (url or "") for x in ("youtube.com", "youtu.be", "music.youtube.com"))
-
 from urllib.parse import urlparse
 
 def _host(url: str) -> str:
@@ -55,7 +52,7 @@ def is_supported_platform(url: str) -> bool:
 
 def is_youtube(url: str) -> bool:
     host = _host(url)
-    return any(_host_match(host, d) for d in ("youtube.com", "youtu.be", "music.youtube.com"))
+    return any(_host_match(host, d) for d in ("youtube.com", "youtu.be", "music.youtube.com", "pornhub.com"))
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
