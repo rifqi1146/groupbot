@@ -1,5 +1,6 @@
 from .caca import (
     meta_query,
+    init_background,
 )
 
 from .caca_group import cacaa_cmd
