@@ -15,4 +15,7 @@ __all__ = [
     "asupann_cmd",
     "autodel_cmd",
     "send_asupan_once",
+    "send_asupan_once",
+    "load_asupan_groups",
+    "load_autodel_group",
 ]
