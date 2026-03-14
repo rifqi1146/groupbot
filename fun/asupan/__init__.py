@@ -5,9 +5,9 @@ from .commands import (
     autodel_cmd,
     send_asupan_once,
 )
+
 from .db import (
     init_asupan_storage,
-    send_asupan_once,
     load_asupan_groups,
     load_autodel_groups,
 )
