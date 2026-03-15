@@ -11,7 +11,7 @@ from fun.waifu import waifu_next_cb, waifu_pref_cb
 from handlers.welcome import verify_answer_callback
 from handlers.music import music_callback
 from fun.quiz import quiz_callback
-
+from handlers.broadcast import broadcast_callback
 
 def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
@@ -28,4 +28,5 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(update_cb, pattern=r"^update_"))
     app.add_handler(CallbackQueryHandler(music_callback, pattern=r"^music_download:"))
     app.add_handler(CallbackQueryHandler(quiz_callback, pattern=r"^quizans:"))
+    app.add_handler(CallbackQueryHandler(broadcast_callback, pattern=r"^broadcast:")
     
