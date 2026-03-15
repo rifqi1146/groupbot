@@ -15,13 +15,13 @@ from handlers.weather import weather_cmd
 from handlers.dl.handlers import dl_cmd, autodl_cmd
 from handlers.helpowner import helpowner_cmd
 from handlers.welcome import wlc_cmd, start_verify_pm
-from fun.ship import ship_cmd
-from fun.reminder import reminder_cmd
+from handlers.ship import ship_cmd
+from handlers.reminder import reminder_cmd
 from handlers.gemini import ai_cmd
 from handlers.groq import groq_query
-from fun.quiz import quiz_cmd
+from handlers.quiz import quiz_cmd
 from handlers.premium import premium_cmd
-from fun.waifu import waifu_cmd
+from handlers.waifu import waifu_cmd
 from handlers.update import update_cmd
 from handlers.groups import groups_cmd
 from handlers.music import music_cmd
@@ -29,8 +29,8 @@ from handlers.kurs import kurs_cmd
 from handlers.net import net_cmd
 from handlers.cookies import cookies_cmd
 from handlers.donate import donate_cmd
-from fun.quotly import q_cmd
-from fun.kang import kang_cmd
+from handlers.quotly import q_cmd
+from handlers.kang import kang_cmd
 
 from handlers.caca import (
     meta_query,
@@ -50,7 +50,7 @@ from handlers.moderation import (
     sudolist_cmd,
 )
     
-from fun.asupan import (
+from handlers.asupan import (
     asupan_cmd,
     asupann_cmd,
     autodel_cmd,

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fun.asupan import (
+from handlers.asupan import (
     send_asupan_once,
     load_asupan_groups,
     load_autodel_groups,
