@@ -6,6 +6,7 @@ import json
 import subprocess
 from urllib.parse import urlparse
 
+from .Instagram_api import is_instagram_url
 from .constants import COOKIES_PATH, TMP_DIR
 from .utils import progress_bar
 
@@ -58,13 +59,6 @@ def title_gallerydl(path: str, prefix: str, url: str = "") -> str:
 
     return _fallback_title_from_url(url)
     
-def _is_instagram(url: str) -> bool:
-    try:
-        h = (urlparse((url or "").strip()).hostname or "").lower()
-        return h == "instagram.com" or h.endswith(".instagram.com")
-    except Exception:
-        return "instagram.com" in (url or "").lower()
-
 def _strip_job_prefix(path: str, prefix: str) -> str:
     try:
         base = os.path.basename(path)
@@ -294,7 +288,7 @@ async def ytdlp_download(
     job_id = uuid.uuid4().hex[:10]
     out_tpl = f"{TMP_DIR}/{job_id}_%(title)s.%(ext)s"
     update_interval = 3
-    is_ig = _is_instagram(url)
+    is_ig = is_instagram_url(url)
 
     async def run(cmd):
         nonlocal update_interval
