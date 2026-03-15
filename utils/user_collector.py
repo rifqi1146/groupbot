@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from fun.ship import add_user
+from handlers.ship import add_user
 
 async def user_collector(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
