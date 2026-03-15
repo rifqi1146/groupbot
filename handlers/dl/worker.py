@@ -2,9 +2,11 @@ import os
 import uuid
 import html
 import subprocess
+
 from .constants import TMP_DIR, MAX_TG_SIZE
 from .utils import detect_media_type
 from .ytdlp import ytdlp_download
+from .instagram_api import is_instagram_url, instagram_api_download
 
 
 def reencode_mp3(src_path: str) -> str:
@@ -165,6 +167,18 @@ async def download_non_tiktok(
     format_id: str | None,
     has_audio: bool,
 ):
+    if is_instagram_url(raw_url):
+        try:
+            return await instagram_api_download(
+                raw_url=raw_url,
+                fmt_key=fmt_key,
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+            )
+        except Exception as e:
+            print("[INSTAGRAM API FALLBACK TO YTDLP]", e)
+
     return await ytdlp_download(
         raw_url,
         fmt_key,
