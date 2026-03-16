@@ -2,6 +2,8 @@ import os
 import time
 import sqlite3
 
+from database.db import db_session
+
 NSFW_DB = "data/nsfw.sqlite3"
 
 
