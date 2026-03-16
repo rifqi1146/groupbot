@@ -1,7 +1,5 @@
-import os
 import random
 import time
-import sqlite3
 import logging
 
 from telegram import (
@@ -13,226 +11,23 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from utils.config import OWNER_ID
+from database.welcome_db import (
+    init_welcome_db,
+    load_welcome_chats,
+    save_welcome_chats,
+    load_verified,
+    save_verified_user,
+    save_pending_welcome,
+    pop_pending_welcome,
+)
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-WELCOME_VERIFY_DB = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "welcome_verify.sqlite3"))
+logger = logging.getLogger(__name__)
 
 WELCOME_ENABLED_CHATS = set()
 VERIFIED_USERS = {}
-
 PENDING_VERIFY = {}
 WELCOME_MESSAGES = {}
-
-logger = logging.getLogger(__name__)
-
-
-def init_welcome_db():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS welcome_chats (
-                chat_id INTEGER PRIMARY KEY,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS verified_users (
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                verified_at REAL NOT NULL,
-                PRIMARY KEY (chat_id, user_id)
-            )
-            """
-        )
-
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS pending_welcome (
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                message_id INTEGER NOT NULL,
-                created_at REAL NOT NULL,
-                PRIMARY KEY (chat_id, user_id)
-            )
-            """
-        )
-
-        con.commit()
-
-        cur = con.execute("PRAGMA table_info(welcome_chats)")
-        cols = cur.fetchall()
-        pk_on_chat_id = False
-        for c in cols:
-            name = c[1]
-            is_pk = c[5]
-            if name == "chat_id" and int(is_pk) == 1:
-                pk_on_chat_id = True
-                break
-
-        if not pk_on_chat_id:
-            con.execute("ALTER TABLE welcome_chats RENAME TO welcome_chats_old")
-
-            con.execute(
-                """
-                CREATE TABLE welcome_chats (
-                    chat_id INTEGER PRIMARY KEY,
-                    enabled INTEGER NOT NULL DEFAULT 1,
-                    updated_at REAL NOT NULL
-                )
-                """
-            )
-
-            con.execute(
-                """
-                INSERT OR REPLACE INTO welcome_chats (chat_id, enabled, updated_at)
-                SELECT
-                    COALESCE(chat_id, id) as chat_id,
-                    COALESCE(enabled, 1) as enabled,
-                    COALESCE(updated_at, strftime('%s','now')) as updated_at
-                FROM welcome_chats_old
-                """
-            )
-
-            con.execute("DROP TABLE welcome_chats_old")
-            con.commit()
-
-    finally:
-        con.close()
-
-
-def load_welcome_chats():
-    global WELCOME_ENABLED_CHATS
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        cur = con.execute("SELECT chat_id FROM welcome_chats WHERE enabled=1")
-        WELCOME_ENABLED_CHATS = {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
-    finally:
-        con.close()
-
-
-def save_welcome_chats():
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        now = time.time()
-        con.execute("BEGIN")
-        con.execute("UPDATE welcome_chats SET enabled=0, updated_at=?", (now,))
-        if WELCOME_ENABLED_CHATS:
-            con.executemany(
-                """
-                INSERT INTO welcome_chats (chat_id, enabled, updated_at)
-                VALUES (?, 1, ?)
-                ON CONFLICT(chat_id) DO UPDATE SET
-                  enabled=1,
-                  updated_at=excluded.updated_at
-                """,
-                [(int(cid), now) for cid in WELCOME_ENABLED_CHATS],
-            )
-        con.execute("COMMIT")
-    except Exception:
-        try:
-            con.execute("ROLLBACK")
-        except Exception:
-            logger.exception("Failed to rollback transaction")
-            pass
-        raise
-    finally:
-        con.close()
-
-
-def load_verified():
-    global VERIFIED_USERS
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        cur = con.execute("SELECT chat_id, user_id FROM verified_users")
-        tmp = {}
-        for chat_id, user_id in cur.fetchall():
-            tmp.setdefault(int(chat_id), set()).add(int(user_id))
-        VERIFIED_USERS = tmp
-    finally:
-        con.close()
-
-
-def save_verified_user(chat_id: int, user_id: int):
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        now = time.time()
-
-        con.execute(
-            """
-            INSERT INTO verified_users (chat_id, user_id, verified_at)
-            VALUES (?, ?, ?)
-            """,
-            (int(chat_id), int(user_id), now),
-        )
-
-        con.commit()
-    except sqlite3.IntegrityError:
-        try:
-            con.execute(
-                "UPDATE verified_users SET verified_at=? WHERE chat_id=? AND user_id=?",
-                (now, int(chat_id), int(user_id)),
-            )
-            con.commit()
-        finally:
-            pass
-    finally:
-        con.close()
-
-
-def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        now = time.time()
-        con.execute(
-            """
-            INSERT INTO pending_welcome (chat_id, user_id, message_id, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (int(chat_id), int(user_id), int(message_id), now),
-        )
-        con.commit()
-    except sqlite3.IntegrityError:
-        try:
-            con.execute(
-                "UPDATE pending_welcome SET message_id=?, created_at=? WHERE chat_id=? AND user_id=?",
-                (int(message_id), now, int(chat_id), int(user_id)),
-            )
-            con.commit()
-        finally:
-            pass
-    finally:
-        con.close()
-
-
-def pop_pending_welcome(chat_id: int, user_id: int) -> int | None:
-    con = sqlite3.connect(WELCOME_VERIFY_DB)
-    try:
-        cur = con.execute(
-            "SELECT message_id FROM pending_welcome WHERE chat_id=? AND user_id=?",
-            (int(chat_id), int(user_id)),
-        )
-        row = cur.fetchone()
-        con.execute(
-            "DELETE FROM pending_welcome WHERE chat_id=? AND user_id=?",
-            (int(chat_id), int(user_id)),
-        )
-        con.commit()
-        if not row:
-            return None
-        return int(row[0])
-    finally:
-        con.close()
 
 
 def generate_math_question(user_id: int, chat_id: int):
@@ -305,6 +100,8 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global WELCOME_ENABLED_CHATS
+
     msg = update.message
     chat = update.effective_chat
     if not msg or not chat:
@@ -332,12 +129,12 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if arg == "enable":
         WELCOME_ENABLED_CHATS.add(chat.id)
-        save_welcome_chats()
+        save_welcome_chats(WELCOME_ENABLED_CHATS)
         return await msg.reply_text("<b>Welcome message enabled.</b>", parse_mode="HTML")
 
     if arg == "disable":
         WELCOME_ENABLED_CHATS.discard(chat.id)
-        save_welcome_chats()
+        save_welcome_chats(WELCOME_ENABLED_CHATS)
         return await msg.reply_text("<b>Welcome message disabled.</b>", parse_mode="HTML")
 
     return await msg.reply_text(
@@ -432,6 +229,8 @@ async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global VERIFIED_USERS
+
     q = update.callback_query
 
     _, chat_id, user_id, chosen = q.data.split(":")
@@ -520,3 +319,18 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
 
+try:
+    init_welcome_db()
+except Exception:
+    pass
+
+try:
+    WELCOME_ENABLED_CHATS = load_welcome_chats()
+except Exception:
+    WELCOME_ENABLED_CHATS = set()
+
+try:
+    VERIFIED_USERS = load_verified()
+except Exception:
+    VERIFIED_USERS = {}
+    
