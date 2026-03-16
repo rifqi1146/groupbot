@@ -16,6 +16,7 @@ six==1.17.0
 python-whois==0.9.6
 yt-dlp
 yt-dlp-ejs
+gallery-dl
 deep-translator
 dnspython
 uvloop==0.22.1
