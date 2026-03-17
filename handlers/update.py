@@ -105,9 +105,9 @@ async def update_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "update_restart":
-        await query.answer("♻️ Restarting...")
+        await query.answer("Restarting...")
         await query.message.edit_text(
-            "♻️ <b>Update successful, restarting the bot...</b>",
+            "<b>Update successful, restarting bot...</b>",
             parse_mode="HTML"
         )
 

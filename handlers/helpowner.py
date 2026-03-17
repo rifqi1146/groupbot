@@ -19,10 +19,10 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = (
-        "👑 <b>Owner Commands</b>\n"
+        "<b>Owner Commands</b>\n"
         "<i>Administrative & system-level controls</i>\n\n"
 
-        "⚙️ <b>System Management</b>\n"
+        "<b>System Management</b>\n"
         "• <code>/update</code> — Update system Bot.\n"
         "• <code>/speedtest</code> — Run server speed test.\n"
         "• <code>/broadcast</code> — Announcement.\n"
@@ -30,14 +30,14 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/wlc</code> — Configure welcome message.\n"
         "• <code>/restart</code> — Restart the bot.\n\n"
 
-        "🔐 <b>Access & Billing</b>\n"
+        "<b>Access & Billing</b>\n"
         "• <code>/cookies</code> — Update cookies via Telegram.\n"
         "• <code>/premium</code> — Manage premium users.\n\n"
 
-        "🍜 <b>Asupan Management</b>\n"
+        "<b>Asupan Management</b>\n"
         "• <code>/asupann</code> — Manage asupan.\n\n"
 
-        "😍 <b>Caca Settings</b>\n"
+        "<b>Caca Settings</b>\n"
         "• <code>/cacaa</code> — enable/disable/list/status.\n"
     )
 
