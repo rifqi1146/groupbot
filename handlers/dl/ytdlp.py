@@ -6,7 +6,7 @@ import json
 import subprocess
 from urllib.parse import urlparse
 
-from .Instagram_api import is_instagram_url
+from .instagram_api import is_instagram_url
 from .constants import COOKIES_PATH, TMP_DIR
 from .utils import progress_bar
 
