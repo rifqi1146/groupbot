@@ -10,7 +10,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-echo "[1/5] Installing system dependencies..."
+echo "[1/6] Installing system dependencies..."
 apt update
 apt install -y \
   python3 \
@@ -22,10 +22,13 @@ apt install -y \
   unzip \
   build-essential \
   libjpeg-dev \
-  zlib1g-dev
+  zlib1g-dev \
+  cmake \
+  libssl-dev \
+  gperf
 
 echo
-echo "[2/5] Installing Node.js..."
+echo "[2/6] Installing Node.js..."
 
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -36,7 +39,7 @@ else
 fi
 
 echo
-echo "[3/5] Installing Deno..."
+echo "[3/6] Installing Deno..."
 
 if ! command -v deno >/dev/null 2>&1; then
   curl -fsSL https://deno.land/install.sh | sh
@@ -47,7 +50,7 @@ else
 fi
 
 echo
-echo "[4/5] Installing Speedtest Ookla..."
+echo "[4/6] Installing Speedtest Ookla..."
 
 if ! command -v speedtest >/dev/null 2>&1; then
   ARCH=$(uname -m)
@@ -75,7 +78,38 @@ else
 fi
 
 echo
-echo "[5/5] Creating virtual environment..."
+read -rp "Do you want to build local Telegram Bot API? [Y/N]: " BUILD_LOCAL_BOT_API
+BUILD_LOCAL_BOT_API=$(echo "$BUILD_LOCAL_BOT_API" | tr '[:lower:]' '[:upper:]')
+
+if [[ "$BUILD_LOCAL_BOT_API" == "Y" ]]; then
+  echo
+  echo "[5/6] Building local Telegram Bot API..."
+
+  if [ ! -d "telegram-bot-api" ]; then
+    git clone --recursive https://github.com/tdlib/telegram-bot-api.git
+  else
+    echo "✔ telegram-bot-api source already exists"
+  fi
+
+  cd telegram-bot-api
+
+  if [ ! -d "build" ]; then
+    mkdir build
+  fi
+
+  cd build
+  cmake -DCMAKE_BUILD_TYPE=Release ..
+  cmake --build . --target install -j"$(nproc)"
+  cd ../..
+
+  echo "✔ Local Telegram Bot API build successfully"
+else
+  echo
+  echo "[5/6] Skipping local Telegram Bot API build..."
+fi
+
+echo
+echo "[6/6] Creating virtual environment..."
 
 if [ ! -d "venv" ]; then
   python3 -m venv venv
@@ -84,7 +118,7 @@ fi
 source venv/bin/activate
 
 echo
-echo "[6/6] Installing Python dependencies..."
+echo "[7/7] Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
@@ -96,8 +130,11 @@ echo
 echo "Next steps:"
 echo "1. nano .env"
 echo "2. Fill BOT_TOKEN and API keys"
-echo "3. Run:"
+if [[ "$BUILD_LOCAL_BOT_API" == "Y" ]]; then
+  echo "3. If using local Bot API, also fill API_ID and API_HASH in .env"
+fi
+echo "4. Run:"
 echo "   source venv/bin/activate"
-echo "   python bot.py"
+echo "   python main.py"
 echo
 echo "Happy 🚀"
