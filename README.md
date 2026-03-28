@@ -114,9 +114,10 @@ python main.py
 
 This project uses and depends on the following tools and services:
 
-- [Groq Cloud](https://groq.com/)
+- [Groq Cloud](https://console.groq.com/home)
 - [Google Gemini](https://ai.google.dev/)
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [gallery-dl](https://github.com/mikf/gallery-dl)
 - [Sonzai Api](http://api.sonzaix.indevs.in)
+- [TikWm](https://www.tikwm.com/)
