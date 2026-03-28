@@ -109,3 +109,14 @@ source .env
 ```
 python main.py
 ```
+
+## Credits
+
+This project uses and depends on the following tools and services:
+
+- [Groq Cloud](https://groq.com/)
+- [Google Gemini](https://ai.google.dev/)
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Sonzai Api](http://api.sonzaix.indevs.in)
