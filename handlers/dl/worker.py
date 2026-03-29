@@ -157,7 +157,6 @@ async def send_downloaded_media(
 
     raise RuntimeError("Media tidak didukung")
 
-
 async def download_non_tiktok(
     raw_url,
     fmt_key,
@@ -191,7 +190,7 @@ async def download_non_tiktok(
             except Exception:
                 pass
 
-            return await ytdlp_download(
+            result = await ytdlp_download(
                 raw_url,
                 fmt_key,
                 bot,
@@ -201,8 +200,14 @@ async def download_non_tiktok(
                 has_audio=has_audio,
             )
 
+            file_path = result.get("path") if isinstance(result, dict) else result
+            if not file_path:
+                raise RuntimeError("yt-dlp returned no file")
+
+            return result
+
         except Exception as e:
-            print("[YTDLP YOUTUBE FAILED, FALLBACK TO SONZAI]", e)
+            print("[YTDLP YOUTUBE FAILED, FALLBACK TO SONZAI]", repr(e))
 
             try:
                 await bot.edit_message_text(
@@ -210,14 +215,14 @@ async def download_non_tiktok(
                     message_id=status_msg_id,
                     text=(
                         "<b>yt-dlp failed</b>\n\n"
-                        "<i>Falling back to Sonzai API...</i>"
+                        "<i>Fallback to Sonzai API...</i>"
                     ),
                     parse_mode="HTML",
                 )
             except Exception:
                 pass
 
-            return await sonzai_youtube_download(
+            result = await sonzai_youtube_download(
                 raw_url=raw_url,
                 fmt_key=fmt_key,
                 bot=bot,
@@ -225,6 +230,12 @@ async def download_non_tiktok(
                 status_msg_id=status_msg_id,
                 format_id=format_id,
             )
+
+            file_path = result.get("path") if isinstance(result, dict) else result
+            if not file_path:
+                raise RuntimeError("Sonzai returned no file")
+
+            return result
 
     return await ytdlp_download(
         raw_url,
