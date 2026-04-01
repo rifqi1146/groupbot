@@ -278,7 +278,7 @@ async def ytdlp_download(
     status_msg_id,
     format_id: str | None = None,
     has_audio: bool = False,
-    container: str = "mp4",
+    container: str = "webm",
 ):
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
