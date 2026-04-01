@@ -84,7 +84,7 @@ def gather_system_stats():
 
     cpu_cores = os.cpu_count() or 0
     try:
-        cpu_load = psutil.cpu_percent(interval=0.15) if psutil else 0.0
+        cpu_load = psutil.cpu_percent(interval=1.0) if psutil else 0.0
     except Exception as e:
         logger.error(f"Failed to gather CPU load: {e}", exc_info=True)
         cpu_load = 0.0
