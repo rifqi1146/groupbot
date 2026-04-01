@@ -11,18 +11,18 @@ def _help_cb(user_id: int, action: str) -> str:
 def help_main_keyboard(user_id: int):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✨ Features", callback_data=_help_cb(user_id, "features")),
-            InlineKeyboardButton("🤐 AI Chat", callback_data=_help_cb(user_id, "ai")),
+            InlineKeyboardButton("Features", callback_data=_help_cb(user_id, "features")),
+            InlineKeyboardButton("AI Chat", callback_data=_help_cb(user_id, "ai")),
         ],
         [
-            InlineKeyboardButton("🧠 Utilities", callback_data=_help_cb(user_id, "utils")),
-            InlineKeyboardButton("🔐 Privacy", callback_data=_help_cb(user_id, "privacy")),
+            InlineKeyboardButton("Utilities", callback_data=_help_cb(user_id, "utils")),
+            InlineKeyboardButton("Privacy", callback_data=_help_cb(user_id, "privacy")),
         ],
         [
-            InlineKeyboardButton("⚙️ Settings", callback_data=_help_cb(user_id, "settings")),
+            InlineKeyboardButton("Settings", callback_data=_help_cb(user_id, "settings")),
         ],
         [
-            InlineKeyboardButton("❌ Close", callback_data=_help_cb(user_id, "close")),
+            InlineKeyboardButton("Close", callback_data=_help_cb(user_id, "close")),
         ],
     ])
 
@@ -30,38 +30,38 @@ def help_main_keyboard(user_id: int):
 def help_settings_keyboard(user_id: int):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🍜 Asupan", callback_data=_help_cb(user_id, "asupan")),
-            InlineKeyboardButton("🗑️ AutoDel", callback_data=_help_cb(user_id, "autodel")),
+            InlineKeyboardButton("Asupan", callback_data=_help_cb(user_id, "asupan")),
+            InlineKeyboardButton("AutoDel", callback_data=_help_cb(user_id, "autodel")),
         ],
         [
-            InlineKeyboardButton("⬇️ AutoDL", callback_data=_help_cb(user_id, "autodl")),
-            InlineKeyboardButton("😍 Caca", callback_data=_help_cb(user_id, "cacaa")),
+            InlineKeyboardButton("AutoDL", callback_data=_help_cb(user_id, "autodl")),
+            InlineKeyboardButton("Caca", callback_data=_help_cb(user_id, "cacaa")),
         ],
         [
-            InlineKeyboardButton("🔞 NSFW", callback_data=_help_cb(user_id, "nsfw")),
-            InlineKeyboardButton("🛖 Welcome", callback_data=_help_cb(user_id, "wlc")),
+            InlineKeyboardButton("NSFW", callback_data=_help_cb(user_id, "nsfw")),
+            InlineKeyboardButton("Welcome", callback_data=_help_cb(user_id, "wlc")),
         ],
         [
-            InlineKeyboardButton("👤 User Setting", callback_data=_help_cb(user_id, "user_setting")),
+            InlineKeyboardButton("User Setting", callback_data=_help_cb(user_id, "user_setting")),
         ],
         [
-            InlineKeyboardButton("🔙 Back", callback_data=_help_cb(user_id, "menu")),
-            InlineKeyboardButton("❌ Close", callback_data=_help_cb(user_id, "close")),
+            InlineKeyboardButton("Back", callback_data=_help_cb(user_id, "menu")),
+            InlineKeyboardButton("Close", callback_data=_help_cb(user_id, "close")),
         ],
     ])
 
 
 def help_back_keyboard(user_id: int):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Back", callback_data=_help_cb(user_id, "menu"))],
-        [InlineKeyboardButton("❌ Close", callback_data=_help_cb(user_id, "close"))],
+        [InlineKeyboardButton("Back", callback_data=_help_cb(user_id, "menu"))],
+        [InlineKeyboardButton("Close", callback_data=_help_cb(user_id, "close"))],
     ])
 
 
 def help_settings_back_keyboard(user_id: int):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Back", callback_data=_help_cb(user_id, "settings"))],
-        [InlineKeyboardButton("❌ Close", callback_data=_help_cb(user_id, "close"))],
+        [InlineKeyboardButton("Back", callback_data=_help_cb(user_id, "settings"))],
+        [InlineKeyboardButton("Close", callback_data=_help_cb(user_id, "close"))],
     ])
 
 
@@ -72,41 +72,41 @@ HELP_TEXT = {
     ),
 
     "features": (
-        "✨ <b>Main Features</b>\n\n"
-        "• ⬇️ <code>/dl</code> — Download videos from supported platforms\n"
-        "• 🍜 <code>/asupan</code> — Random TikTok content\n"
-        "• 🌤️ <code>/weather</code> — Get weather information\n"
-        "• 🪉 <code>/music</code> — Search music\n"
-        "• 🔎 <code>/gsearch</code> — Search on Google\n"
-        "• 🌍 <code>/tr</code> — Translate text between languages\n"
-        "• 📃 <code>/trlist</code> — List supported languages\n"
-        "• 💝 <code>/ship</code> — Choose a couple\n"
-        "• 🧭 <code>/reminder</code> — Schedule a reminder\n"
-        "• 💝 <code>/waifu</code> — Get a waifu\n"
-        "• 💸 <code>/kurs</code> — Currency conversion\n"
-        "• 🖼️ <code>/q</code> — Create quote sticker\n"
-        "• 🎴 <code>/kang</code> — Add sticker to your pack\n"
+        "<b>Main Features</b>\n\n"
+        "• <code>/dl</code> — Download videos from supported platforms\n"
+        "• <code>/asupan</code> — Random TikTok content\n"
+        "• <code>/weather</code> — Get weather information\n"
+        "• <code>/music</code> — Search music\n"
+        "• <code>/gsearch</code> — Search on Google\n"
+        "• <code>/tr</code> — Translate text between languages\n"
+        "• <code>/trlist</code> — List supported languages\n"
+        "• <code>/ship</code> — Choose a couple\n"
+        "• <code>/reminder</code> — Schedule a reminder\n"
+        "• <code>/waifu</code> — Get a waifu\n"
+        "• <code>/kurs</code> — Currency conversion\n"
+        "• <code>/q</code> — Create quote sticker\n"
+        "• <code>/kang</code> — Add sticker to your pack\n"
     ),
 
     "ai": (
-        "🤐 <b>AI Chat</b>\n\n"
-        "• 💬 <code>/ai</code> — Chat with Gemini AI\n"
-        "• 🧠 <code>/ask</code> — Chat with ChatGPT\n"
-        "• ⚡ <code>/groq</code> — Chat with Groq\n"
-        "• 😍 <code>/caca</code> — Caca Chat Bot\n"
+        "<b>AI Chat</b>\n\n"
+        "• <code>/ai</code> — Chat with Gemini AI\n"
+        "• <code>/ask</code> — Chat with ChatGPT\n"
+        "• <code>/groq</code> — Chat with Groq\n"
+        "• <code>/caca</code> — Caca Chat Bot\n"
     ),
 
     "utils": (
-        "🛠️ <b>Utilities</b>\n\n"
-        "• 🏓 <code>/ping</code> — Check bot response time\n"
-        "• 📊 <code>/stats</code> — Bot & system statistics\n"
-        "• 🌐 <code>/ip</code> — IP address lookup\n"
-        "• 🏷️ <code>/domain</code> — Domain information\n"
-        "• 🔍 <code>/whoisdomain</code> — Detailed domain lookup\n"
+        "<b>Utilities</b>\n\n"
+        "• <code>/ping</code> — Check bot response time\n"
+        "• <code>/stats</code> — Bot & system statistics\n"
+        "• <code>/ip</code> — IP address lookup\n"
+        "• <code>/domain</code> — Domain information\n"
+        "• <code>/whoisdomain</code> — Detailed domain lookup\n"
     ),
 
     "privacy": (
-        "🔐 <b>User Privacy</b>\n\n"
+        "<b>User Privacy</b>\n\n"
         "By using this bot, users understand and agree that:\n\n"
         "• The bot owner may view and store the command history used by users\n"
         "• The recorded data may include:\n"
@@ -123,33 +123,33 @@ HELP_TEXT = {
     ),
 
     "settings": (
-        "⚙️ <b>Bot Settings</b>\n\n"
+        "<b>Bot Settings</b>\n\n"
         "Select a menu below to see detailed options for each feature."
     ),
 
     "asupan": (
-        "🍜 <b>Asupan Settings</b>\n\n"
+        "<b>Asupan Settings</b>\n\n"
         "• <code>/asupann enable</code> — Enable asupan in the group\n"
         "• <code>/asupann disable</code> — Disable asupan in the group\n"
         "• <code>/asupann status</code> — Check asupan status\n\n"
     ),
 
     "autodel": (
-        "🗑️ <b>Auto Delete Asupan</b>\n\n"
+        "<b>Auto Delete Asupan</b>\n\n"
         "• <code>/autodel enable</code> — Enable auto-delete for asupan\n"
         "• <code>/autodel disable</code> — Disable auto-delete for asupan\n"
         "• <code>/autodel status</code> — Check auto-delete status\n\n"
     ),
 
     "autodl": (
-        "⬇️ <b>Auto Download Link</b>\n\n"
+        "<b>Auto Download Link</b>\n\n"
         "• <code>/autodl enable</code> — Enable automatic link detection\n"
         "• <code>/autodl disable</code> — Disable automatic link detection\n"
         "• <code>/autodl status</code> — Check auto-detect status\n\n"
     ),
 
     "cacaa": (
-        "😍 <b>Caca Settings</b>\n\n"
+        "<b>Caca Settings</b>\n\n"
         "• <code>/mode</code> — Change Caca persona (Premium Only)\n"
         "• <code>/cacaa enable</code> — Enable Caca in the group\n"
         "• <code>/cacaa disable</code> — Disable Caca in the group\n"
@@ -157,14 +157,14 @@ HELP_TEXT = {
     ),
 
     "nsfw": (
-        "🔞 <b>NSFW Settings</b>\n\n"
+        "<b>NSFW Settings</b>\n\n"
         "• <code>/nsfw enable</code> — Enable NSFW in the group\n"
         "• <code>/nsfw disable</code> — Disable NSFW in the group\n"
         "• <code>/nsfw status</code> — Check NSFW status\n\n"
     ),
 
     "wlc": (
-        "🛖 <b>Welcome Settings</b>\n\n"
+        "<b>Welcome Settings</b>\n\n"
         "• <code>/wlc enable</code> — Enable welcome messages\n"
         "• <code>/wlc disable</code> — Disable welcome messages\n\n"
     ),
