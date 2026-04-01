@@ -7,5 +7,5 @@ BOT_COMMANDS = {
     "wlc","restart","ai","groq","nsfw","autodel",
     "ship","reminder","meta","waifu","asupann","caca",
     "cacaa","asupann","kurs","autodel","autodl","nsfw",
-    "mode",
+    "mode","settings",
 }
