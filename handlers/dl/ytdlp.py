@@ -81,7 +81,7 @@ def _strip_job_prefix(path: str, prefix: str) -> str:
         return path
         
 def _pick_latest_media_file(since_ts: float, prefix: str) -> str | None:
-    exts = (".mp4", ".webm", ".mp3", ".flac", ".jpg", ".jpeg", ".png", ".webp")
+    exts = (".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
     try:
         files = []
         for f in os.listdir(TMP_DIR):
@@ -106,7 +106,7 @@ def _pick_latest_media_file(since_ts: float, prefix: str) -> str | None:
         return None
 
 def _pick_latest_media_file_recursive(root_dir: str) -> str | None:
-    exts = (".mp4", ".webm", ".mp3", ".flac", ".jpg", ".jpeg", ".png", ".webp")
+    exts = (".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
     try:
         files = []
         for root, _, names in os.walk(root_dir):
@@ -278,7 +278,6 @@ async def ytdlp_download(
     status_msg_id,
     format_id: str | None = None,
     has_audio: bool = False,
-    container: str = "webm",
 ):
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
@@ -379,25 +378,13 @@ async def ytdlp_download(
             return None
 
     else:
-        container = (container or "mp4").lower().strip()
-        if container not in ("mp4", "webm"):
-            container = "mp4"
-
-        if format_id and container != "webm":
+        if format_id:
             if has_audio:
                 fmt = format_id
             else:
                 fmt = f"{format_id}+bestaudio/best"
         else:
-            if container == "webm":
-                fmt = "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio"
-            else:
-                if format_id and has_audio:
-                    fmt = format_id
-                elif format_id:
-                    fmt = f"{format_id}+bestaudio/best"
-                else:
-                    fmt = "bestvideo*+bestaudio/best"
+            fmt = "bestvideo*+bestaudio/best"
 
         est_size = await asyncio.to_thread(_probe_total_size_sync, url, fmt)
         update_interval = 7 if (est_size and est_size >= _SIZE_100MB) else 2
@@ -410,18 +397,12 @@ async def ytdlp_download(
             "--concurrent-fragments", "8",
             "--no-playlist",
             "-f", fmt,
+            "--merge-output-format", "mp4",
             "--newline",
             "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url,
         ]
-
-        if container == "mp4":
-            cmd.insert(-3, "--merge-output-format")
-            cmd.insert(-3, "mp4")
-        else:
-            cmd.insert(-3, "--merge-output-format")
-            cmd.insert(-3, "webm")
         if is_ig:
             cmd.insert(1, "--ignore-errors")
             cmd.insert(2, "--no-abort-on-error")
@@ -464,12 +445,10 @@ async def ytdlp_download(
         p = p.lower()
         if p.endswith(".mp4"):
             return 0
-        if p.endswith(".webm"):
+        if p.endswith(".mp3"):
             return 1
-        if p.endswith(".mp3") or p.endswith(".flac"):
-            return 2
         if p.endswith((".jpg", ".jpeg", ".png", ".webp")):
-            return 3
+            return 2
         return 9
 
     files = sorted(
@@ -477,7 +456,7 @@ async def ytdlp_download(
             os.path.join(TMP_DIR, f)
             for f in os.listdir(TMP_DIR)
             if f.startswith(job_id + "_")
-            and f.lower().endswith((".mp4", ".webm", ".mp3", ".jpg", ".flac", ".jpeg", ".png", ".webp"))
+            and f.lower().endswith((".mp4", ".mp3", ".jpg", ".flac", ".jpeg", ".png", ".webp"))
         ),
         key=lambda p: (media_priority(p), -os.path.getmtime(p)),
     )

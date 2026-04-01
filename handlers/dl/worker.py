@@ -245,5 +245,4 @@ async def download_non_tiktok(
         status_msg_id,
         format_id=format_id,
         has_audio=has_audio,
-        container="webm",
     )
