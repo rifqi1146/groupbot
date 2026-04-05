@@ -342,20 +342,17 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not urls:
             raise RuntimeError("No downloadable media found")
 
+        try:
+            await status.edit_text(
+                "<b>Downloading Instagram media...</b>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
         failed_count = 0
 
-        for idx, media_url in enumerate(urls, start=1):
-            try:
-                await status.edit_text(
-                    (
-                        "<b>Downloading Instagram media...</b>\n\n"
-                        f"<code>{idx}/{len(urls)}</code>"
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
-
+        for media_url in urls:
             try:
                 downloaded.append(await _download_remote_media(media_url, source=source))
             except Exception as e:
@@ -378,10 +375,13 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
         else:
-            await status.edit_text(
-                "<b>Uploading Instagram media...</b>",
-                parse_mode="HTML",
-            )
+            try:
+                await status.edit_text(
+                    "<b>Uploading Instagram media...</b>",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
 
         await _send_ig_result(
             bot=context.bot,
