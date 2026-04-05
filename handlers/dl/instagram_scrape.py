@@ -2,9 +2,12 @@ import os
 import re
 import html
 import uuid
+import hashlib
+import asyncio
 import aiohttp
 import aiofiles
 from urllib.parse import urlparse, parse_qs, unquote
+
 from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.error import RetryAfter
 from telegram.ext import ContextTypes
@@ -25,15 +28,27 @@ def _build_caption(source: str, count: int) -> str:
     )
 
 
-def _uniq(items: list[str]) -> list[str]:
+def _uniq_media_urls(items: list[str]) -> list[str]:
     out = []
     seen = set()
+
     for item in items:
-        key = (item or "").strip()
-        if not key or key in seen:
+        raw = (item or "").strip()
+        if not raw:
             continue
+
+        try:
+            parsed = urlparse(raw)
+            key = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        except Exception:
+            key = raw
+
+        if key in seen:
+            continue
+
         seen.add(key)
-        out.append(key)
+        out.append(raw)
+
     return out
 
 
@@ -67,7 +82,7 @@ def _collect_urls_from_html(text: str) -> list[str]:
             found.append(link)
 
     cleaned = []
-    for link in _uniq(found):
+    for link in _uniq_media_urls(found):
         cleaned.append(re.sub(r"&dl=1$", "", link))
     return cleaned
 
@@ -142,7 +157,7 @@ async def _snapsave(url: str) -> dict:
     urls = _collect_urls_from_html(data)
     if not urls:
         rapid = re.findall(r'''https://d\.rapidcdn\.app/v2\?[^"'<> ]+''', data, flags=re.I)
-        urls = _uniq([x.replace("&amp;", "&") for x in rapid])
+        urls = _uniq_media_urls([x.replace("&amp;", "&") for x in rapid])
 
     if not urls:
         return {"status": False, "message": "No media found"}
@@ -208,40 +223,90 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
         headers["Referer"] = "https://www.instagram.com/"
         headers["Origin"] = "https://www.instagram.com"
 
-    async with session.get(
-        url,
-        headers=headers,
-        allow_redirects=True,
-        timeout=aiohttp.ClientTimeout(total=180),
-    ) as resp:
-        if resp.status >= 400:
-            raise RuntimeError(f"Failed to download media: HTTP {resp.status}")
+    last_error = None
 
-        content_type = resp.headers.get("Content-Type", "")
-        media_type = _guess_media_type_from_url(str(resp.url))
-        if media_type != "video":
-            if content_type.lower().startswith("video/"):
-                media_type = "video"
-            else:
-                media_type = "photo"
+    for attempt in range(3):
+        try:
+            async with session.get(
+                url,
+                headers=headers,
+                allow_redirects=True,
+                timeout=aiohttp.ClientTimeout(total=180),
+            ) as resp:
+                if resp.status >= 400:
+                    raise RuntimeError(f"Failed to download media: HTTP {resp.status}")
 
-        ext = _guess_ext(str(resp.url), content_type)
-        out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}{ext}")
+                content_type = resp.headers.get("Content-Type", "")
+                media_type = _guess_media_type_from_url(str(resp.url))
+                if media_type != "video":
+                    if content_type.lower().startswith("video/"):
+                        media_type = "video"
+                    else:
+                        media_type = "photo"
 
-        async with aiofiles.open(out_path, "wb") as f:
-            async for chunk in resp.content.iter_chunked(64 * 1024):
-                await f.write(chunk)
+                ext = _guess_ext(str(resp.url), content_type)
+                out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}{ext}")
 
-    return {
-        "path": out_path,
-        "type": media_type,
-    }
+                async with aiofiles.open(out_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        await f.write(chunk)
+
+            return {
+                "path": out_path,
+                "type": media_type,
+            }
+        except Exception as e:
+            last_error = e
+            if attempt < 2:
+                await asyncio.sleep(1.2 * (attempt + 1))
+            continue
+
+    raise last_error or RuntimeError("Failed to download media")
+
+
+def _file_sha1(path: str) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _dedupe_downloaded_items(items: list[dict]) -> list[dict]:
+    unique = []
+    seen_hashes = set()
+
+    for item in items:
+        path = item.get("path")
+        if not path or not os.path.exists(path):
+            continue
+
+        try:
+            sig = _file_sha1(path)
+        except Exception:
+            unique.append(item)
+            continue
+
+        if sig in seen_hashes:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+            continue
+
+        seen_hashes.add(sig)
+        unique.append(item)
+
+    return unique
 
 
 async def _send_ig_result(bot, chat_id: int, reply_to: int, items: list[dict], source: str):
     caption = _build_caption(source, len(items))
-    ALBUM_CHUNK_SIZE = 10
-    ALBUM_COOLDOWN = 3
+    album_chunk_size = 10
+    album_cooldown = 3
 
     if len(items) == 1:
         item = items[0]
@@ -268,12 +333,12 @@ async def _send_ig_result(bot, chat_id: int, reply_to: int, items: list[dict], s
                         )
                 break
             except RetryAfter as e:
-                wait_time = int(getattr(e, "retry_after", ALBUM_COOLDOWN)) + 1
+                wait_time = int(getattr(e, "retry_after", album_cooldown)) + 1
                 await asyncio.sleep(wait_time)
 
         return
 
-    chunks = [items[i:i + ALBUM_CHUNK_SIZE] for i in range(0, len(items), ALBUM_CHUNK_SIZE)]
+    chunks = [items[i:i + album_chunk_size] for i in range(0, len(items), album_chunk_size)]
 
     for idx, chunk in enumerate(chunks):
         media = []
@@ -315,11 +380,11 @@ async def _send_ig_result(bot, chat_id: int, reply_to: int, items: list[dict], s
                     )
                     break
                 except RetryAfter as e:
-                    wait_time = int(getattr(e, "retry_after", ALBUM_COOLDOWN)) + 1
+                    wait_time = int(getattr(e, "retry_after", album_cooldown)) + 1
                     await asyncio.sleep(wait_time)
 
             if idx < len(chunks) - 1:
-                await asyncio.sleep(ALBUM_COOLDOWN)
+                await asyncio.sleep(album_cooldown)
 
         finally:
             for fh in handles:
@@ -382,6 +447,11 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not downloaded:
             raise RuntimeError("All media downloads failed")
+
+        downloaded = _dedupe_downloaded_items(downloaded)
+
+        if not downloaded:
+            raise RuntimeError("All media downloads were duplicates or invalid")
 
         if failed_count:
             try:
