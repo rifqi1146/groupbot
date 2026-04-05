@@ -6,7 +6,7 @@ import subprocess
 from .constants import TMP_DIR, MAX_TG_SIZE
 from .utils import detect_media_type
 from .ytdlp import ytdlp_download
-from .instagram_api import is_instagram_url, instagram_api_download
+from .instagram_api import is_instagram_url, instagram_api_download, send_instagram_result
 from .youtube_api import is_youtube_url, sonzai_youtube_download
 
 def reencode_mp3(src_path: str) -> str:
@@ -97,6 +97,22 @@ async def send_downloaded_media(
     path,
     fmt_key,
 ):
+    if isinstance(path, dict) and path.get("items"):
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="<b>Uploading...</b>",
+            parse_mode="HTML",
+        )
+
+        await send_instagram_result(
+            bot=bot,
+            chat_id=chat_id,
+            reply_to=reply_to,
+            result=path,
+        )
+        return
+
     meta = path if isinstance(path, dict) else {"path": path, "title": None}
     file_path = meta.get("path")
     original_title = (meta.get("title") or "").strip()
