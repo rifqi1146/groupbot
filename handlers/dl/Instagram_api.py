@@ -266,11 +266,7 @@ def _decode_indown_fetch(link: str) -> str:
         qs = parse_qs(parsed.query)
         raw = (qs.get("url") or [""])[0]
         raw = unquote(raw or "").strip()
-
-        if raw.startswith("http://") or raw.startswith("https://"):
-            return raw
-
-        return link
+        return raw or link
     except Exception:
         return link
 
@@ -278,29 +274,18 @@ def _decode_indown_fetch(link: str) -> str:
 def _collect_urls_from_html(text: str) -> list[str]:
     found = []
 
-    def normalize_link(link: str) -> str:
-        link = (link or "").strip()
-        if not link:
-            return ""
-
-        link = link.replace("&amp;", "&")
-
-        if "indown.io/fetch" in link:
-            link = _decode_indown_fetch(link)
-
-        return link.strip()
-
     for match in re.findall(r'''(?:src|href)=["']([^"']+)["']''', text, flags=re.I):
-        link = normalize_link(match)
+        link = (match or "").strip()
         if not link:
             continue
+        if "indown.io/fetch" in link:
+            link = _decode_indown_fetch(link)
+        link = link.replace("&amp;", "&")
         if re.search(r"(cdninstagram\.com|fbcdn\.net|d\.rapidcdn\.app)", link, flags=re.I):
             found.append(link)
 
     for match in re.findall(r'''https://[^"'\s<>]+''', text, flags=re.I):
-        link = normalize_link(match)
-        if not link:
-            continue
+        link = (match or "").strip().replace("&amp;", "&")
         if re.search(r"(cdninstagram\.com|fbcdn\.net|d\.rapidcdn\.app)", link, flags=re.I):
             found.append(link)
 
@@ -320,9 +305,10 @@ async def _indown(url: str) -> dict:
     ) as resp:
         page_data = await resp.text()
 
-    token_match = re.search(r'''name=["']_token["'][^>]*value=["']([^"']+)["']''', page_data, flags=re.I)
+    token_match = re.search(r'''name=["']_token["'][^>]*value=["']([^"']+)["']''', pageData if False else page_data, flags=re.I)
     token = token_match.group(1).strip() if token_match else ""
     if not token:
+        print("[INDOWN] token not found")
         return {"status": False, "message": "Token Indown not found"}
 
     form = {
@@ -347,6 +333,8 @@ async def _indown(url: str) -> dict:
         result_data = await resp.text()
 
     urls = _collect_urls_from_html(result_data)
+    print(f"[INDOWN] url_count={len(urls)}")
+
     if not urls:
         return {"status": False, "message": "No media found"}
 
@@ -382,6 +370,8 @@ async def _snapsave(url: str) -> dict:
         rapid = re.findall(r'''https://d\.rapidcdn\.app/v2\?[^"'<> ]+''', data, flags=re.I)
         urls = _uniq_media_urls([x.replace("&amp;", "&") for x in rapid])
 
+    print(f"[SNAPSAVE] url_count={len(urls)}")
+
     if not urls:
         return {"status": False, "message": "No media found"}
 
@@ -395,10 +385,13 @@ async def _snapsave(url: str) -> dict:
 async def _instagram_scrape_fallback(url: str) -> dict:
     result = await _indown(url)
     if result.get("status") and result.get("urls"):
+        print("[INSTAGRAM FALLBACK] using Indown")
         return result
 
+    print("[INSTAGRAM FALLBACK] Indown failed, trying Snapsave")
     result = await _snapsave(url)
     if result.get("status") and result.get("urls"):
+        print("[INSTAGRAM FALLBACK] using Snapsave")
         return result
 
     raise RuntimeError(result.get("message") or "No media found")
@@ -413,26 +406,9 @@ async def _download_with_progress(
     chat_id,
     status_msg_id,
     progress_text: str,
-    source: str = "",
 ) -> dict:
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "*/*",
-    }
-
-    lower_url = (media_url or "").lower()
-    source = (source or "").lower()
-
-    if "rapidcdn.app" in lower_url or source == "snapsave":
-        headers["Referer"] = "https://snapsave.app/"
-        headers["Origin"] = "https://snapsave.app"
-    elif "cdninstagram.com" in lower_url or "fbcdn.net" in lower_url or source == "indown":
-        headers["Referer"] = "https://www.instagram.com/"
-        headers["Origin"] = "https://www.instagram.com"
-
     async with session.get(
         media_url,
-        headers=headers,
         timeout=aiohttp.ClientTimeout(total=180),
     ) as media_resp:
         if media_resp.status >= 400:
@@ -503,6 +479,8 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
                 allow_redirects=True,
                 timeout=aiohttp.ClientTimeout(total=180),
             ) as resp:
+                print(f"[INSTAGRAM FALLBACK DOWNLOAD] attempt={attempt+1} status={resp.status} url={url}")
+
                 if resp.status >= 400:
                     raise RuntimeError(f"Failed to download media: HTTP {resp.status}")
 
@@ -514,7 +492,7 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
                     else:
                         media_type = "photo"
 
-                ext = _guess_ext(str(resp.url), content_type, str(resp.url))
+                ext = _guess_ext(content_type, media_type, str(resp.url))
                 out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}{ext}")
 
                 async with aiofiles.open(out_path, "wb") as f:
@@ -735,6 +713,7 @@ async def instagram_api_download(
         media_type, media_url = picked
         title = _build_title(data, media_type)
 
+        print("[INSTAGRAM SONZAI] success")
         return await _download_with_progress(
             session=session,
             media_url=media_url,
