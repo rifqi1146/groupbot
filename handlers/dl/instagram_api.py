@@ -29,6 +29,34 @@ def is_instagram_url(url: str) -> bool:
         text = (url or "").lower()
         return "instagram.com" in text or "instagr.am" in text
 
+def _finalize_fallback_urls(urls: list[str]) -> list[str]:
+    out = []
+    seen = set()
+
+    for url in urls or []:
+        u = (url or "").strip()
+        if not u:
+            continue
+
+        if "indown.io/fetch" in u:
+            u = _decode_indown_fetch(u)
+
+        try:
+            host = (urlparse(u).hostname or "").lower()
+        except Exception:
+            host = ""
+
+        if "indown.io" in host:
+            continue
+
+        key = u
+        if key in seen:
+            continue
+
+        seen.add(key)
+        out.append(u)
+
+    return out
 
 def _truncate_text(text: str, limit: int) -> str:
     text = (text or "").strip()
@@ -739,8 +767,12 @@ async def instagram_api_download(
         pass
 
     result = await _instagram_scrape_fallback(raw_url)
-    urls = result.get("urls") or []
+    urls = _finalize_fallback_urls(result.get("urls") or [])
     source = result.get("source") or "Indown"
+    
+    print("[INSTAGRAM FALLBACK FINAL URLS]", len(urls))
+    for u in urls:
+        print("[INSTAGRAM FALLBACK URL]", u)
 
     if not urls:
         raise RuntimeError("No downloadable Instagram media found")
