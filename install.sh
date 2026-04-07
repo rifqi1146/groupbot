@@ -28,7 +28,7 @@ else
     exit 1
 fi
 
-echo "[1/6] Installing system dependencies using $PM..."
+echo "[1/8] Installing system dependencies using $PM..."
 
 case "$PM" in
     apt)
@@ -53,7 +53,54 @@ case "$PM" in
 esac
 
 echo
-echo "[2/6] Installing Node.js..."
+echo "[2/8] Installing MongoDB..."
+
+if ! command -v mongod >/dev/null 2>&1; then
+    case "$PM" in
+        apt)
+            curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+               gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg 2>/dev/null || true
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs 2>/dev/null || echo focal)/mongodb-org/7.0 multiverse" | \
+               tee /etc/apt/sources.list.d/mongodb-org-7.0.list > /dev/null
+            apt-get update
+            apt-get install -y mongodb-org
+            ;;
+        dnf|yum)
+            cat <<EOF > /etc/yum.repos.d/mongodb-org-7.0.repo
+[mongodb-org-7.0]
+name=MongoDB Repository
+baseurl=https://repo.mongodb.org/yum/redhat/\$releasever/mongodb-org/7.0/x86_64/
+gpgcheck=1
+enabled=1
+gpgkey=https://www.mongodb.org/static/pgp/server-7.0.asc
+EOF
+            $PM install -y mongodb-org
+            ;;
+        pacman)
+            pacman -S --noconfirm --needed mongodb || echo "Warning: Please install mongodb-bin via AUR manually if not found in official repos."
+            ;;
+        apk)
+            apk add mongodb
+            ;;
+        *)
+            echo "Skipping automatic MongoDB install for $PM. Please install manually."
+            ;;
+    esac
+
+    mkdir -p /data/db
+    mkdir -p /var/lib/mongodb
+    mkdir -p /var/log/mongodb
+    if [ -n "$SUDO_USER" ]; then
+        chown -R $SUDO_USER:$SUDO_USER /var/lib/mongodb /var/log/mongodb /data/db 2>/dev/null || true
+    fi
+    
+    echo "✔ MongoDB installed"
+else
+    echo "✔ MongoDB already installed"
+fi
+
+echo
+echo "[3/8] Installing Node.js..."
 
 if ! command -v node >/dev/null 2>&1; then
     case "$PM" in
@@ -81,7 +128,7 @@ else
 fi
 
 echo
-echo "[3/6] Installing Deno..."
+echo "[4/8] Installing Deno..."
 
 if ! command -v deno >/dev/null 2>&1; then
   curl -fsSL https://deno.land/install.sh | sh
@@ -92,7 +139,7 @@ else
 fi
 
 echo
-echo "[4/6] Installing Speedtest Ookla..."
+echo "[5/8] Installing Speedtest Ookla..."
 
 if ! command -v speedtest >/dev/null 2>&1; then
   ARCH=$(uname -m)
@@ -127,7 +174,7 @@ BUILD_LOCAL_BOT_API=$(echo "$BUILD_LOCAL_BOT_API" | tr '[:lower:]' '[:upper:]')
 
 if [[ "$BUILD_LOCAL_BOT_API" == "Y" ]]; then
   echo
-  echo "[5/6] Building local Telegram Bot API..."
+  echo "[6/8] Building local Telegram Bot API..."
 
   if [ ! -d "telegram-bot-api" ]; then
     git clone --recursive https://github.com/tdlib/telegram-bot-api.git
@@ -149,11 +196,11 @@ if [[ "$BUILD_LOCAL_BOT_API" == "Y" ]]; then
   echo "✔ Local Telegram Bot API build successfully"
 else
   echo
-  echo "[5/6] Skipping local Telegram Bot API build..."
+  echo "[6/8] Skipping local Telegram Bot API build..."
 fi
 
 echo
-echo "[6/6] Creating virtual environment..."
+echo "[7/8] Creating virtual environment..."
 
 if command -v python3 >/dev/null 2>&1; then
     PYTHON_CMD="python3"
@@ -163,16 +210,23 @@ fi
 
 if [ ! -d "venv" ]; then
   $PYTHON_CMD -m venv venv
+  if [ -n "$SUDO_USER" ]; then
+      chown -R $SUDO_USER:$SUDO_USER venv
+  fi
 fi
 
-source venv/bin/activate
-
-echo
-echo "[7/7] Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
-
-deactivate
+if [ -n "$SUDO_USER" ]; then
+  echo
+  echo "[8/8] Installing Python dependencies..."
+  sudo -u $SUDO_USER bash -c "source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"
+else
+  source venv/bin/activate
+  echo
+  echo "[8/8] Installing Python dependencies..."
+  pip install --upgrade pip
+  pip install -r requirements.txt
+  deactivate
+fi
 
 echo
 echo "Done!"
@@ -183,7 +237,9 @@ echo "2. Fill BOT_TOKEN and API keys"
 if [[ "$BUILD_LOCAL_BOT_API" == "Y" ]]; then
   echo "3. If using local Bot API, also fill API_ID and API_HASH in .env"
 fi
-echo "4. Run:"
+echo "4. Start MongoDB:"
+echo "   sudo mongod --fork --logpath /var/log/mongodb/mongod.log --dbpath /var/lib/mongodb"
+echo "5. Run:"
 echo "   source venv/bin/activate"
 echo "   python main.py"
 echo
