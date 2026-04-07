@@ -407,8 +407,8 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
         await bot.delete_message(chat_id, status_msg_id)
 
     except Exception as e:
-        err = str(e)
-    
+        err = str(e) or repr(e)
+
         if "Flood control exceeded" in err and "Retry in" in err:
             try:
                 import re
@@ -416,7 +416,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                 wait_time = int(m.group(1)) if m else 5
             except Exception:
                 wait_time = 5
-    
+
             await asyncio.sleep(wait_time)
             return await _dl_worker(
                 app,
@@ -428,23 +428,21 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                 format_id,
                 has_audio,
             )
-    
+
+        public_err = html.escape(err.strip())[:3500] or "Unknown downloader error"
+
         try:
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg_id,
-                text=f"Failed: {e}",
+                text=(
+                    "<b>Download failed</b>\n\n"
+                    f"<code>{public_err}</code>"
+                ),
+                parse_mode="HTML",
             )
         except Exception:
             pass
-
-    finally:
-        file_path = path.get("path") if isinstance(path, dict) else path
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
 
 
 async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):

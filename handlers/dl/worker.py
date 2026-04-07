@@ -273,9 +273,11 @@ async def download_non_tiktok(
                 status_msg_id=status_msg_id,
             )
         except Exception as e:
-            print("[INSTAGRAM API FALLBACK TO YTDLP]", e)
+            print("[INSTAGRAM API FALLBACK TO YTDLP]", repr(e))
 
     if is_youtube_url(raw_url):
+        yt_error = None
+
         try:
             try:
                 await bot.edit_message_text(
@@ -304,6 +306,7 @@ async def download_non_tiktok(
             return result
 
         except Exception as e:
+            yt_error = str(e) or repr(e)
             print("[YTDLP YOUTUBE FAILED, FALLBACK TO SONZAI]", repr(e))
 
             try:
@@ -319,20 +322,26 @@ async def download_non_tiktok(
             except Exception:
                 pass
 
-            result = await sonzai_youtube_download(
-                raw_url=raw_url,
-                fmt_key=fmt_key,
-                bot=bot,
-                chat_id=chat_id,
-                status_msg_id=status_msg_id,
-                format_id=format_id,
-            )
+            try:
+                result = await sonzai_youtube_download(
+                    raw_url=raw_url,
+                    fmt_key=fmt_key,
+                    bot=bot,
+                    chat_id=chat_id,
+                    status_msg_id=status_msg_id,
+                    format_id=format_id,
+                )
 
-            file_path = result.get("path") if isinstance(result, dict) else result
-            if not file_path:
-                raise RuntimeError("Sonzai returned no file")
+                file_path = result.get("path") if isinstance(result, dict) else result
+                if not file_path:
+                    raise RuntimeError("Sonzai returned no file")
 
-            return result
+                return result
+
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"yt-dlp: {yt_error}\nSonzai: {fallback_error}"
+                ) from fallback_error
 
     return await ytdlp_download(
         raw_url,

@@ -277,7 +277,60 @@ def _probe_total_size_sync(url: str, fmt: str) -> int:
         s += fs
     return s
 
+def _extract_tool_error(stdout_text: str, stderr_text: str, code: int, tool_name: str = "yt-dlp") -> str:
+    skip_starts = (
+        "[download]",
+        "[info]",
+        "[debug]",
+        "[generic]",
+        "[redirect]",
+        "[metadata]",
+    )
 
+    merged_lines = []
+    if stderr_text:
+        merged_lines.extend(stderr_text.splitlines())
+    if stdout_text:
+        merged_lines.extend(stdout_text.splitlines())
+
+    for raw in reversed(merged_lines):
+        line = (raw or "").strip()
+        if not line:
+            continue
+
+        lower = line.lower()
+
+        if lower.startswith(skip_starts):
+            continue
+
+        if "error:" in lower:
+            idx = lower.rfind("error:")
+            msg = line[idx + len("error:"):].strip()
+            return msg or f"{tool_name} exited with code {code}"
+
+        if any(key in lower for key in (
+            "unsupported url",
+            "unable to extract",
+            "video unavailable",
+            "private video",
+            "sign in to confirm",
+            "requested format is not available",
+            "http error",
+            "forbidden",
+            "cloudflare",
+            "login required",
+            "members only",
+            "429",
+            "403",
+        )):
+            return line
+
+    tail = [x.strip() for x in merged_lines if (x or "").strip()]
+    if tail:
+        return tail[-1][:700]
+
+    return f"{tool_name} exited with code {code}"
+    
 async def ytdlp_download(
     url,
     fmt_key,
@@ -306,11 +359,14 @@ async def ytdlp_download(
         print(" ".join(cmd))
 
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
 
         last_edit = 0
         last_pct = -1
+        stdout_lines = []
 
         while True:
             line = await proc.stdout.readline()
@@ -318,6 +374,7 @@ async def ytdlp_download(
                 break
 
             raw = line.decode(errors="ignore").strip()
+            stdout_lines.append(raw)
             print("[YTDLP STDOUT]", raw)
 
             if "|" not in raw:
@@ -349,18 +406,26 @@ async def ytdlp_download(
 
                 last_edit = now
 
-        stdout, stderr = await proc.communicate()
+        stdout_rest, stderr = await proc.communicate()
 
-        if stdout:
+        stdout_text = "\n".join(stdout_lines)
+        if stdout_rest:
+            rest_text = stdout_rest.decode(errors="ignore")
+            if rest_text:
+                stdout_text = (stdout_text + "\n" + rest_text).strip() if stdout_text else rest_text
+
+        stderr_text = stderr.decode(errors="ignore") if stderr else ""
+
+        if stdout_text:
             print("\n[YTDLP STDOUT REMAIN]")
-            print(stdout.decode(errors="ignore"))
+            print(stdout_text)
 
-        if stderr:
+        if stderr_text:
             print("\n[YTDLP STDERR]")
-            print(stderr.decode(errors="ignore"))
+            print(stderr_text)
 
         print("[YTDLP EXIT CODE]", proc.returncode)
-        return proc.returncode
+        return proc.returncode, stdout_text, stderr_text
 
     start_ts = __import__("time").time()
 
@@ -382,9 +447,9 @@ async def ytdlp_download(
             "-o", out_tpl,
             url,
         ]
-        code = await run(cmd)
+        code, stdout_text, stderr_text = await run(cmd)
         if code != 0:
-            return None
+            raise RuntimeError(_extract_tool_error(stdout_text, stderr_text, code, "yt-dlp"))
 
     else:
         if is_x:
@@ -428,39 +493,40 @@ async def ytdlp_download(
             cmd.insert(1, "--ignore-errors")
             cmd.insert(2, "--no-abort-on-error")
 
-        code = await run(cmd)
+        code, stdout_text, stderr_text = await run(cmd)
+        yt_error = _extract_tool_error(stdout_text, stderr_text, code, "yt-dlp")
 
         if code != 0:
-                if is_ig:
-                    picked = _pick_latest_media_file(start_ts, job_id)
-                    if picked:
-                        return {
-                            "path": picked,
-                            "title": _extract_title_from_path(picked, job_id),
-                        }
-            
-                print("[YTDLP] video failed → trying gallery-dl fallback")
-            
-                fallback = await gallerydl_fallback(
-                    url=url,
-                    job_id=job_id,
-                    bot=bot,
-                    chat_id=chat_id,
-                    status_msg_id=status_msg_id,
-                )
-            
-                if fallback:
-                    return fallback
-            
-                if is_ig:
-                    picked = _pick_latest_media_file(start_ts, job_id)
-                    if picked:
-                        return {
-                            "path": picked,
-                            "title": _extract_title_from_path(picked, job_id),
-                        }
-            
-                return None
+            if is_ig:
+                picked = _pick_latest_media_file(start_ts, job_id)
+                if picked:
+                    return {
+                        "path": picked,
+                        "title": _extract_title_from_path(picked, job_id),
+                    }
+
+            print("[YTDLP] video failed → trying gallery-dl fallback")
+
+            fallback = await gallerydl_fallback(
+                url=url,
+                job_id=job_id,
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+            )
+
+            if fallback:
+                return fallback
+
+            if is_ig:
+                picked = _pick_latest_media_file(start_ts, job_id)
+                if picked:
+                    return {
+                        "path": picked,
+                        "title": _extract_title_from_path(picked, job_id),
+                    }
+
+            raise RuntimeError(yt_error)
 
     def media_priority(p):
         p = p.lower()
@@ -484,7 +550,7 @@ async def ytdlp_download(
 
     print("[YTDLP OUTPUT FILES]", files)
     if not files:
-        return None
+        raise RuntimeError("yt-dlp selesai tapi file output tidak ditemukan")
 
     picked = files[0]
     title = title_gallerydl(picked, job_id, url)
