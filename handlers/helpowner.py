@@ -21,7 +21,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "<b>Owner Commands</b>\n"
         "<i>Administrative & system-level controls</i>\n\n"
-
+    
         "<b>System Management</b>\n"
         "• <code>/update</code> — Update system Bot.\n"
         "• <code>/speedtest</code> — Run server speed test.\n"
@@ -29,14 +29,22 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/autodel</code> — Manage auto delete asupan settings.\n"
         "• <code>/wlc</code> — Configure welcome message.\n"
         "• <code>/restart</code> — Restart the bot.\n\n"
-
+    
         "<b>Access & Billing</b>\n"
         "• <code>/cookies</code> — Update cookies via Telegram.\n"
-        "• <code>/premium</code> — Manage premium users.\n\n"
-
+        "• <code>/premium</code> — Manage premium users.\n"
+        "• <code>/addsudo</code> — Add sudo user.\n"
+        "• <code>/rmsudo</code> — Remove sudo user.\n"
+        "• <code>/sudolist</code> — List sudo users.\n\n"
+    
         "<b>Asupan Management</b>\n"
         "• <code>/asupann</code> — Manage asupan.\n\n"
-
+    
+        "<b>Backup System</b>\n"
+        "• <code>/backup</code> — Create data backup.\n"
+        "• <code>/restore</code> — Restore from backup file.\n"
+        "• <code>/autobackup</code> — Enable/disable auto backup.\n\n"
+    
         "<b>Caca Settings</b>\n"
         "• <code>/cacaa</code> — enable/disable/list/status.\n"
     )
