@@ -1,41 +1,83 @@
 #!/usr/bin/env bash
 set -e
 
-echo "== Installer =="
+echo "== Group Bot Installer =="
 echo
 
 if [[ $EUID -ne 0 ]]; then
   echo "Please run as root:"
-  echo "sudo bash install.sh"
+  echo "sudo bash $0"
   exit 1
 fi
 
-echo "[1/6] Installing system dependencies..."
-apt update
-apt install -y \
-  python3 \
-  python3-venv \
-  python3-pip \
-  git \
-  ffmpeg \
-  curl \
-  unzip \
-  build-essential \
-  libjpeg-dev \
-  zlib1g-dev \
-  cmake \
-  libssl-dev \
-  gperf
+# Detect Package Manager
+if command -v apt-get >/dev/null 2>&1; then
+    PM="apt"
+elif command -v dnf >/dev/null 2>&1; then
+    PM="dnf"
+elif command -v yum >/dev/null 2>&1; then
+    PM="yum"
+elif command -v pacman >/dev/null 2>&1; then
+    PM="pacman"
+elif command -v zypper >/dev/null 2>&1; then
+    PM="zypper"
+elif command -v apk >/dev/null 2>&1; then
+    PM="apk"
+else
+    echo "Unsupported package manager. Please install dependencies manually."
+    exit 1
+fi
+
+echo "[1/6] Installing system dependencies using $PM..."
+
+case "$PM" in
+    apt)
+        apt-get update
+        apt-get install -y python3 python3-venv python3-pip git ffmpeg curl unzip build-essential libjpeg-dev zlib1g-dev cmake libssl-dev gperf
+        ;;
+    dnf|yum)
+        $PM install -y epel-release || true
+        $PM install -y python3 python3-pip git ffmpeg curl unzip gcc gcc-c++ make libjpeg-turbo-devel zlib-devel cmake openssl-devel gperf
+        ;;
+    pacman)
+        pacman -Sy --noconfirm --needed python python-pip git ffmpeg curl unzip base-devel libjpeg-turbo zlib cmake openssl gperf
+        ;;
+    zypper)
+        zypper refresh
+        zypper install -y python3 python3-pip git ffmpeg curl unzip gcc gcc-c++ make libjpeg8-devel zlib-devel cmake libopenssl-devel gperf
+        ;;
+    apk)
+        apk update
+        apk add python3 py3-pip git ffmpeg curl unzip build-base jpeg-dev zlib-dev cmake openssl-dev gperf
+        ;;
+esac
 
 echo
 echo "[2/6] Installing Node.js..."
 
 if ! command -v node >/dev/null 2>&1; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt install -y nodejs
-  echo "✔ Node.js installed"
+    case "$PM" in
+        apt)
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+            apt-get install -y nodejs
+            ;;
+        dnf|yum)
+            curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+            $PM install -y nodejs
+            ;;
+        pacman)
+            pacman -S --noconfirm --needed nodejs npm
+            ;;
+        zypper)
+            zypper install -y nodejs npm
+            ;;
+        apk)
+            apk add nodejs npm
+            ;;
+    esac
+    echo "✔ Node.js installed"
 else
-  echo "✔ Node.js already installed"
+    echo "✔ Node.js already installed"
 fi
 
 echo
@@ -63,16 +105,18 @@ if ! command -v speedtest >/dev/null 2>&1; then
       SPEEDTEST_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz"
       ;;
     *)
-      echo "Unsupported architecture: $ARCH"
-      exit 1
+      echo "Unsupported architecture for Speedtest Ookla: $ARCH"
+      echo "Skipping Speedtest installation..."
+      SPEEDTEST_URL=""
       ;;
   esac
 
-  curl -L "$SPEEDTEST_URL" | tar zx
-  mv speedtest /usr/bin/speedtest
-  chmod +x /usr/bin/speedtest
-
-  echo "✔ Speedtest installed"
+  if [[ -n "$SPEEDTEST_URL" ]]; then
+      curl -L "$SPEEDTEST_URL" | tar zx
+      mv speedtest /usr/local/bin/speedtest || mv speedtest /usr/bin/speedtest
+      chmod +x /usr/local/bin/speedtest 2>/dev/null || chmod +x /usr/bin/speedtest
+      echo "✔ Speedtest installed"
+  fi
 else
   echo "✔ Speedtest already installed"
 fi
@@ -111,8 +155,14 @@ fi
 echo
 echo "[6/6] Creating virtual environment..."
 
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+else
+    PYTHON_CMD="python"
+fi
+
 if [ ! -d "venv" ]; then
-  python3 -m venv venv
+  $PYTHON_CMD -m venv venv
 fi
 
 source venv/bin/activate
