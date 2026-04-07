@@ -10,7 +10,7 @@ from handlers.asupan import (
 from utils.config import LOG_CHAT_ID
 from handlers.welcome import load_welcome_chats, init_welcome_db, load_verified
 from handlers.nsfw import nsfw_db_init
-
+from handlers.backup import start_auto_backup
 from database import premium_service
 from handlers import caca
 
@@ -42,6 +42,12 @@ async def startup_tasks(app):
         log.info("✓ Caca background initialized")
     except Exception as e:
         log.warning(f"Caca init failed: {e}")
+
+    try:
+        start_auto_backup(app)
+        log.info("✓ Auto backup loop started")
+    except Exception as e:
+        log.warning(f"Auto backup init failed: {e}")
 
     await asyncio.sleep(2)
 
