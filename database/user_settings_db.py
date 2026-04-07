@@ -1,8 +1,6 @@
-import os
 import time
-import sqlite3
 
-USER_SETTINGS_DB = "data/user_settings.sqlite3"
+from database.db import get_db
 
 DEFAULT_SETTINGS = {
     "force_autodl": 0,
@@ -12,165 +10,71 @@ DEFAULT_SETTINGS = {
 }
 
 
-def _connect():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(USER_SETTINGS_DB)
-    con.execute("PRAGMA journal_mode=WAL;")
-    con.execute("PRAGMA synchronous=NORMAL;")
-    return con
-
-
 def init_user_settings_db():
-    con = _connect()
-    try:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_settings (
-                user_id INTEGER PRIMARY KEY,
-                force_autodl INTEGER NOT NULL DEFAULT 0,
-                autodl_format TEXT NOT NULL DEFAULT 'ask',
-                youtube_resolution INTEGER NOT NULL DEFAULT 0,
-                music_format TEXT NOT NULL DEFAULT 'flac',
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _ensure_user(user_id: int):
-    init_user_settings_db()
-    con = _connect()
-    try:
-        now = float(time.time())
-        con.execute(
-            """
-            INSERT OR IGNORE INTO user_settings
-            (user_id, force_autodl, autodl_format, youtube_resolution, music_format, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(user_id),
-                DEFAULT_SETTINGS["force_autodl"],
-                DEFAULT_SETTINGS["autodl_format"],
-                DEFAULT_SETTINGS["youtube_resolution"],
-                DEFAULT_SETTINGS["music_format"],
-                now,
-            ),
-        )
-        con.commit()
-    finally:
-        con.close()
+    db = get_db()
+    db.user_settings.create_index("user_id", unique=True)
 
 
 def get_user_settings(user_id: int) -> dict:
-    _ensure_user(user_id)
-    con = _connect()
-    try:
-        row = con.execute(
-            """
-            SELECT force_autodl, autodl_format, youtube_resolution, music_format
-            FROM user_settings
-            WHERE user_id=?
-            LIMIT 1
-            """,
-            (int(user_id),),
-        ).fetchone()
+    db = get_db()
+    
+    doc = db.user_settings.find_one({"user_id": int(user_id)})
+    
+    if not doc:
+        return dict(DEFAULT_SETTINGS)
 
-        if not row:
-            return dict(DEFAULT_SETTINGS)
+    return {
+        "force_autodl": doc.get("force_autodl", DEFAULT_SETTINGS["force_autodl"]),
+        "autodl_format": doc.get("autodl_format", DEFAULT_SETTINGS["autodl_format"]),
+        "youtube_resolution": doc.get("youtube_resolution", DEFAULT_SETTINGS["youtube_resolution"]),
+        "music_format": doc.get("music_format", DEFAULT_SETTINGS["music_format"]),
+    }
 
-        return {
-            "force_autodl": int(row[0] or 0),
-            "autodl_format": str(row[1] or "ask"),
-            "youtube_resolution": int(row[2] or 0),
-            "music_format": str(row[3] or "flac"),
-        }
-    finally:
-        con.close()
+
+def _update_setting(user_id: int, field_name: str, value):
+    db = get_db()
+    now = float(time.time())
+    
+    set_on_insert = {k: v for k, v in DEFAULT_SETTINGS.items() if k != field_name}
+    
+    db.user_settings.update_one(
+        {"user_id": int(user_id)},
+        {
+            "$set": {field_name: value, "updated_at": now},
+            "$setOnInsert": set_on_insert
+        },
+        upsert=True
+    )
 
 
 def set_force_autodl(user_id: int, enabled: bool):
-    _ensure_user(user_id)
-    con = _connect()
-    try:
-        con.execute(
-            """
-            UPDATE user_settings
-            SET force_autodl=?, updated_at=?
-            WHERE user_id=?
-            """,
-            (1 if enabled else 0, float(time.time()), int(user_id)),
-        )
-        con.commit()
-    finally:
-        con.close()
+    val = 1 if enabled else 0
+    _update_setting(user_id, "force_autodl", val)
 
 
 def set_autodl_format(user_id: int, value: str):
-    value = str(value or "ask").lower().strip()
-    if value not in ("ask", "video", "mp3"):
-        value = "ask"
-
-    _ensure_user(user_id)
-    con = _connect()
-    try:
-        con.execute(
-            """
-            UPDATE user_settings
-            SET autodl_format=?, updated_at=?
-            WHERE user_id=?
-            """,
-            (value, float(time.time()), int(user_id)),
-        )
-        con.commit()
-    finally:
-        con.close()
+    val = str(value or "ask").lower().strip()
+    if val not in ("ask", "video", "mp3"):
+        val = "ask"
+    
+    _update_setting(user_id, "autodl_format", val)
 
 
 def set_youtube_resolution(user_id: int, value: int):
     try:
-        value = int(value)
+        val = int(value)
     except Exception:
-        value = 0
+        val = 0
 
-    if value not in (0, 360, 480, 720, 1080):
-        value = 0
+    if val not in (0, 360, 480, 720, 1080):
+        val = 0
 
-    _ensure_user(user_id)
-    con = _connect()
-    try:
-        con.execute(
-            """
-            UPDATE user_settings
-            SET youtube_resolution=?, updated_at=?
-            WHERE user_id=?
-            """,
-            (value, float(time.time()), int(user_id)),
-        )
-        con.commit()
-    finally:
-        con.close()
+    _update_setting(user_id, "youtube_resolution", val)
 
 
 def set_music_format(user_id: int, value: str):
-    value = str(value or "flac").lower().strip()
-    if value not in ("flac", "mp3"):
-        value = "flac"
+    val = str(value or "flac").lower().strip()
+    if val not in ("flac", "mp3"):
+        val = "flac"
 
-    _ensure_user(user_id)
-    con = _connect()
-    try:
-        con.execute(
-            """
-            UPDATE user_settings
-            SET music_format=?, updated_at=?
-            WHERE user_id=?
-            """,
-            (value, float(time.time()), int(user_id)),
-        )
-        con.commit()
-    finally:
-        con.close()
+    _update_setting(user_id, "music_format", val)

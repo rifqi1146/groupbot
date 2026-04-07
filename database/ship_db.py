@@ -1,129 +1,63 @@
-import os
 import time
-import sqlite3
 
-SHIP_DB = "data/ship.sqlite3"
+from database.db import get_db
 
 def _ship_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(SHIP_DB)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                updated_at REAL NOT NULL,
-                PRIMARY KEY (chat_id, user_id)
-            )
-            """
-        )
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS ship_state (
-                chat_id INTEGER PRIMARY KEY,
-                last_time INTEGER NOT NULL
-            )
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
+    db = get_db()
+    db.users.create_index([("chat_id", 1), ("user_id", 1)], unique=True)  
+    db.ship_state.create_index("chat_id", unique=True)
 
-
-def _db():
-    _ship_db_init()
-    return sqlite3.connect(SHIP_DB)
 
 def add_user(chat_id: int, user):
     if not user or user.is_bot:
         return
 
-    con = _db()
-    try:
-        now = time.time()
-        con.execute(
-            """
-            INSERT INTO users (chat_id, user_id, name, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(chat_id, user_id) DO UPDATE SET
-              name=excluded.name,
-              updated_at=excluded.updated_at
-            """,
-            (int(chat_id), int(user.id), str(user.first_name or ""), float(now)),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _ship_state_has_updated_at(con) -> bool:
-    try:
-        cur = con.execute("PRAGMA table_info(ship_state)")
-        cols = {row[1] for row in cur.fetchall() if row and len(row) > 1}
-        return "updated_at" in cols
-    except Exception:
-        return False
-
+    db = get_db()
+    now = time.time()
+    
+    db.users.update_one(
+        {"chat_id": int(chat_id), "user_id": int(user.id)},
+        {"$set": {
+            "name": str(user.first_name or ""),
+            "updated_at": float(now)
+        }},
+        upsert=True
+    )
 
 def get_ship_last_time(chat_id: int) -> int:
-    con = _db()
-    try:
-        cur = con.execute(
-            "SELECT last_time FROM ship_state WHERE chat_id=?",
-            (int(chat_id),),
-        )
-        row = cur.fetchone()
-        return int(row[0]) if row and row[0] is not None else 0
-    finally:
-        con.close()
+    db = get_db()
+    
+    doc = db.ship_state.find_one(
+        {"chat_id": int(chat_id)}, 
+        {"last_time": 1}
+    )
+    
+    return int(doc["last_time"]) if doc and "last_time" in doc else 0
 
 
 def set_ship_last_time(chat_id: int, last_time: int):
-    con = _db()
-    try:
-        now_ts = time.time()
-        has_updated_at = _ship_state_has_updated_at(con)
+    db = get_db()
+    now_ts = time.time()
 
-        if has_updated_at:
-            con.execute(
-                """
-                INSERT INTO ship_state (chat_id, last_time, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(chat_id) DO UPDATE SET
-                  last_time=excluded.last_time,
-                  updated_at=excluded.updated_at
-                """,
-                (int(chat_id), int(last_time), float(now_ts)),
-            )
-        else:
-            con.execute(
-                """
-                INSERT INTO ship_state (chat_id, last_time)
-                VALUES (?, ?)
-                ON CONFLICT(chat_id) DO UPDATE SET
-                  last_time=excluded.last_time
-                """,
-                (int(chat_id), int(last_time)),
-            )
-
-        con.commit()
-    finally:
-        con.close()
+    db.ship_state.update_one(
+        {"chat_id": int(chat_id)},
+        {"$set": {
+            "last_time": int(last_time),
+            "updated_at": float(now_ts)
+        }},
+        upsert=True
+    )
 
 
 def get_users_pool(chat_id: int) -> list[dict]:
-    con = _db()
-    try:
-        cur = con.execute(
-            "SELECT user_id, name FROM users WHERE chat_id=?",
-            (int(chat_id),),
-        )
-        rows = cur.fetchall()
-        return [{"id": int(uid), "name": str(name)} for (uid, name) in rows if uid is not None]
-    finally:
-        con.close()
-        
+    db = get_db()
+
+    cursor = db.users.find(
+        {"chat_id": int(chat_id)}, 
+        {"user_id": 1, "name": 1}
+    )
+    
+    return [
+        {"id": int(doc["user_id"]), "name": str(doc.get("name", ""))} 
+        for doc in cursor if "user_id" in doc
+    ]

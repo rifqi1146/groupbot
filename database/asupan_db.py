@@ -1,98 +1,73 @@
 import time
-from database.db import db_session
-from handlers.asupan.constants import ASUPAN_DB_PATH
+from pymongo import UpdateOne
+from database.db import get_db
+
 from handlers.asupan import state
 
-
 def _asupan_db_init():
-    with db_session(ASUPAN_DB_PATH) as con:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS asupan_groups (
-                source_file TEXT NOT NULL,
-                chat_id INTEGER NOT NULL,
-                added_at REAL NOT NULL,
-                PRIMARY KEY (source_file, chat_id)
-            )
-            """
-        )
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS asupan_autodel (
-                source_file TEXT NOT NULL,
-                chat_id INTEGER NOT NULL,
-                enabled INTEGER NOT NULL,
-                updated_at REAL NOT NULL,
-                PRIMARY KEY (source_file, chat_id)
-            )
-            """
-        )
-        con.commit()
+    db = get_db()
+    db.asupan_groups.create_index(
+        [("source_file", 1), ("chat_id", 1)], unique=True
+    )
+    db.asupan_autodel.create_index(
+        [("source_file", 1), ("chat_id", 1)], unique=True
+    )
 
+def _db_load_enabled(collection_name: str) -> set[int]:
+    db = get_db()
+    col = db[collection_name]
 
-def _db_load_enabled(table: str) -> set[int]:
-    with db_session(ASUPAN_DB_PATH) as con:
-        if table == "asupan_autodel":
-            cur = con.execute("SELECT chat_id FROM asupan_autodel WHERE enabled=1")
-            rows = cur.fetchall()
-            if rows:
-                return {int(r[0]) for r in rows if r and r[0] is not None}
+    if collection_name == "asupan_autodel":
+        cursor = col.find({"enabled": 1}, {"chat_id": 1})
+    else:
+        cursor = col.find({}, {"chat_id": 1})
+        
+    rows = list(cursor)
+    return {int(r["chat_id"]) for r in rows if "chat_id" in r}
 
-            cur = con.execute("SELECT chat_id FROM asupan_autodel")
-            rows = cur.fetchall()
-            return {int(r[0]) for r in rows if r and r[0] is not None}
+def _db_set_enabled(collection_name: str, values: set[int]):
+    db = get_db()
+    col = db[collection_name]
+    now = time.time()
+    src = "runtime"
+    values_list = list(values)
 
-        cur = con.execute("SELECT chat_id FROM asupan_groups")
-        rows = cur.fetchall()
-        return {int(r[0]) for r in rows if r and r[0] is not None}
-
-
-def _db_set_enabled(table: str, values: set[int]):
-    with db_session(ASUPAN_DB_PATH) as con:
-        try:
-            con.execute("BEGIN")
-            now = time.time()
-            src = "runtime"
-
-            if table == "asupan_autodel":
-                con.execute("UPDATE asupan_autodel SET enabled=0, updated_at=?", (now,))
-                if values:
-                    con.executemany(
-                        """
-                        INSERT INTO asupan_autodel (source_file, chat_id, enabled, updated_at)
-                        VALUES (?, ?, 1, ?)
-                        ON CONFLICT(source_file, chat_id) DO UPDATE SET
-                          enabled=1,
-                          updated_at=excluded.updated_at
-                        """,
-                        [(src, int(cid), now) for cid in values],
+    try:
+        if collection_name == "asupan_autodel":
+            col.update_many({}, {"$set": {"enabled": 0, "updated_at": now}})
+            if values_list:
+                operations = [
+                    UpdateOne(
+                        {"source_file": src, "chat_id": cid},
+                        {"$set": {"enabled": 1, "updated_at": now}},
+                        upsert=True
                     )
+                    for cid in values_list
+                ]
+                col.bulk_write(operations)
+        
+        else: # asupan_groups
+            if values_list:
+                operations = [
+                    UpdateOne(
+                        {"source_file": src, "chat_id": cid},
+                        {"$set": {"added_at": now}},
+                        upsert=True
+                    )
+                    for cid in values_list
+                ]
+                col.bulk_write(operations)
+                
+                col.delete_many({
+                    "source_file": src,
+                    "chat_id": {"$nin": values_list}
+                })
             else:
-                if values:
-                    con.executemany(
-                        """
-                        INSERT INTO asupan_groups (source_file, chat_id, added_at)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(source_file, chat_id) DO UPDATE SET
-                          added_at=excluded.added_at
-                        """,
-                        [(src, int(cid), now) for cid in values],
-                    )
+                col.delete_many({"source_file": src})
 
-                con.execute(
-                    "DELETE FROM asupan_groups WHERE source_file=? AND chat_id NOT IN (%s)"
-                    % (",".join("?" * len(values)) if values else "-1"),
-                    (src, *[int(cid) for cid in values]) if values else (src,),
-                )
-
-            con.execute("COMMIT")
-        except Exception:
-            try:
-                con.execute("ROLLBACK")
-            except Exception:
-                pass
-            raise
-
+    except Exception as e:
+        print(f"[!] Error saving asupan DB: {e}")
+        raise e
 
 def load_asupan_groups():
     try:
@@ -101,51 +76,32 @@ def load_asupan_groups():
     except Exception:
         state.ASUPAN_ENABLED_CHATS = set()
 
-
 def save_asupan_groups():
     try:
-        _asupan_db_init()
         _db_set_enabled("asupan_groups", state.ASUPAN_ENABLED_CHATS)
     except Exception:
         pass
 
-
 def is_asupan_enabled(chat_id: int) -> bool:
     return chat_id in state.ASUPAN_ENABLED_CHATS
 
-
 def load_autodel_groups():
     try:
-        _asupan_db_init()
         state.AUTODEL_ENABLED_CHATS = _db_load_enabled("asupan_autodel")
     except Exception:
         state.AUTODEL_ENABLED_CHATS = set()
 
-
 def save_autodel_groups():
     try:
-        _asupan_db_init()
         _db_set_enabled("asupan_autodel", state.AUTODEL_ENABLED_CHATS)
     except Exception:
         pass
 
-
 def is_autodel_enabled(chat_id: int) -> bool:
     return chat_id in state.AUTODEL_ENABLED_CHATS
 
-
 def init_asupan_storage():
-    try:
-        _asupan_db_init()
-    except Exception:
-        pass
-
-    try:
-        load_asupan_groups()
-    except Exception:
-        pass
-
-    try:
-        load_autodel_groups()
-    except Exception:
-        pass
+    """Called at bot start in bot.py"""
+    _asupan_db_init()
+    load_asupan_groups()
+    load_autodel_groups()

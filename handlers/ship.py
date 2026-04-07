@@ -1,7 +1,6 @@
-import os
 import random
-import sqlite3
 import time
+import html
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -10,9 +9,7 @@ from database.ship_db import (
     get_users_pool,
     set_ship_last_time,
     get_ship_last_time,
-    _ship_state_has_updated_at,
     add_user,
-    _db,
     _ship_db_init,
 )
 
@@ -41,7 +38,8 @@ SHIP_ENDING = [
 ]
 
 def tag(u):
-    return f'<a href="tg://user?id={u["id"]}">{u["name"]}</a>'
+    name = html.escape(u.get("name", "Unknown"))
+    return f'<a href="tg://user?id={u["id"]}">{name}</a>'
 
 async def _is_chat_member(bot, chat_id: int, user_id: int) -> bool:
     try:
@@ -50,13 +48,11 @@ async def _is_chat_member(bot, chat_id: int, user_id: int) -> bool:
     except Exception:
         return False
         
-        
 def format_remaining(seconds: int) -> str:
     h = seconds // 3600
     m = (seconds % 3600) // 60
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
-
 
 async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -73,6 +69,7 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ <b>Ship masih cooldown</b>\n\n"
             f"Pasangan berikutnya bisa dipilih dalam:\n"
             f"<code>{format_remaining(remain)}</code>",
+            reply_to_message_id=msg.message_id,
             parse_mode="HTML",
         )
 
@@ -82,14 +79,14 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if msg.reply_to_message and msg.reply_to_message.from_user:
         u = msg.reply_to_message.from_user
-        if await _is_chat_member(context.bot, chat.id, u.id):
+        if not u.is_bot and await _is_chat_member(context.bot, chat.id, u.id):
             add_user(chat.id, u)
             users.append({"id": u.id, "name": str(u.first_name or "Unknown")})
 
     for ent in msg.entities or []:
         if ent.type == "text_mention" and ent.user:
             u = ent.user
-            if await _is_chat_member(context.bot, chat.id, u.id):
+            if not u.is_bot and await _is_chat_member(context.bot, chat.id, u.id):
                 add_user(chat.id, u)
                 users.append({"id": u.id, "name": str(u.first_name or "Unknown")})
 
@@ -115,6 +112,9 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users = [picked[0], picked[1]]
 
     u1, u2 = users[:2]
+    
+    if u1["id"] == u2["id"]:
+        return await msg.reply_text("❌ Kamu nggak bisa di-ship sama diri sendiri, ngenes amat.")
 
     percent = random.randint(50, 100)
     msg_text = random.choice(SHIP_MESSAGES)
@@ -136,7 +136,6 @@ async def ship_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     set_ship_last_time(chat.id, now)
-
 
 try:
     _ship_db_init()

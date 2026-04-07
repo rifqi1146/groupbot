@@ -13,6 +13,9 @@ from handlers.messages import register_messages
 from utils.startup import startup_tasks
 from utils.config import BOT_TOKEN
 
+from database.asupan_db import init_asupan_storage
+from database.caca_db import init as init_caca_db
+
 BOT_USERNAME = None
 
 LOCAL_BOT_API_HOST = os.getenv("LOCAL_BOT_API_HOST", "127.0.0.1")
@@ -89,11 +92,20 @@ def _build_application():
 async def post_init(app):
     global BOT_USERNAME
 
+    # 1. Clear Webhook
     try:
         await app.bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
         log.warning(f"Failed to clear webhook/pending updates: {e}")
 
+    try:
+        init_asupan_storage()
+        await init_caca_db()
+        log.info("✓ Database storages initialized")
+    except Exception as e:
+        log.error(f"⚠️ Database init failed: {e}")
+
+    # 3. Get Bot Info
     try:
         me = await app.bot.get_me()
         BOT_USERNAME = (me.username or "").lower()
@@ -104,6 +116,7 @@ async def post_init(app):
     except Exception as e:
         log.warning(f"Failed to get bot username: {e}")
 
+    # 4. Set Commands
     try:
         await app.bot.set_my_commands([
             ("start", "Check bot status"),
@@ -117,6 +130,7 @@ async def post_init(app):
             ("dl", "Download video"),
             ("ask", "Ask Gemini AI"),
             ("music", "Search music"),
+            ("deezdl", "Download Lossless FLAC"),
             ("caca", "Chat sama caca 😍"),
             ("groq", "Ask Groq AI"),
             ("gsearch", "Google search"),
@@ -127,6 +141,7 @@ async def post_init(app):
     except Exception as e:
         log.warning(f"Failed to set bot commands: {e}")
 
+    # 5. Cache Commands
     try:
         cmds = await app.bot.get_my_commands()
         app.bot_data["commands"] = cmds
@@ -159,8 +174,8 @@ def main():
     banner = r"""
  ／l、
 （ﾟ､ ｡ ７   < Nya~ Master! Bot waking up…
-  l  ~ヽ       • Loading neko engine
-  じしf_, )     • Warming up whiskers
+ l  ~ヽ       • Loading neko engine
+ じしf_, )     • Warming up whiskers
                • Injecting kawaii into memory…
  💖 Ready to serve!
 """

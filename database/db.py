@@ -1,36 +1,35 @@
-import sqlite3
-import os
 import logging
-from contextlib import contextmanager
-from typing import Generator
+from pymongo import MongoClient
+from pymongo.database import Database
 
 log = logging.getLogger(__name__)
 
-def get_connection(db_path: str) -> sqlite3.Connection:
-    """
-    Creates a connection to the SQLite database with standard performance settings.
-    Ensures the directory for db_path exists.
-    """
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
+MONGO_URI = "mongodb://localhost:27017/"
+MONGO_DB_NAME = "telegram_bot_db"
 
-    con = sqlite3.connect(db_path)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-    except sqlite3.Error as e:
-        log.warning(f"Failed to set PRAGMA for {db_path}: {e}")
-    return con
+_client: MongoClient | None = None
 
-@contextmanager
-def db_session(db_path: str) -> Generator[sqlite3.Connection, None, None]:
-    """
-    Context manager for database connections.
-    Closes the connection automatically.
-    """
-    con = get_connection(db_path)
-    try:
-        yield con
-    finally:
-        con.close()
+
+def get_db() -> Database:
+    global _client
+    
+    if _client is None:
+        try:
+            _client = MongoClient(MONGO_URI)
+            
+            _client.admin.command('ping')
+            log.info("Successfully connected to MongoDB!")
+            
+        except Exception as e:
+            log.error(f"Failed to connect to MongoDB: {e}")
+            raise e
+            
+    return _client[MONGO_DB_NAME]
+
+
+def close_connection():
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
+        log.info("The connection to MongoDB has been closed.")

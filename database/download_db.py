@@ -1,70 +1,47 @@
-import os
 import time
-import sqlite3
+import re
+from pymongo import UpdateOne
+
 from utils.config import OWNER_ID
 from database.premium import is_premium
-from handlers.dl.constants import AUTO_DL_DB
+from database.db import get_db
+
 
 def _auto_dl_db_init():
-    os.makedirs("data", exist_ok=True)
-    con = sqlite3.connect(AUTO_DL_DB)
-    try:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS auto_dl_groups (
-                chat_id INTEGER PRIMARY KEY,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
+    db = get_db()
+    db.auto_dl_groups.create_index("chat_id", unique=True)
 
-def _auto_dl_db():
-    _auto_dl_db_init()
-    return sqlite3.connect(AUTO_DL_DB)
 
 def load_auto_dl() -> set[int]:
-    con = _auto_dl_db()
-    try:
-        cur = con.execute("SELECT chat_id FROM auto_dl_groups WHERE enabled=1")
-        return {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
-    finally:
-        con.close()
+    db = get_db()
+    _auto_dl_db_init()
+    cursor = db.auto_dl_groups.find({"enabled": 1}, {"chat_id": 1})
+    return {int(doc["chat_id"]) for doc in cursor if "chat_id" in doc}
+
 
 def save_auto_dl(groups: set[int]):
-    con = _auto_dl_db()
+    db = get_db()
+    _auto_dl_db_init()
+    now = time.time()
+    
     try:
-        now = time.time()
-        con.execute("BEGIN")
-        con.execute("UPDATE auto_dl_groups SET enabled=0, updated_at=?", (float(now),))
+        db.auto_dl_groups.update_many({}, {"$set": {"enabled": 0, "updated_at": float(now)}})
+
         if groups:
-            con.executemany(
-                """
-                INSERT INTO auto_dl_groups (chat_id, enabled, updated_at)
-                VALUES (?, 1, ?)
-                ON CONFLICT(chat_id) DO UPDATE SET
-                  enabled=1,
-                  updated_at=excluded.updated_at
-                """,
-                [(int(cid), float(now)) for cid in groups],
-            )
-        con.execute("COMMIT")
-    except Exception:
-        try:
-            con.execute("ROLLBACK")
-        except Exception:
-            pass
-        raise
-    finally:
-        con.close()
+            operations = [
+                UpdateOne(
+                    {"chat_id": int(cid)},
+                    {"$set": {"enabled": 1, "updated_at": float(now)}},
+                    upsert=True
+                )
+                for cid in groups
+            ]
+            db.auto_dl_groups.bulk_write(operations)
+            
+    except Exception as e:
+        raise e
 
 def extract_domain(url: str) -> str:
-    import re
     u = (url or "").strip().lower()
     if not u.startswith(("http://", "https://")):
         u = "https://" + u
