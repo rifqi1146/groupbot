@@ -243,4 +243,4 @@ echo "5. Run:"
 echo "   source venv/bin/activate"
 echo "   python main.py"
 echo
-echo "Happy 🚀"
+echo "Happy"
