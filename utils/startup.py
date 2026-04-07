@@ -6,7 +6,6 @@ from handlers.asupan import (
     load_asupan_groups,
     load_autodel_groups,
 )
-
 from utils.config import LOG_CHAT_ID
 from handlers.welcome import load_welcome_chats, init_welcome_db, load_verified
 from handlers.nsfw import nsfw_db_init
@@ -45,7 +44,6 @@ async def startup_tasks(app):
 
     try:
         start_auto_backup(app)
-        log.info("✓ Auto backup loop started")
     except Exception as e:
         log.warning(f"Auto backup init failed: {e}")
 

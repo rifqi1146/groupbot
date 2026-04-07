@@ -152,18 +152,28 @@ async def run_backup(bot):
 async def auto_backup_loop(app):
     await asyncio.sleep(10)
 
-    while True:
-        try:
-            enabled = _get_setting("auto_backup", "0") == "1"
+    try:
+        while True:
+            try:
+                enabled = _get_setting("auto_backup", "0") == "1"
 
-            if enabled:
-                await run_backup(app.bot)
-                log.info("✓ Auto backup sent")
+                if enabled:
+                    await run_backup(app.bot)
+                    log.info("✓ Auto backup sent")
 
-        except Exception as e:
-            log.warning(f"Auto backup failed: {e}")
+            except Exception as e:
+                log.warning(f"Auto backup failed: {e}")
 
-        await asyncio.sleep(INTERVAL)
+            await asyncio.sleep(INTERVAL)
+
+    except asyncio.CancelledError:
+        log.info("✓ Auto backup loop cancelled")
+        raise
+
+    finally:
+        current_task = app.bot_data.get("auto_backup_task")
+        if current_task is asyncio.current_task():
+            app.bot_data.pop("auto_backup_task", None)
 
 
 def start_auto_backup(app):
@@ -174,14 +184,22 @@ def start_auto_backup(app):
         log.info("✓ Auto backup loop already running")
         return existing_task
 
-    if hasattr(app, "create_task"):
-        task = app.create_task(auto_backup_loop(app))
-    else:
-        task = asyncio.create_task(auto_backup_loop(app))
-
+    task = asyncio.create_task(auto_backup_loop(app))
     app.bot_data["auto_backup_task"] = task
     log.info("✓ Auto backup loop started")
     return task
+
+
+async def stop_auto_backup(app):
+    task = app.bot_data.get("auto_backup_task")
+    if not task or task.done():
+        return
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -293,3 +311,5 @@ async def autobackup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(f"Auto backup is {status}")
 
     return await msg.reply_text("Usage: /autobackup [enable|disable|status]")
+    
+    
