@@ -32,5 +32,5 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(quiz_callback, pattern=r"^quizans:"))
     app.add_handler(CallbackQueryHandler(broadcast_callback, pattern=r"^broadcast:"))
     app.add_handler(CallbackQueryHandler(setting_callback, pattern=r"^setting:"))
-    app.add_handler(CallbackQueryHandler(manga_callback, pattern="^(readmanga_|switchch_|nav_|msearch_|detailmanga_|ignore|close_manga)"))
+    app.add_handler(CallbackQueryHandler(manga_callback, pattern="^(readmanga_|switchch_|nav_|msearch_|detailmanga_|ignore|close_manga|nhsearch_|nhdetail_|nhread_|nhnav_)"))
     
