@@ -34,6 +34,7 @@ from handlers.kang import kang_cmd
 from handlers.setting import setting_cmd
 from handlers.dl.instagram_scrape import ig_cmd
 from handlers.backup import backup_cmd, restore_cmd, autobackup_cmd
+from handlers.manga import manga_cmd, nh_cmd, maid_cmd
 
 from handlers.caca import (
     meta_query,
@@ -117,6 +118,9 @@ COMMAND_HANDLERS = [
     ("asupann", asupann_cmd, False),
     ("nsfw", nsfw_cmd, False),
     ("restart", restart_cmd, False),
+    ("manga", manga_cmd, False),
+    ("nh", nh_cmd, False),
+    ("maid", maid_cmd, False)
 ]
 
 def register_commands(app):
