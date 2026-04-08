@@ -188,6 +188,30 @@ def save_pending_welcome(chat_id: int, user_id: int, message_id: int):
         con.close()
 
 
+def load_pending_welcomes() -> list[dict]:
+    con = _connect()
+    try:
+        cur = con.execute(
+            """
+            SELECT chat_id, user_id, message_id, created_at
+            FROM pending_welcome
+            """
+        )
+        rows = cur.fetchall()
+
+        return [
+            {
+                "chat_id": int(chat_id),
+                "user_id": int(user_id),
+                "message_id": int(message_id),
+                "created_at": float(created_at),
+            }
+            for chat_id, user_id, message_id, created_at in rows
+        ]
+    finally:
+        con.close()
+
+
 def pop_pending_welcome(chat_id: int, user_id: int) -> int | None:
     con = _connect()
     try:
