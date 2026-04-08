@@ -33,6 +33,7 @@ PENDING_VERIFY_TASKS = {}
 WELCOME_MESSAGES = {}
 
 VERIFY_TIMEOUT_SECONDS = 5 * 60
+RESTORE_MAX_AGE_SECONDS = 15 * 60
 
 
 def _verify_key(chat_id: int, user_id: int):
@@ -124,6 +125,21 @@ async def _delete_welcome_message(bot, chat_id: int, user_id: int):
             log.warning(f"Failed to delete welcome message for user {user_id} in chat {chat_id}: {e}")
 
 
+async def _cleanup_pending_state(bot, chat_id: int, user_id: int, delete_message: bool = True):
+    key = _verify_key(chat_id, user_id)
+    _cancel_verify_timeout(chat_id, user_id)
+    PENDING_VERIFY.pop(key, None)
+
+    if delete_message:
+        await _delete_welcome_message(bot, chat_id, user_id)
+    else:
+        WELCOME_MESSAGES.pop(key, None)
+        try:
+            pop_pending_welcome(chat_id, user_id)
+        except Exception:
+            pass
+
+
 async def _kick_unverified_user(bot, chat_id: int, user_id: int):
     try:
         await bot.ban_chat_member(
@@ -141,6 +157,24 @@ async def _kick_unverified_user(bot, chat_id: int, user_id: int):
         log.warning(f"Failed to auto-kick user {user_id} from chat {chat_id}: {e}")
 
 
+async def _should_enforce_verification(bot, chat_id: int, user_id: int) -> bool:
+    if user_id in VERIFIED_USERS.get(chat_id, set()):
+        return False
+
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+    except Exception as e:
+        log.warning(f"Failed to inspect member {user_id} in chat {chat_id}: {e}")
+        return False
+
+    status = getattr(member, "status", None)
+
+    if status in ("left", "kicked"):
+        return False
+
+    return status == "restricted"
+
+
 async def _verify_timeout_worker(app, chat_id: int, user_id: int, delay: float):
     key = _verify_key(chat_id, user_id)
 
@@ -150,6 +184,11 @@ async def _verify_timeout_worker(app, chat_id: int, user_id: int, delay: float):
 
         pending = PENDING_VERIFY.get(key)
         if not pending:
+            return
+
+        should_enforce = await _should_enforce_verification(app.bot, chat_id, user_id)
+        if not should_enforce:
+            await _cleanup_pending_state(app.bot, chat_id, user_id, delete_message=True)
             return
 
         PENDING_VERIFY.pop(key, None)
@@ -186,6 +225,7 @@ async def restore_pending_verifications(app):
 
     now = time.time()
     restored = 0
+    skipped = 0
     expired = 0
 
     for row in rows:
@@ -195,6 +235,24 @@ async def restore_pending_verifications(app):
         created_at = float(row["created_at"])
 
         key = _verify_key(chat_id, user_id)
+
+        elapsed = max(0, now - created_at)
+        if elapsed > RESTORE_MAX_AGE_SECONDS:
+            try:
+                pop_pending_welcome(chat_id, user_id)
+            except Exception:
+                pass
+            WELCOME_MESSAGES.pop(key, None)
+            PENDING_VERIFY.pop(key, None)
+            skipped += 1
+            continue
+
+        should_enforce = await _should_enforce_verification(app.bot, chat_id, user_id)
+        if not should_enforce:
+            await _cleanup_pending_state(app.bot, chat_id, user_id, delete_message=True)
+            skipped += 1
+            continue
+
         WELCOME_MESSAGES[key] = message_id
         PENDING_VERIFY[key] = {
             "chat_id": chat_id,
@@ -203,7 +261,6 @@ async def restore_pending_verifications(app):
             "created_at": created_at,
         }
 
-        elapsed = max(0, now - created_at)
         remaining = VERIFY_TIMEOUT_SECONDS - elapsed
 
         if remaining <= 0:
@@ -213,9 +270,9 @@ async def restore_pending_verifications(app):
             _schedule_verify_timeout(app, chat_id, user_id, delay=remaining)
             restored += 1
 
-    if restored or expired:
+    if restored or skipped or expired:
         log.info(
-            f"✓ Restored pending welcomes: active={restored}, expired={expired}"
+            f"✓ Restored pending welcomes: active={restored}, skipped={skipped}, expired={expired}"
         )
 
 
@@ -299,6 +356,9 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_username = ""
 
     for user in msg.new_chat_members:
+        if user.id in VERIFIED_USERS.get(chat.id, set()):
+            continue
+
         try:
             await context.bot.restrict_chat_member(
                 chat_id=chat.id,
