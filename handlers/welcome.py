@@ -396,7 +396,8 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(
             "Usage:\n"
             "<code>/wlc enable</code>\n"
-            "<code>/wlc disable</code>",
+            "<code>/wlc disable</code>\n"
+            "<code>/wlc status</code>",
             parse_mode="HTML"
         )
 
@@ -412,8 +413,16 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.info(f"Welcome disabled in chat {chat.id}")
         return await msg.reply_text("<b>Welcome message disabled.</b>", parse_mode="HTML")
 
+    if arg == "status":
+        enabled = chat.id in WELCOME_ENABLED_CHATS
+        status_text = "enabled" if enabled else "disabled"
+        return await msg.reply_text(
+            f"<b>Welcome status:</b> <code>{status_text}</code>",
+            parse_mode="HTML"
+        )
+
     return await msg.reply_text(
-        "Use <code>enable</code> or <code>disable</code>.",
+        "Use <code>enable</code>, <code>disable</code>, or <code>status</code>.",
         parse_mode="HTML"
     )
 
