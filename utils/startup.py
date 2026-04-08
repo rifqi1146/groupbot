@@ -12,6 +12,7 @@ from handlers.nsfw import nsfw_db_init
 from handlers.backup import start_auto_backup
 from database import premium_service
 from handlers import caca
+from handlers.welcome import restore_pending_verifications
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +30,12 @@ async def startup_tasks(app):
         log.info("✓ NSFW, Asupan & welcome cache loaded")
     except Exception as e:
         log.warning(f"Startup cache load failed: {e}")
-
+    
+    try:
+        await restore_pending_verifications(app)
+    except Exception as e:
+        log.warning(f"Welcome verify restore failed: {e}")
+        
     try:
         premium_service.init()
         log.info("✓ Premium cache initialized")

@@ -1,6 +1,7 @@
 import random
 import time
 import logging
+import asyncio
 
 from telegram import (
     Update,
@@ -18,6 +19,7 @@ from database.welcome_db import (
     load_verified,
     save_verified_user,
     save_pending_welcome,
+    load_pending_welcomes,
     pop_pending_welcome,
 )
 
@@ -27,7 +29,14 @@ logger = logging.getLogger(__name__)
 WELCOME_ENABLED_CHATS = set()
 VERIFIED_USERS = {}
 PENDING_VERIFY = {}
+PENDING_VERIFY_TASKS = {}
 WELCOME_MESSAGES = {}
+
+VERIFY_TIMEOUT_SECONDS = 5 * 60
+
+
+def _verify_key(chat_id: int, user_id: int):
+    return (chat_id, user_id)
 
 
 def generate_math_question(user_id: int, chat_id: int):
@@ -53,9 +62,13 @@ def generate_math_question(user_id: int, chat_id: int):
     options = list(wrong) + [answer]
     random.shuffle(options)
 
-    PENDING_VERIFY[user_id] = {
+    key = _verify_key(chat_id, user_id)
+    current = PENDING_VERIFY.get(key) or {}
+    PENDING_VERIFY[key] = {
         "chat_id": chat_id,
-        "answer": answer
+        "user_id": user_id,
+        "answer": answer,
+        "created_at": current.get("created_at", time.time()),
     }
 
     buttons = [
@@ -80,6 +93,130 @@ def verify_keyboard(user_id: int, chat_id: int, bot_username: str):
             )
         ]
     ])
+
+
+def _cancel_verify_timeout(chat_id: int, user_id: int):
+    key = _verify_key(chat_id, user_id)
+    task = PENDING_VERIFY_TASKS.pop(key, None)
+    if task and not task.done():
+        task.cancel()
+
+
+async def _delete_welcome_message(bot, chat_id: int, user_id: int):
+    key = _verify_key(chat_id, user_id)
+    msg_id = WELCOME_MESSAGES.pop(key, None)
+
+    if msg_id is None:
+        try:
+            msg_id = pop_pending_welcome(chat_id, user_id)
+        except Exception:
+            msg_id = None
+    else:
+        try:
+            pop_pending_welcome(chat_id, user_id)
+        except Exception:
+            pass
+
+    if msg_id:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception as e:
+            log.warning(f"Failed to delete welcome message for user {user_id} in chat {chat_id}: {e}")
+
+
+async def _kick_unverified_user(bot, chat_id: int, user_id: int):
+    try:
+        await bot.ban_chat_member(
+            chat_id=chat_id,
+            user_id=user_id,
+            revoke_messages=False,
+        )
+        await bot.unban_chat_member(
+            chat_id=chat_id,
+            user_id=user_id,
+            only_if_banned=True,
+        )
+        log.info(f"Auto-kicked unverified user {user_id} from chat {chat_id}")
+    except Exception as e:
+        log.warning(f"Failed to auto-kick user {user_id} from chat {chat_id}: {e}")
+
+
+async def _verify_timeout_worker(app, chat_id: int, user_id: int, delay: float):
+    key = _verify_key(chat_id, user_id)
+
+    try:
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+        pending = PENDING_VERIFY.get(key)
+        if not pending:
+            return
+
+        PENDING_VERIFY.pop(key, None)
+
+        await _delete_welcome_message(app.bot, chat_id, user_id)
+        await _kick_unverified_user(app.bot, chat_id, user_id)
+
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.warning(f"Verification timeout worker failed for user {user_id} in chat {chat_id}: {e}")
+    finally:
+        current_task = PENDING_VERIFY_TASKS.get(key)
+        if current_task is asyncio.current_task():
+            PENDING_VERIFY_TASKS.pop(key, None)
+
+
+def _schedule_verify_timeout(app, chat_id: int, user_id: int, delay: float = VERIFY_TIMEOUT_SECONDS):
+    key = _verify_key(chat_id, user_id)
+
+    _cancel_verify_timeout(chat_id, user_id)
+
+    task = asyncio.create_task(_verify_timeout_worker(app, chat_id, user_id, delay))
+    PENDING_VERIFY_TASKS[key] = task
+    return task
+
+
+async def restore_pending_verifications(app):
+    try:
+        rows = load_pending_welcomes()
+    except Exception as e:
+        log.warning(f"Failed to load pending welcome verifications: {e}")
+        return
+
+    now = time.time()
+    restored = 0
+    expired = 0
+
+    for row in rows:
+        chat_id = int(row["chat_id"])
+        user_id = int(row["user_id"])
+        message_id = int(row["message_id"])
+        created_at = float(row["created_at"])
+
+        key = _verify_key(chat_id, user_id)
+        WELCOME_MESSAGES[key] = message_id
+        PENDING_VERIFY[key] = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "answer": None,
+            "created_at": created_at,
+        }
+
+        elapsed = max(0, now - created_at)
+        remaining = VERIFY_TIMEOUT_SECONDS - elapsed
+
+        if remaining <= 0:
+            _schedule_verify_timeout(app, chat_id, user_id, delay=0)
+            expired += 1
+        else:
+            _schedule_verify_timeout(app, chat_id, user_id, delay=remaining)
+            restored += 1
+
+    if restored or expired:
+        log.info(
+            f"✓ Restored pending welcomes: active={restored}, expired={expired}"
+        )
 
 
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -147,8 +284,19 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
 
+    if not msg or not chat:
+        return
+
     if chat.id not in WELCOME_ENABLED_CHATS:
         return
+
+    bot_username = context.bot.username
+    if not bot_username:
+        try:
+            me = await context.bot.get_me()
+            bot_username = me.username or ""
+        except Exception:
+            bot_username = ""
 
     for user in msg.new_chat_members:
         try:
@@ -166,12 +314,12 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         caption = (
             f"👋 <b>Hello {fullname}</b>\n"
-            f"Welcome to <b>{chatname}</b> ✨\n\n"
+            f"Welcome to <b>{chatname}</b>\n\n"
             f"🧾 <b>User Information</b>\n"
             f"🆔 ID       : <code>{user.id}</code>\n"
             f"👤 Name     : {fullname}\n"
             f"🔖 Username : {username}\n\n"
-            f"🔐 <b>Please complete verification first</b>"
+            f"🔐 <b>Please complete verification first</b>\n"
         )
 
         try:
@@ -181,43 +329,63 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=chat.id,
                     photo=photos.photos[0][-1].file_id,
                     caption=caption,
-                    reply_markup=verify_keyboard(user.id, chat.id, context.bot.username),
+                    reply_markup=verify_keyboard(user.id, chat.id, bot_username),
                     parse_mode="HTML"
                 )
             else:
                 sent = await msg.reply_text(
                     caption,
-                    reply_markup=verify_keyboard(user.id, chat.id, context.bot.username),
+                    reply_markup=verify_keyboard(user.id, chat.id, bot_username),
                     parse_mode="HTML"
                 )
         except Exception:
             sent = await msg.reply_text(
                 caption,
-                reply_markup=verify_keyboard(user.id, chat.id, context.bot.username),
+                reply_markup=verify_keyboard(user.id, chat.id, bot_username),
                 parse_mode="HTML"
             )
 
-        WELCOME_MESSAGES[user.id] = (chat.id, sent.message_id)
+        key = _verify_key(chat.id, user.id)
+        WELCOME_MESSAGES[key] = sent.message_id
+
         try:
             save_pending_welcome(chat.id, user.id, sent.message_id)
         except Exception:
             pass
 
+        PENDING_VERIFY[key] = {
+            "chat_id": chat.id,
+            "user_id": user.id,
+            "answer": None,
+            "created_at": time.time(),
+        }
+        _schedule_verify_timeout(context.application, chat.id, user.id)
+
 
 async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
+    if not update.message or not context.args:
         return
 
     arg = context.args[0]
     if not arg.startswith("verify_"):
         return
 
-    _, chat_id, user_id = arg.split("_")
-    chat_id = int(chat_id)
-    user_id = int(user_id)
+    try:
+        _, chat_id, user_id = arg.split("_")
+        chat_id = int(chat_id)
+        user_id = int(user_id)
+    except Exception:
+        return
 
     if update.effective_user.id != user_id:
         return
+
+    key = _verify_key(chat_id, user_id)
+    pending = PENDING_VERIFY.get(key)
+    if not pending:
+        return await update.message.reply_text(
+            "Verification expired or not found. Please rejoin the group."
+        )
 
     text, keyboard = generate_math_question(user_id, chat_id)
 
@@ -232,19 +400,31 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
     global VERIFIED_USERS
 
     q = update.callback_query
+    if not q or not q.data:
+        return
 
-    _, chat_id, user_id, chosen = q.data.split(":")
-    chat_id = int(chat_id)
-    user_id = int(user_id)
-    chosen = int(chosen)
+    try:
+        _, chat_id, user_id, chosen = q.data.split(":")
+        chat_id = int(chat_id)
+        user_id = int(user_id)
+        chosen = int(chosen)
+    except Exception:
+        await q.answer("Invalid verification data.", show_alert=True)
+        return
 
     if q.from_user.id != user_id:
         await q.answer("Not your button.", show_alert=True)
         return
 
-    pending = PENDING_VERIFY.get(user_id)
+    key = _verify_key(chat_id, user_id)
+    pending = PENDING_VERIFY.get(key)
+
     if not pending or pending["chat_id"] != chat_id:
         await q.answer("Invalid verification.", show_alert=True)
+        return
+
+    if pending.get("answer") is None:
+        await q.answer("Please start verification from the bot chat first.", show_alert=True)
         return
 
     if chosen != pending["answer"]:
@@ -275,8 +455,8 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
                 can_send_voice_notes=True,
             )
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"Failed to unrestrict verified user {user_id} in chat {chat_id}: {e}")
 
     VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
     try:
@@ -284,28 +464,10 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
     except Exception:
         pass
 
-    PENDING_VERIFY.pop(user_id, None)
+    _cancel_verify_timeout(chat_id, user_id)
+    PENDING_VERIFY.pop(key, None)
 
-    msg_id = None
-    if user_id in WELCOME_MESSAGES:
-        try:
-            g_chat_id, m_id = WELCOME_MESSAGES.pop(user_id)
-            if g_chat_id == chat_id:
-                msg_id = m_id
-        except Exception:
-            msg_id = None
-
-    if msg_id is None:
-        try:
-            msg_id = pop_pending_welcome(chat_id, user_id)
-        except Exception:
-            msg_id = None
-
-    if msg_id:
-        try:
-            await context.bot.delete_message(chat_id, msg_id)
-        except Exception:
-            pass
+    await _delete_welcome_message(context.bot, chat_id, user_id)
 
     try:
         await q.message.edit_text("Verification successful. You may return to the group.")
@@ -333,4 +495,3 @@ try:
     VERIFIED_USERS = load_verified()
 except Exception:
     VERIFIED_USERS = {}
-    
