@@ -2,6 +2,7 @@ import random
 import time
 import logging
 import asyncio
+import html as html_lib
 
 from telegram import (
     Update,
@@ -101,6 +102,83 @@ def _cancel_verify_timeout(chat_id: int, user_id: int):
     task = PENDING_VERIFY_TASKS.pop(key, None)
     if task and not task.done():
         task.cancel()
+
+
+def _build_welcome_texts(user, chat):
+    raw_username = f"@{user.username}" if user.username else "—"
+    raw_fullname = user.full_name or "Unknown User"
+    raw_chatname = chat.title or "this group"
+
+    username_html = html_lib.escape(raw_username)
+    fullname_html = html_lib.escape(raw_fullname)
+    chatname_html = html_lib.escape(raw_chatname)
+
+    username_plain = raw_username
+    fullname_plain = raw_fullname
+    chatname_plain = raw_chatname
+
+    html_caption = (
+        f"👋 <b>Hello {fullname_html}</b>\n"
+        f"Welcome to <b>{chatname_html}</b>\n\n"
+        f"🧾 <b>User Information</b>\n"
+        f"🆔 ID       : <code>{user.id}</code>\n"
+        f"👤 Name     : {fullname_html}\n"
+        f"🔖 Username : {username_html}\n\n"
+        f"🔐 <b>Please complete verification first</b>\n"
+        f"⏳ <i>You have 5 minutes to verify.</i>"
+    )
+
+    plain_caption = (
+        f"👋 Hello {fullname_plain}\n"
+        f"Welcome to {chatname_plain}\n\n"
+        f"🧾 User Information\n"
+        f"🆔 ID       : {user.id}\n"
+        f"👤 Name     : {fullname_plain}\n"
+        f"🔖 Username : {username_plain}\n\n"
+        f"🔐 Please complete verification first\n"
+        f"⏳ You have 5 minutes to verify."
+    )
+
+    return html_caption, plain_caption
+
+
+async def _send_welcome_message(context: ContextTypes.DEFAULT_TYPE, chat, user, bot_username: str):
+    html_caption, plain_caption = _build_welcome_texts(user, chat)
+    keyboard = verify_keyboard(user.id, chat.id, bot_username)
+
+    photos = None
+    try:
+        photos = await context.bot.get_user_profile_photos(user_id=user.id, limit=1)
+    except Exception as e:
+        log.warning(f"Failed to get profile photos for user {user.id} in chat {chat.id}: {e}")
+
+    if photos and photos.total_count > 0:
+        try:
+            return await context.bot.send_photo(
+                chat_id=chat.id,
+                photo=photos.photos[0][-1].file_id,
+                caption=html_caption,
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            log.warning(f"Failed to send welcome photo for user {user.id} in chat {chat.id}: {e}")
+
+    try:
+        return await context.bot.send_message(
+            chat_id=chat.id,
+            text=html_caption,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning(f"Failed to send HTML welcome text for user {user.id} in chat {chat.id}: {e}")
+
+    return await context.bot.send_message(
+        chat_id=chat.id,
+        text=plain_caption,
+        reply_markup=keyboard,
+    )
 
 
 async def _delete_welcome_message(bot, chat_id: int, user_id: int):
@@ -324,11 +402,13 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg == "enable":
         WELCOME_ENABLED_CHATS.add(chat.id)
         save_welcome_chats(WELCOME_ENABLED_CHATS)
+        log.info(f"Welcome enabled in chat {chat.id}")
         return await msg.reply_text("<b>Welcome message enabled.</b>", parse_mode="HTML")
 
     if arg == "disable":
         WELCOME_ENABLED_CHATS.discard(chat.id)
         save_welcome_chats(WELCOME_ENABLED_CHATS)
+        log.info(f"Welcome disabled in chat {chat.id}")
         return await msg.reply_text("<b>Welcome message disabled.</b>", parse_mode="HTML")
 
     return await msg.reply_text(
@@ -344,7 +424,11 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not chat:
         return
 
+    if not msg.new_chat_members:
+        return
+
     if chat.id not in WELCOME_ENABLED_CHATS:
+        log.info(f"Welcome skipped in chat {chat.id}: not enabled")
         return
 
     bot_username = context.bot.username
@@ -368,50 +452,24 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             log.warning(f"Failed to restrict user {user.id} in chat {chat.id}: {e}")
 
-        username = f"@{user.username}" if user.username else "—"
-        fullname = user.full_name
-        chatname = chat.title or "this group"
-
-        caption = (
-            f"👋 <b>Hello {fullname}</b>\n"
-            f"Welcome to <b>{chatname}</b>\n\n"
-            f"🧾 <b>User Information</b>\n"
-            f"🆔 ID       : <code>{user.id}</code>\n"
-            f"👤 Name     : {fullname}\n"
-            f"🔖 Username : {username}\n\n"
-            f"🔐 <b>Please complete verification first</b>\n"
-        )
-
         try:
-            photos = await context.bot.get_user_profile_photos(user_id=user.id, limit=1)
-            if photos.total_count > 0:
-                sent = await context.bot.send_photo(
-                    chat_id=chat.id,
-                    photo=photos.photos[0][-1].file_id,
-                    caption=caption,
-                    reply_markup=verify_keyboard(user.id, chat.id, bot_username),
-                    parse_mode="HTML"
-                )
-            else:
-                sent = await msg.reply_text(
-                    caption,
-                    reply_markup=verify_keyboard(user.id, chat.id, bot_username),
-                    parse_mode="HTML"
-                )
-        except Exception:
-            sent = await msg.reply_text(
-                caption,
-                reply_markup=verify_keyboard(user.id, chat.id, bot_username),
-                parse_mode="HTML"
+            sent = await _send_welcome_message(
+                context=context,
+                chat=chat,
+                user=user,
+                bot_username=bot_username,
             )
+        except Exception as e:
+            log.warning(f"Welcome message failed for user {user.id} in chat {chat.id}: {e}")
+            continue
 
         key = _verify_key(chat.id, user.id)
         WELCOME_MESSAGES[key] = sent.message_id
 
         try:
             save_pending_welcome(chat.id, user.id, sent.message_id)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"Failed to save pending welcome for user {user.id} in chat {chat.id}: {e}")
 
         PENDING_VERIFY[key] = {
             "chat_id": chat.id,
