@@ -54,6 +54,7 @@ def init_welcome_db():
 
         con.commit()
 
+        # Migration lama untuk welcome_chats
         cur = con.execute("PRAGMA table_info(welcome_chats)")
         cols = cur.fetchall()
         pk_on_chat_id = False
@@ -89,6 +90,19 @@ def init_welcome_db():
             )
 
             con.execute("DROP TABLE welcome_chats_old")
+            con.commit()
+
+        # Migration untuk pending_welcome.created_at
+        cur = con.execute("PRAGMA table_info(pending_welcome)")
+        pending_cols = {row[1] for row in cur.fetchall()}
+        if "created_at" not in pending_cols:
+            con.execute(
+                "ALTER TABLE pending_welcome ADD COLUMN created_at REAL NOT NULL DEFAULT 0"
+            )
+            con.execute(
+                "UPDATE pending_welcome SET created_at=? WHERE created_at=0",
+                (time.time(),)
+            )
             con.commit()
 
     finally:
@@ -160,6 +174,18 @@ def save_verified_user(chat_id: int, user_id: int):
         con.execute(
             "UPDATE verified_users SET verified_at=? WHERE chat_id=? AND user_id=?",
             (now, int(chat_id), int(user_id)),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def delete_verified_user(chat_id: int, user_id: int):
+    con = _connect()
+    try:
+        con.execute(
+            "DELETE FROM verified_users WHERE chat_id=? AND user_id=?",
+            (int(chat_id), int(user_id)),
         )
         con.commit()
     finally:

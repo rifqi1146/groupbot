@@ -19,6 +19,7 @@ from database.welcome_db import (
     save_welcome_chats,
     load_verified,
     save_verified_user,
+    delete_verified_user,
     save_pending_welcome,
     load_pending_welcomes,
     pop_pending_welcome,
@@ -440,8 +441,16 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_username = ""
 
     for user in msg.new_chat_members:
+        # Rejoin = wajib captcha lagi, jadi hapus verified lama
         if user.id in VERIFIED_USERS.get(chat.id, set()):
-            continue
+            VERIFIED_USERS.setdefault(chat.id, set()).discard(user.id)
+            try:
+                delete_verified_user(chat.id, user.id)
+            except Exception as e:
+                log.warning(f"Failed to clear verified status for rejoined user {user.id} in chat {chat.id}: {e}")
+
+        # Bersihin pending/welcome lama kalau ada
+        await _cleanup_pending_state(context.bot, chat.id, user.id, delete_message=True)
 
         try:
             await context.bot.restrict_chat_member(
