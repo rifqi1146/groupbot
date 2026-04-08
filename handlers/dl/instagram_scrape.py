@@ -3,6 +3,7 @@ import re
 import html
 import uuid
 import hashlib
+import logging
 import asyncio
 import aiohttp
 import aiofiles
@@ -16,7 +17,17 @@ from handlers.join import require_join_or_block
 from utils.http import get_http_session
 from .constants import TMP_DIR
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+log = logging.getLogger(__name__)
+
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/127.0.0.0 Safari/537.36"
+)
+
+
+class RetryableDownloadError(RuntimeError):
+    pass
 
 
 def is_instagram_url(url: str) -> bool:
@@ -27,116 +38,10 @@ def is_instagram_url(url: str) -> bool:
         text = (url or "").lower()
         return "instagram.com" in text or "instagr.am" in text
 
-async def igdl_download_for_fallback(bot, chat_id: int, reply_to: int, status_msg_id: int, url: str) -> dict:
-    downloaded = []
 
-    result = await igdl_scrape(url)
-    urls = result.get("urls") or []
-    source = result.get("source") or "Instagram Scraper"
+def _ensure_tmp_dir():
+    os.makedirs(TMP_DIR, exist_ok=True)
 
-    if not urls:
-        raise RuntimeError("No downloadable media found")
-
-    try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="<b>Downloading Instagram media...</b>",
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
-
-    failed_count = 0
-
-    for media_url in urls:
-        try:
-            downloaded.append(await _download_remote_media(media_url, source=source))
-        except Exception as e:
-            failed_count += 1
-            print("[IG SCRAPER DOWNLOAD ERROR]", media_url, repr(e))
-            continue
-
-    if not downloaded:
-        raise RuntimeError("All media downloads failed")
-
-    downloaded = _dedupe_downloaded_items(downloaded)
-
-    if not downloaded:
-        raise RuntimeError("All media downloads were duplicates or invalid")
-
-    if len(downloaded) == 1:
-        item = downloaded[0]
-        title = "Instagram Post" if item["type"] == "photo" else "Instagram Video"
-        return {
-            "path": item["path"],
-            "title": title,
-        }
-
-    return {
-        "items": downloaded,
-        "title": "Instagram Media",
-        "source": source,
-    }
-
-
-async def send_instagram_fallback_result(bot, chat_id: int, reply_to: int, result: dict):
-    if result.get("items"):
-        await _send_ig_result(
-            bot=bot,
-            chat_id=chat_id,
-            reply_to=reply_to,
-            items=result["items"],
-            source=result.get("source") or "Instagram Scraper",
-        )
-        return
-
-    path = result.get("path")
-    if not path or not os.path.exists(path):
-        raise RuntimeError("Fallback result path not found")
-
-    title = result.get("title") or "Instagram Media"
-    bot_name = (await bot.get_me()).first_name or "Bot"
-    caption = _build_caption("Instagram Scraper", 1, bot_name)
-
-    with open(path, "rb") as f:
-        if path.lower().endswith((".mp4", ".mov", ".m4v", ".webm")):
-            await bot.send_video(
-                chat_id=chat_id,
-                video=f,
-                caption=caption,
-                parse_mode="HTML",
-                reply_to_message_id=reply_to,
-                supports_streaming=True,
-            )
-        else:
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=f,
-                caption=caption,
-                parse_mode="HTML",
-                reply_to_message_id=reply_to,
-            )
-
-
-async def cleanup_instagram_fallback_result(result: dict):
-    if not isinstance(result, dict):
-        return
-
-    path = result.get("path")
-    if path and os.path.exists(path):
-        try:
-            os.remove(path)
-        except Exception:
-            pass
-
-    for item in result.get("items") or []:
-        try:
-            p = item.get("path")
-            if p and os.path.exists(p):
-                os.remove(p)
-        except Exception:
-            pass
 
 def _truncate_text(text: str, limit: int) -> str:
     text = (text or "").strip()
@@ -151,45 +56,11 @@ def _truncate_text(text: str, limit: int) -> str:
 
 def _build_caption(source: str, count: int, bot_name: str, max_len: int = 1024) -> str:
     clean_title = "Instagram Media" if count > 1 else "Instagram Post"
-    clean_desc = f"Source: {source}" if source else ""
     clean_bot = (bot_name or "Bot").strip() or "Bot"
 
-    footer_plain = f"🪄 Powered by {clean_bot}"
-
-    def plain_len(t: str, d: str) -> int:
-        if d:
-            return len(f"📸 {t}\n\n{d}\n\n{footer_plain}")
-        return len(f"📸 {t}\n\n{footer_plain}")
-
-    short_title = clean_title
-    short_desc = clean_desc
-
-    if short_desc:
-        allowed_desc = max_len - len(f"📸 {short_title}\n\n\n\n{footer_plain}")
-        short_desc = _truncate_text(short_desc, allowed_desc)
-
-    if plain_len(short_title, short_desc) > max_len:
-        if short_desc:
-            allowed_title = max_len - len(f"📸 \n\n{short_desc}\n\n{footer_plain}")
-        else:
-            allowed_title = max_len - len(f"📸 \n\n{footer_plain}")
-        short_title = _truncate_text(short_title, allowed_title)
-
-    if short_desc and plain_len(short_title, short_desc) > max_len:
-        allowed_desc = max_len - len(f"📸 {short_title}\n\n\n\n{footer_plain}")
-        short_desc = _truncate_text(short_desc, allowed_desc)
-
-    if not short_title:
-        short_title = "Instagram Media"
-
-    if short_desc:
-        return (
-            f"<blockquote expandable>📸 {html.escape(short_title)}</blockquote>\n\n"
-            f"🪄 <i>Powered by {html.escape(clean_bot)}</i>"
-        )
-
+    title = _truncate_text(clean_title, max_len)
     return (
-        f"<blockquote expandable>📸 {html.escape(short_title)}</blockquote>\n\n"
+        f"<blockquote expandable>📸 {html.escape(title)}</blockquote>\n\n"
         f"🪄 <i>Powered by {html.escape(clean_bot)}</i>"
     )
 
@@ -205,14 +76,14 @@ def _uniq_media_urls(items: list[str]) -> list[str]:
 
         try:
             parsed = urlparse(raw)
-            key = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            normalized = parsed._replace(fragment="").geturl()
         except Exception:
-            key = raw
+            normalized = raw
 
-        if key in seen:
+        if normalized in seen:
             continue
 
-        seen.add(key)
+        seen.add(normalized)
         out.append(raw)
 
     return out
@@ -263,7 +134,11 @@ async def _indown(url: str) -> dict:
     ) as resp:
         page_data = await resp.text()
 
-    token_match = re.search(r'''name=["']_token["'][^>]*value=["']([^"']+)["']''', page_data, flags=re.I)
+    token_match = re.search(
+        r'''name=["']_token["'][^>]*value=["']([^"']+)["']''',
+        page_data,
+        flags=re.I,
+    )
     token = token_match.group(1).strip() if token_match else ""
     if not token:
         return {"status": False, "message": "Token Indown not found"}
@@ -303,13 +178,9 @@ async def _indown(url: str) -> dict:
 async def _snapsave(url: str) -> dict:
     session = await get_http_session()
 
-    form = {
-        "url": url,
-    }
-
     async with session.post(
         "https://snapsave.app/id/action.php?lang=id",
-        data=form,
+        data={"url": url},
         headers={
             "Origin": "https://snapsave.app",
             "Referer": "https://snapsave.app/id/download-video-instagram",
@@ -371,7 +242,33 @@ def _guess_ext(url: str, content_type: str) -> str:
     return ".jpg"
 
 
+def _is_valid_media_content_type(content_type: str) -> bool:
+    ctype = (content_type or "").split(";")[0].strip().lower()
+
+    if not ctype:
+        return False
+
+    if ctype.startswith("image/") or ctype.startswith("video/"):
+        return True
+
+    if ctype == "application/octet-stream":
+        return True
+
+    return False
+
+
+def _is_retryable_download_exception(exc: Exception) -> bool:
+    if isinstance(exc, RetryableDownloadError):
+        return True
+
+    if isinstance(exc, (aiohttp.ClientError, asyncio.TimeoutError)):
+        return True
+
+    return False
+
+
 async def _download_remote_media(url: str, source: str = "") -> dict:
+    _ensure_tmp_dir()
     session = await get_http_session()
 
     headers = {
@@ -380,18 +277,20 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
     }
 
     lower_url = (url or "").lower()
-    source = (source or "").lower()
+    source_lower = (source or "").lower()
 
-    if "rapidcdn.app" in lower_url or source == "snapsave":
+    if "rapidcdn.app" in lower_url or source_lower == "snapsave":
         headers["Referer"] = "https://snapsave.app/"
         headers["Origin"] = "https://snapsave.app"
-    elif "cdninstagram.com" in lower_url or "fbcdn.net" in lower_url or source == "indown":
+    elif "cdninstagram.com" in lower_url or "fbcdn.net" in lower_url or source_lower == "indown":
         headers["Referer"] = "https://www.instagram.com/"
         headers["Origin"] = "https://www.instagram.com"
 
     last_error = None
 
     for attempt in range(3):
+        out_path = None
+
         try:
             async with session.get(
                 url,
@@ -399,33 +298,64 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
                 allow_redirects=True,
                 timeout=aiohttp.ClientTimeout(total=180),
             ) as resp:
+                if resp.status in (408, 429, 500, 502, 503, 504):
+                    raise RetryableDownloadError(f"Temporary download failure: HTTP {resp.status}")
+
                 if resp.status >= 400:
                     raise RuntimeError(f"Failed to download media: HTTP {resp.status}")
 
                 content_type = resp.headers.get("Content-Type", "")
-                media_type = _guess_media_type_from_url(str(resp.url))
-                if media_type != "video":
-                    if content_type.lower().startswith("video/"):
-                        media_type = "video"
-                    else:
-                        media_type = "photo"
+                if not _is_valid_media_content_type(content_type):
+                    preview = ""
+                    try:
+                        preview = await resp.text()
+                        preview = _truncate_text(preview.replace("\n", " ").strip(), 120)
+                    except Exception:
+                        preview = ""
 
-                ext = _guess_ext(str(resp.url), content_type)
+                    msg = f"Invalid media response: {content_type or 'unknown content-type'}"
+                    if preview:
+                        msg += f" ({preview})"
+                    raise RuntimeError(msg)
+
+                final_url = str(resp.url)
+                media_type = _guess_media_type_from_url(final_url)
+                if media_type != "video" and content_type.lower().startswith("video/"):
+                    media_type = "video"
+
+                ext = _guess_ext(final_url, content_type)
                 out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}{ext}")
 
+                total_written = 0
                 async with aiofiles.open(out_path, "wb") as f:
                     async for chunk in resp.content.iter_chunked(64 * 1024):
+                        if not chunk:
+                            continue
+                        total_written += len(chunk)
                         await f.write(chunk)
 
-            return {
-                "path": out_path,
-                "type": media_type,
-            }
+                if total_written <= 0:
+                    raise RuntimeError("Downloaded media is empty")
+
+                return {
+                    "path": out_path,
+                    "type": media_type,
+                }
+
         except Exception as e:
             last_error = e
-            if attempt < 2:
+
+            if out_path and os.path.exists(out_path):
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
+
+            if attempt < 2 and _is_retryable_download_exception(e):
                 await asyncio.sleep(1.2 * (attempt + 1))
-            continue
+                continue
+
+            break
 
     raise last_error or RuntimeError("Failed to download media")
 
@@ -469,7 +399,136 @@ def _dedupe_downloaded_items(items: list[dict]) -> list[dict]:
     return unique
 
 
+async def _collect_instagram_downloads(url: str) -> dict:
+    result = await igdl_scrape(url)
+    urls = _uniq_media_urls(result.get("urls") or [])
+    source = result.get("source") or "Instagram Scraper"
+
+    if not urls:
+        raise RuntimeError("No downloadable media found")
+
+    downloaded = []
+    failed_count = 0
+    last_error = None
+
+    for media_url in urls:
+        try:
+            downloaded.append(await _download_remote_media(media_url, source=source))
+        except Exception as e:
+            failed_count += 1
+            last_error = e
+            log.warning("Instagram media download failed: %s | %r", media_url, e)
+            continue
+
+    if not downloaded:
+        if last_error:
+            raise RuntimeError(f"All media downloads failed: {last_error}")
+        raise RuntimeError("All media downloads failed")
+
+    downloaded = _dedupe_downloaded_items(downloaded)
+
+    if not downloaded:
+        raise RuntimeError("All media downloads were duplicates or invalid")
+
+    return {
+        "items": downloaded,
+        "source": source,
+        "failed_count": failed_count,
+    }
+
+
+async def igdl_download_for_fallback(bot, chat_id: int, reply_to: int, status_msg_id: int, url: str) -> dict:
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="<b>Downloading Instagram media...</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    collected = await _collect_instagram_downloads(url)
+    downloaded = collected["items"]
+    source = collected["source"]
+
+    if len(downloaded) == 1:
+        item = downloaded[0]
+        title = "Instagram Post" if item["type"] == "photo" else "Instagram Video"
+        return {
+            "path": item["path"],
+            "title": title,
+        }
+
+    return {
+        "items": downloaded,
+        "title": "Instagram Media",
+        "source": source,
+    }
+
+
+async def send_instagram_fallback_result(bot, chat_id: int, reply_to: int, result: dict):
+    if result.get("items"):
+        await _send_ig_result(
+            bot=bot,
+            chat_id=chat_id,
+            reply_to=reply_to,
+            items=result["items"],
+            source=result.get("source") or "Instagram",
+        )
+        return
+
+    path = result.get("path")
+    if not path or not os.path.exists(path):
+        raise RuntimeError("Fallback result path not found")
+
+    bot_name = (await bot.get_me()).first_name or "Bot"
+    caption = _build_caption("Instagram", 1, bot_name)
+
+    with open(path, "rb") as f:
+        if path.lower().endswith((".mp4", ".mov", ".m4v", ".webm")):
+            await bot.send_video(
+                chat_id=chat_id,
+                video=f,
+                caption=caption,
+                parse_mode="HTML",
+                reply_to_message_id=reply_to,
+                supports_streaming=True,
+            )
+        else:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=f,
+                caption=caption,
+                parse_mode="HTML",
+                reply_to_message_id=reply_to,
+            )
+
+
+async def cleanup_instagram_fallback_result(result: dict):
+    if not isinstance(result, dict):
+        return
+
+    path = result.get("path")
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+    for item in result.get("items") or []:
+        try:
+            p = item.get("path")
+            if p and os.path.exists(p):
+                os.remove(p)
+        except Exception:
+            pass
+
+
 async def _send_ig_result(bot, chat_id: int, reply_to: int, items: list[dict], source: str):
+    if not items:
+        raise RuntimeError("No media items to send")
+
     bot_name = (await bot.get_me()).first_name or "Bot"
     caption = _build_caption(source, len(items), bot_name)
     album_chunk_size = 10
@@ -586,14 +645,8 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     downloaded = []
+
     try:
-        result = await igdl_scrape(url)
-        urls = result.get("urls") or []
-        source = result.get("source") or "Instagram Scraper"
-
-        if not urls:
-            raise RuntimeError("No downloadable media found")
-
         try:
             await status.edit_text(
                 "<b>Downloading Instagram media...</b>",
@@ -602,23 +655,10 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        failed_count = 0
-
-        for media_url in urls:
-            try:
-                downloaded.append(await _download_remote_media(media_url, source=source))
-            except Exception as e:
-                failed_count += 1
-                print("[IG SCRAPER DOWNLOAD ERROR]", media_url, repr(e))
-                continue
-
-        if not downloaded:
-            raise RuntimeError("All media downloads failed")
-
-        downloaded = _dedupe_downloaded_items(downloaded)
-
-        if not downloaded:
-            raise RuntimeError("All media downloads were duplicates or invalid")
+        collected = await _collect_instagram_downloads(url)
+        downloaded = collected["items"]
+        source = collected["source"]
+        failed_count = collected["failed_count"]
 
         if failed_count:
             try:
@@ -661,7 +701,8 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         for item in downloaded:
             try:
-                if item.get("path") and os.path.exists(item["path"]):
-                    os.remove(item["path"])
+                path = item.get("path")
+                if path and os.path.exists(path):
+                    os.remove(path)
             except Exception:
                 pass
