@@ -441,7 +441,7 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_username = ""
 
     for user in msg.new_chat_members:
-        # Rejoin = wajib captcha lagi, jadi hapus verified lama
+        # Rejoin = wajib captcha lagi
         if user.id in VERIFIED_USERS.get(chat.id, set()):
             VERIFIED_USERS.setdefault(chat.id, set()).discard(user.id)
             try:
@@ -449,7 +449,7 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 log.warning(f"Failed to clear verified status for rejoined user {user.id} in chat {chat.id}: {e}")
 
-        # Bersihin pending/welcome lama kalau ada
+        # bersihin state lama kalau ada
         await _cleanup_pending_state(context.bot, chat.id, user.id, delete_message=True)
 
         try:

@@ -54,7 +54,7 @@ def init_welcome_db():
 
         con.commit()
 
-        # Migration lama untuk welcome_chats
+        # migration lama untuk welcome_chats
         cur = con.execute("PRAGMA table_info(welcome_chats)")
         cols = cur.fetchall()
         pk_on_chat_id = False
@@ -92,7 +92,7 @@ def init_welcome_db():
             con.execute("DROP TABLE welcome_chats_old")
             con.commit()
 
-        # Migration untuk pending_welcome.created_at
+        # migration untuk pending_welcome.created_at
         cur = con.execute("PRAGMA table_info(pending_welcome)")
         pending_cols = {row[1] for row in cur.fetchall()}
         if "created_at" not in pending_cols:
