@@ -2,15 +2,17 @@ import os
 import logging
 import asyncio
 import aiohttp
-import sqlite3
 import re
 import hashlib
 import urllib.parse
 from io import BytesIO
+
 from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
+
 from utils.http import get_http_session
+from database.nsfw_db import is_nsfw_allowed
 
 try:
     from PIL import Image
@@ -25,12 +27,10 @@ UPLOADS_URL = "https://uploads.mangadex.org"
 MAID_URL = "https://www.maid.my.id"
 NH_API_URL = "https://nhentai.net/api/v2"
 
-NSFW_DB = "data/nsfw.sqlite3"
-
 _http_session = None
-
-_NSFW_CACHE = {}
 _MANGA_MESSAGE_LOCKS = {}
+
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
 
 
 def _message_lock_key(chat_id: int, message_id: int):
@@ -61,7 +61,7 @@ def _move_message_lock(old_chat_id: int, old_message_id: int, new_chat_id: int, 
 async def _ensure_manga_allowed(chat) -> bool:
     if not chat:
         return False
-    return _is_nsfw_enabled(chat.id, chat.type)
+    return is_nsfw_allowed(chat.id, chat.type)
 
 
 async def _ensure_callback_lock(query) -> bool:
@@ -83,45 +83,6 @@ async def _ensure_callback_lock(query) -> bool:
     return True
 
 
-def _nsfw_db_init():
-    os.makedirs("data", exist_ok=True)
-    with sqlite3.connect(NSFW_DB) as con:
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS nsfw_groups (
-                chat_id INTEGER PRIMARY KEY,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at REAL NOT NULL
-            )
-        """)
-
-
-def _is_nsfw_enabled(chat_id: int, chat_type: str) -> bool:
-    if chat_type == "private":
-        return True
-
-    if chat_id in _NSFW_CACHE:
-        return _NSFW_CACHE[chat_id]
-
-    _nsfw_db_init()
-    with sqlite3.connect(NSFW_DB) as con:
-        cur = con.execute("SELECT enabled FROM nsfw_groups WHERE chat_id=?", (int(chat_id),))
-        row = cur.fetchone()
-        is_enabled = bool(row and int(row[0]) == 1)
-        _NSFW_CACHE[chat_id] = is_enabled
-        return is_enabled
-
-
-NH_API_KEY = os.getenv("NH_API")
-NH_HEADERS = {"User-Agent": "PrivateMangaBot/3.0 (Telegram Bot)"}
-if NH_API_KEY:
-    NH_HEADERS["Authorization"] = f"Key {NH_API_KEY}"
-    log.info("Loaded NH API Key.")
-else:
-    log.info("NH API Key not found, Running In Public Mode.")
-
-
 async def fetch_json(url, params=None, custom_headers=None):
     headers = custom_headers if custom_headers else {"User-Agent": "MangaBot/3.0"}
     session = await get_http_session()
@@ -136,7 +97,7 @@ async def fetch_json(url, params=None, custom_headers=None):
 
 async def fetch_image_bytes(url, referer="https://mangadex.org/"):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": USER_AGENT,
         "Referer": referer
     }
     session = await get_http_session()
@@ -150,7 +111,7 @@ async def fetch_image_bytes(url, referer="https://mangadex.org/"):
 
 
 async def fetch_html(url):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
+    headers = {"User-Agent": USER_AGENT}
     session = await get_http_session()
     try:
         async with session.get(url, headers=headers, timeout=10) as response:
@@ -166,7 +127,7 @@ def enforce_telegram_photo_limits(img_bytes):
         return img_bytes
 
     try:
-        img = Image.open(BytesIO(img_bytes)).convert('RGB')
+        img = Image.open(BytesIO(img_bytes)).convert("RGB")
         w, h = img.size
         new_w, new_h = w, h
         changed = False
@@ -184,7 +145,7 @@ def enforce_telegram_photo_limits(img_bytes):
             changed = True
 
         if changed:
-            resample_method = getattr(Image, 'Resampling', Image).LANCZOS
+            resample_method = getattr(Image, "Resampling", Image).LANCZOS
             img = img.resize((new_w, new_h), resample_method)
             out = BytesIO()
             img.save(out, format="JPEG", quality=85)
@@ -393,6 +354,15 @@ async def build_nh_search_list(query: str, page: int, context: ContextTypes.DEFA
     return f"🔍 Hasil nHentai: **{query}** (Page {page}/{data['num_pages']})", InlineKeyboardMarkup(keyboard)
 
 
+NH_API_KEY = os.getenv("NH_API")
+NH_HEADERS = {"User-Agent": "PrivateMangaBot/3.0 (Telegram Bot)"}
+if NH_API_KEY:
+    NH_HEADERS["Authorization"] = f"Key {NH_API_KEY}"
+    log.info("Loaded NH API Key.")
+else:
+    log.info("NH API Key not found, Running In Public Mode.")
+
+
 async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or len(context.args) < 2:
         help_txt = (
@@ -424,18 +394,18 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif source in ["maid", "maidmanga"]:
         url = f"{MAID_URL}/?s={urllib.parse.quote(full_query)}"
-        html = await fetch_html(url)
-        if not html:
+        html_doc = await fetch_html(url)
+        if not html_doc:
             return await msg.edit_text("❌ Gagal menghubungi server Maid-Manga.")
 
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html_doc, "html.parser")
         keyboard = []
         hasil_unik = set()
         items = soup.select('a[href*="/manga/"], a[href*="/komik/"]')
 
         for link_tag in items:
-            href = link_tag.get('href', '')
-            title = link_tag.get('title') or link_tag.text.strip()
+            href = link_tag.get("href", "")
+            title = link_tag.get("title") or link_tag.text.strip()
             title = " ".join(title.split())
             if not title or href in hasil_unik:
                 continue
@@ -456,7 +426,7 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"🔍 **Maid-Manga:** `{full_query}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif source in ["nh", "nhentai"]:
-        if not _is_nsfw_enabled(chat.id, chat.type):
+        if not is_nsfw_allowed(chat.id, chat.type):
             return await msg.edit_text("❌ Fitur NSFW dimatikan di grup ini.")
 
         if full_query.isdigit():
@@ -610,7 +580,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not img_bytes:
             return await context.bot.send_message(query.message.chat_id, "❌ Error mendownload gambar.")
 
-        is_edit = data.startswith("switchch_") or hasattr(query, 'edit_message_media')
+        is_edit = data.startswith("switchch_") or hasattr(query, "edit_message_media")
         await safe_render_page(query, context, img_bytes, caption_text, keyboard, is_edit, owner_id=query.from_user.id)
 
     elif data.startswith("nav_"):
@@ -641,28 +611,28 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await query.answer("❌ Sesi habis.", show_alert=True)
 
         await query.answer(f"Memuat chapter {offset+1}-{offset+5}...")
-        html = await fetch_html(f"{MAID_URL}{path}")
-        if not html:
+        html_doc = await fetch_html(f"{MAID_URL}{path}")
+        if not html_doc:
             return await query.answer("❌ Gagal memuat halaman.")
 
-        soup = BeautifulSoup(html, 'html.parser')
-        title_tag = soup.select_one('.series-title h2, .series-titlex h2')
+        soup = BeautifulSoup(html_doc, "html.parser")
+        title_tag = soup.select_one(".series-title h2, .series-titlex h2")
         title = title_tag.text.strip() if title_tag else "Judul Tidak Diketahui"
-        desc_tag = soup.select_one('.series-synops')
+        desc_tag = soup.select_one(".series-synops")
         desc = desc_tag.text.strip() if desc_tag else "Tidak ada deskripsi."
-        cover_tag = soup.select_one('.series-thumb img')
-        cover_url = cover_tag.get('src') if cover_tag else None
+        cover_tag = soup.select_one(".series-thumb img")
+        cover_url = cover_tag.get("src") if cover_tag else None
 
-        all_chapters = soup.select('.series-chapterlist li a')
+        all_chapters = soup.select(".series-chapterlist li a")
         total_ch = len(all_chapters)
         keyboard = []
 
         for i, ch in enumerate(all_chapters):
-            ch_url = ch.get('href', '')
+            ch_url = ch.get("href", "")
             ch_path = ch_url.replace(MAID_URL, "")
-            ch_span = ch.find('span')
+            ch_span = ch.find("span")
             if ch_span:
-                date_span = ch_span.find('span', class_='date')
+                date_span = ch_span.find("span", class_="date")
                 if date_span:
                     date_span.extract()
                 ch_num = ch_span.text.strip().replace("Chapter ", "").replace("chapter ", "").strip()
@@ -672,11 +642,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ch_sid = hashlib.md5(ch_path.encode()).hexdigest()[:8]
             context.user_data[f"maid_map_{ch_sid}"] = ch_path
 
-            n_sid = hashlib.md5(all_chapters[i-1].get('href').replace(MAID_URL, "").encode()).hexdigest()[:8] if i > 0 else None
-            p_sid = hashlib.md5(all_chapters[i+1].get('href').replace(MAID_URL, "").encode()).hexdigest()[:8] if i < total_ch - 1 else None
+            n_sid = hashlib.md5(all_chapters[i - 1].get("href").replace(MAID_URL, "").encode()).hexdigest()[:8] if i > 0 else None
+            p_sid = hashlib.md5(all_chapters[i + 1].get("href").replace(MAID_URL, "").encode()).hexdigest()[:8] if i < total_ch - 1 else None
 
             context.user_data[f"maid_ctx_{ch_sid}"] = {
-                'next_ch': n_sid, 'prev_ch': p_sid, 'title': title, 'ch_num': ch_num
+                "next_ch": n_sid, "prev_ch": p_sid, "title": title, "ch_num": ch_num
             }
             if offset <= i < offset + 5:
                 keyboard.append([InlineKeyboardButton(f"📖 Ch. {ch_num}", callback_data=f"maidread_{ch_sid}")])
@@ -719,20 +689,20 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await context.bot.send_message(query.message.chat_id, "❌ Sesi habis.")
 
         ctx = context.user_data.get(f"maid_ctx_{short_id}", {})
-        manga_title = ctx.get('title', 'Manga Maid')
-        ch_num = ctx.get('ch_num', '?')
+        manga_title = ctx.get("title", "Manga Maid")
+        ch_num = ctx.get("ch_num", "?")
 
         target_url = f"{MAID_URL}{path}" if path.startswith("/") else f"{MAID_URL}/{path}"
-        html = await fetch_html(target_url)
-        if not html:
+        html_doc = await fetch_html(target_url)
+        if not html_doc:
             return await context.bot.send_message(query.message.chat_id, "❌ Gagal memuat chapter.")
 
-        soup = BeautifulSoup(html, 'html.parser')
-        img_tags = soup.select('#readerarea img, .reader-area img, .chapter-image img, .mangareader img')
+        soup = BeautifulSoup(html_doc, "html.parser")
+        img_tags = soup.select("#readerarea img, .reader-area img, .chapter-image img, .mangareader img")
 
         urls = []
         for img in img_tags:
-            src = img.get('data-src') or img.get('data-lazy-src') or img.get('src')
+            src = img.get("data-src") or img.get("data-lazy-src") or img.get("src")
             if src and src.startswith("http"):
                 urls.append(src)
 
@@ -750,16 +720,16 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
 
         ch_nav = []
-        if ctx.get('prev_ch'):
+        if ctx.get("prev_ch"):
             ch_nav.append(InlineKeyboardButton("⏪ Ch Prev", callback_data=f"maidread_{ctx['prev_ch']}"))
         ch_nav.append(InlineKeyboardButton("❌ Tutup", callback_data="close_manga"))
-        if ctx.get('next_ch'):
+        if ctx.get("next_ch"):
             ch_nav.append(InlineKeyboardButton("Ch Next ⏩", callback_data=f"maidread_{ctx['next_ch']}"))
 
         keyboard = InlineKeyboardMarkup([nav, ch_nav])
         caption = f"📖 <b>{manga_title}</b> | Ch:{ch_num}"
 
-        is_edit = hasattr(query, 'edit_message_media')
+        is_edit = hasattr(query, "edit_message_media")
         await safe_render_page(query, context, img_bytes, caption, keyboard, is_edit, owner_id=query.from_user.id)
 
     elif data.startswith("maidnav_"):
@@ -784,10 +754,10 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"maidnav_{short_id}_{page_idx + 1}"))
 
             ch_nav = []
-            if ctx.get('prev_ch'):
+            if ctx.get("prev_ch"):
                 ch_nav.append(InlineKeyboardButton("⏪ Ch Prev", callback_data=f"maidread_{ctx['prev_ch']}"))
             ch_nav.append(InlineKeyboardButton("❌ Tutup", callback_data="close_manga"))
-            if ctx.get('next_ch'):
+            if ctx.get("next_ch"):
                 ch_nav.append(InlineKeyboardButton("Ch Next ⏩", callback_data=f"maidread_{ctx['next_ch']}"))
 
             caption = f"📖 <b>{ctx.get('title')}</b> | Ch:{ctx.get('ch_num')}"
@@ -901,7 +871,5 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = g_data["title"]["pretty"] or g_data["title"]["english"]
         caption_text = f"🔞 <b>{title[:100]}</b>\n📄 Hal: {page_idx + 1}/{len(pages)}"
 
-        is_edit = action == "nhnav_" and hasattr(query, 'edit_message_media')
+        is_edit = action == "nhnav_" and hasattr(query, "edit_message_media")
         await safe_render_page(query, context, img_bytes, caption_text, keyboard, is_edit, owner_id=query.from_user.id)
-        
-        
