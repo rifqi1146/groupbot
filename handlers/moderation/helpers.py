@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from database.usernames_db import lookup_user_id
+from database.moderation_db import lookup_user_id
 
 log = logging.getLogger(__name__)
 
