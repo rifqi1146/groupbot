@@ -411,6 +411,15 @@ else:
 
 
 async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    chat = update.effective_chat
+
+    if not msg or not chat:
+        return
+
+    if not _is_nsfw_enabled(chat.id, chat.type):
+        return await msg.reply_text("❌ NSFW tidak diaktifkan di grup ini.")
+
     if not context.args or len(context.args) < 2:
         help_txt = (
             "⚠️ <b>Format Salah!</b>\n\n"
@@ -421,32 +430,28 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<code>/manga maid Osananajimi wo Onnanoko</code>\n"
             "<code>/manga nh Zenles Zone Zero Or 642563</code>\n"
         )
-        return await update.message.reply_text(help_txt, parse_mode="HTML")
-
-    chat = update.effective_chat
-    if not _is_nsfw_enabled(chat.id, chat.type):
-        return await update.message.reply_text("❌ NSFW tidak diaktifkan di grup ini.")
+        return await msg.reply_text(help_txt, parse_mode="HTML")
 
     source = context.args[0].lower()
     full_query = " ".join(context.args[1:])
-    msg = await update.message.reply_text(
+    status = await msg.reply_text(
         f"🔍 Memproses <code>{_escape(full_query)}</code> di <b>{_escape(source.upper())}</b>...",
         parse_mode="HTML"
     )
-    _set_message_lock(msg.chat_id, msg.message_id, update.effective_user.id)
+    _set_message_lock(status.chat_id, status.message_id, update.effective_user.id)
 
     if source in ["dex", "mangadex"]:
         text, markup = await build_search_list(full_query, 0, context)
         if text:
-            await msg.edit_text(text, parse_mode="HTML", reply_markup=markup)
+            await status.edit_text(text, parse_mode="HTML", reply_markup=markup)
         else:
-            await msg.edit_text("❌ Manga tidak ditemukan di MangaDex.", parse_mode="HTML")
+            await status.edit_text("❌ Manga tidak ditemukan di MangaDex.", parse_mode="HTML")
 
     elif source in ["maid", "maidmanga"]:
         url = f"{MAID_URL}/?s={urllib.parse.quote(full_query)}"
         html_doc = await fetch_html(url)
         if not html_doc:
-            return await msg.edit_text("❌ Gagal menghubungi server Maid-Manga.", parse_mode="HTML")
+            return await status.edit_text("❌ Gagal menghubungi server Maid-Manga.", parse_mode="HTML")
 
         soup = BeautifulSoup(html_doc, "html.parser")
         keyboard = []
@@ -470,49 +475,46 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
 
         if not keyboard:
-            return await msg.edit_text("❌ Manga tidak ditemukan di Maid-Manga.", parse_mode="HTML")
+            return await status.edit_text("❌ Manga tidak ditemukan di Maid-Manga.", parse_mode="HTML")
 
         keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
-        await msg.edit_text(
+        await status.edit_text(
             f"🔍 <b>Maid-Manga:</b> <code>{_escape(full_query)}</code>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
     elif source in ["nh", "nhentai"]:
-        if not _is_nsfw_enabled(chat.id, chat.type):
-            return await msg.edit_text("❌ NSFW tidak diaktifkan di grup ini.", parse_mode="HTML")
-
         if full_query.isdigit():
             data = await fetch_json(f"{NH_API_URL}/galleries/{full_query}", custom_headers=NH_HEADERS)
             if not data:
-                return await msg.edit_text("❌ Doujin tidak ditemukan (kode salah).", parse_mode="HTML")
+                return await status.edit_text("❌ Doujin tidak ditemukan (kode salah).", parse_mode="HTML")
 
             text, markup = build_nh_detail_ui(data)
             cover_url = get_nh_cover_url(data)
             cover_bytes = await fetch_image_bytes(cover_url, referer="https://nhentai.net/")
 
             if cover_bytes:
-                await msg.delete()
+                await status.delete()
                 img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, cover_bytes)
                 sent = await context.bot.send_photo(
-                    msg.chat_id,
+                    status.chat_id,
                     photo=img_safe,
                     caption=text,
                     parse_mode="HTML",
                     reply_markup=markup
                 )
-                _move_message_lock(msg.chat_id, msg.message_id, sent.chat_id, sent.message_id, fallback_user_id=update.effective_user.id)
+                _move_message_lock(status.chat_id, status.message_id, sent.chat_id, sent.message_id, fallback_user_id=update.effective_user.id)
             else:
-                await msg.edit_text(text, parse_mode="HTML", reply_markup=markup)
+                await status.edit_text(text, parse_mode="HTML", reply_markup=markup)
         else:
             text, markup = await build_nh_search_list(full_query, 1, context)
             if text:
-                await msg.edit_text(text, parse_mode="HTML", reply_markup=markup)
+                await status.edit_text(text, parse_mode="HTML", reply_markup=markup)
             else:
-                await msg.edit_text("❌ Doujin tidak ditemukan.", parse_mode="HTML")
+                await status.edit_text("❌ Doujin tidak ditemukan.", parse_mode="HTML")
     else:
-        await msg.edit_text(
+        await status.edit_text(
             "❌ <b>Sumber tidak dikenal.</b>\nPilih <code>dex</code>, <code>maid</code>, atau <code>nh</code>.",
             parse_mode="HTML"
         )
