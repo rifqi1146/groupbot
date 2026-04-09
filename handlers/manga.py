@@ -1,7 +1,6 @@
 import os
 import logging
 import asyncio
-import aiohttp
 import sqlite3
 import re
 import hashlib
@@ -12,7 +11,7 @@ from io import BytesIO
 from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
-
+from database import premium_service
 from utils.http import get_http_session
 
 try:
@@ -27,14 +26,9 @@ MANGADEX_API = "https://api.mangadex.org"
 UPLOADS_URL = "https://uploads.mangadex.org"
 MAID_URL = "https://www.maid.my.id"
 NH_API_URL = "https://nhentai.net/api/v2"
-
 NSFW_DB = "data/nsfw.sqlite3"
-
-_WAIFU_STYLE_NSFW_CACHE_UNUSED = None
 _MANGA_MESSAGE_LOCKS = {}
-
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
-
 
 def _nsfw_db_init():
     os.makedirs("data", exist_ok=True)
@@ -207,18 +201,40 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
     if owner_id is None and getattr(query, "from_user", None):
         owner_id = query.from_user.id
 
-    try:
-        if is_edit and query.message.photo:
+    can_try_edit = bool(is_edit and getattr(query.message, "photo", None))
+
+    if can_try_edit:
+        for attempt in range(2):
             try:
-                await query.edit_message_media(
+                await query.message.edit_media(
                     media=InputMediaPhoto(media=img_safe, caption=caption, parse_mode="HTML"),
                     reply_markup=keyboard
                 )
                 _set_message_lock(query.message.chat_id, query.message.message_id, owner_id)
                 return
             except Exception as e:
-                log.warning(f"Gagal edit, fallback ke delete-resend: {e}")
+                err = str(e).lower()
 
+                if "message is not modified" in err:
+                    _set_message_lock(query.message.chat_id, query.message.message_id, owner_id)
+                    return
+
+                retryable = (
+                    "timeout" in err
+                    or "timed out" in err
+                    or "temporarily unavailable" in err
+                    or "try again" in err
+                )
+
+                if attempt == 0 and retryable:
+                    log.warning(f"Edit media gagal sementara, retry sekali: {e}")
+                    await asyncio.sleep(0.8)
+                    continue
+
+                log.warning(f"Gagal edit, fallback ke delete-resend: {e}")
+                break
+
+    try:
         if is_edit:
             try:
                 await query.message.delete()
@@ -434,6 +450,9 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     source = context.args[0].lower()
     full_query = " ".join(context.args[1:])
+    user = update.effective_user
+    if source in ["nh", "nhentai"] and (not user or not premium_service.check(user.id)):
+        return await update.message.reply_text("❌ Manga NH hanya untuk user premium.")
     status = await msg.reply_text(
         f"🔍 Memproses <code>{_escape(full_query)}</code> di <b>{_escape(source.upper())}</b>...",
         parse_mode="HTML"
@@ -529,6 +548,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await _ensure_callback_lock(query):
         return
+        
+    if data.startswith(("nhsearch_", "nhdetail_", "nhread_", "nhnav_")):
+        user = update.effective_user
+        if not user or not premium_service.check(user.id):
+            return await query.answer("❌ Manga NH hanya untuk user premium.", show_alert=True)
 
     if data == "ignore":
         return await query.answer()
