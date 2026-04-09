@@ -118,6 +118,7 @@ COMMAND_HANDLERS = [
     ("nsfw", nsfw_cmd, False),
     ("restart", restart_cmd, False),
     ("manga", manga_cmd, False),
+]
 
 def register_commands(app):
     for name, handler, blocking in COMMAND_HANDLERS:
