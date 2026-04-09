@@ -1,7 +1,11 @@
 import time
+import logging
+
 from database.db import db_session
 from handlers.asupan.constants import ASUPAN_DB_PATH
 from handlers.asupan import state
+
+log = logging.getLogger(__name__)
 
 
 def _asupan_db_init():
@@ -89,16 +93,27 @@ def _db_set_enabled(table: str, values: set[int]):
         except Exception:
             try:
                 con.execute("ROLLBACK")
-            except Exception:
-                pass
+            except Exception as rollback_err:
+                log.warning(
+                    "Rollback failed while saving %s to %s: %s",
+                    table,
+                    ASUPAN_DB_PATH,
+                    rollback_err,
+                )
             raise
 
 
 def load_asupan_groups():
     try:
         _asupan_db_init()
-        state.ASUPAN_ENABLED_CHATS = _db_load_enabled("asupan_groups")
+        loaded = _db_load_enabled("asupan_groups")
+        state.ASUPAN_ENABLED_CHATS = loaded
+        log.info("Loaded asupan groups: %s chats", len(loaded))
     except Exception:
+        log.exception(
+            "Failed to load asupan groups from %s; using empty set",
+            ASUPAN_DB_PATH,
+        )
         state.ASUPAN_ENABLED_CHATS = set()
 
 
@@ -106,8 +121,13 @@ def save_asupan_groups():
     try:
         _asupan_db_init()
         _db_set_enabled("asupan_groups", state.ASUPAN_ENABLED_CHATS)
+        log.info("Saved asupan groups: %s chats", len(state.ASUPAN_ENABLED_CHATS))
     except Exception:
-        pass
+        log.exception(
+            "Failed to save asupan groups to %s; state size=%s",
+            ASUPAN_DB_PATH,
+            len(state.ASUPAN_ENABLED_CHATS),
+        )
 
 
 def is_asupan_enabled(chat_id: int) -> bool:
@@ -117,8 +137,14 @@ def is_asupan_enabled(chat_id: int) -> bool:
 def load_autodel_groups():
     try:
         _asupan_db_init()
-        state.AUTODEL_ENABLED_CHATS = _db_load_enabled("asupan_autodel")
+        loaded = _db_load_enabled("asupan_autodel")
+        state.AUTODEL_ENABLED_CHATS = loaded
+        log.info("Loaded asupan autodel groups: %s chats", len(loaded))
     except Exception:
+        log.exception(
+            "Failed to load asupan autodel groups from %s; using empty set",
+            ASUPAN_DB_PATH,
+        )
         state.AUTODEL_ENABLED_CHATS = set()
 
 
@@ -126,8 +152,13 @@ def save_autodel_groups():
     try:
         _asupan_db_init()
         _db_set_enabled("asupan_autodel", state.AUTODEL_ENABLED_CHATS)
+        log.info("Saved asupan autodel groups: %s chats", len(state.AUTODEL_ENABLED_CHATS))
     except Exception:
-        pass
+        log.exception(
+            "Failed to save asupan autodel groups to %s; state size=%s",
+            ASUPAN_DB_PATH,
+            len(state.AUTODEL_ENABLED_CHATS),
+        )
 
 
 def is_autodel_enabled(chat_id: int) -> bool:
@@ -137,15 +168,16 @@ def is_autodel_enabled(chat_id: int) -> bool:
 def init_asupan_storage():
     try:
         _asupan_db_init()
+        log.info("Initialized asupan storage")
     except Exception:
-        pass
+        log.exception("Failed to initialize asupan storage at %s", ASUPAN_DB_PATH)
 
     try:
         load_asupan_groups()
     except Exception:
-        pass
+        log.exception("Unexpected failure while loading asupan groups during init")
 
     try:
         load_autodel_groups()
     except Exception:
-        pass
+        log.exception("Unexpected failure while loading autodel groups during init")
