@@ -3,7 +3,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update, MessageEntityType
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from database.usernames_db import lookup_user_id
@@ -87,7 +87,7 @@ def text_mention_user_from_message(msg, token: str | None):
 
     if not token:
         for ent in msg.entities:
-            if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+            if ent.type == "text_mention" and ent.user:
                 return ent.user
         return None
 
@@ -97,7 +97,7 @@ def text_mention_user_from_message(msg, token: str | None):
 
     text = msg.text or ""
     for ent in msg.entities:
-        if ent.type == MessageEntityType.TEXT_MENTION and ent.user:
+        if ent.type == "text_mention" and ent.user:
             try:
                 part = text[ent.offset : ent.offset + ent.length]
             except Exception:
