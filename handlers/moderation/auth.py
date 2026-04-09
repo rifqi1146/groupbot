@@ -1,7 +1,12 @@
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes
+
 from utils.config import OWNER_ID
 from database.moderation_db import sudo_is
+
+log = logging.getLogger(__name__)
 
 
 def is_owner(user_id: int | None) -> bool:
@@ -24,5 +29,11 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
         return member.status in ("administrator", "creator")
-    except Exception:
+    except Exception as e:
+        log.warning(
+            "Failed to check moderation admin status | chat_id=%s user_id=%s err=%s",
+            getattr(chat, "id", None),
+            getattr(user, "id", None),
+            e,
+        )
         return False

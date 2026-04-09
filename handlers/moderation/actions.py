@@ -15,6 +15,7 @@ from .helpers import (
     resolve_target_user_id,
     resolve_target_user_obj_for_display,
     resolve_user_obj_for_display_by_id,
+    reply_in_topic,
 )
 from .permissions import MUTED_PERMISSIONS, UNMUTED_PERMISSIONS
 
@@ -47,14 +48,15 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not await is_admin_or_owner(update, context):
-        return await msg.reply_text("You are not an admin.")
+        return await reply_in_topic(msg, "You are not an admin.")
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = extract_duration_target_reason(context.args or [], has_reply)
 
     target_id, who = await _resolve_target_display(update, context, target_token)
     if not target_id:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "Reply to a user or use:\n"
             "<code>/ban 7d user_id toxic</code>\n"
             "<code>/ban 7d @username toxic</code>",
@@ -64,7 +66,8 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.ban_chat_member(chat_id=chat.id, user_id=int(target_id), until_date=until)
         duration_text = f"<b>Duration:</b> {html.escape(dur_human)}\n" if dur_human else "<b>Duration:</b> Permanent\n"
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "<b>Banned</b>\n"
             f"<b>User:</b> {who}\n"
             f"{duration_text}"
@@ -73,7 +76,8 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
     except Exception as e:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             f"Failed: <code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
@@ -93,28 +97,31 @@ async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not await is_admin_or_owner(update, context):
-        return await msg.reply_text("You are not an admin.")
+        return await reply_in_topic(msg, "You are not an admin.")
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = extract_duration_target_reason(context.args or [], has_reply)
 
     target_id, who = await _resolve_target_display(update, context, target_token)
     if not target_id:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "Reply to a user or use: <code>/unban user_id</code> / <code>/unban @username</code>",
             parse_mode="HTML",
         )
 
     try:
         await context.bot.unban_chat_member(chat_id=chat.id, user_id=int(target_id))
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "<b>Unbanned</b>\n"
             f"<b>User:</b> {who}",
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
     except Exception as e:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             f"Failed: <code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
@@ -134,14 +141,15 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not await is_admin_or_owner(update, context):
-        return await msg.reply_text("You are not an admin.")
+        return await reply_in_topic(msg, "You are not an admin.")
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     until, dur_human, target_token, reason = extract_duration_target_reason(context.args or [], has_reply)
 
     target_id, who = await _resolve_target_display(update, context, target_token)
     if not target_id:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "Reply to a user or use:\n"
             "<code>/mute 10m user_id reason</code>\n"
             "<code>/mute 10m @username reason</code>",
@@ -156,7 +164,8 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             until_date=until,
         )
         duration_text = f"<b>Duration:</b> {html.escape(dur_human)}\n" if dur_human else "<b>Duration:</b> Permanent\n"
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "<b>Muted</b>\n"
             f"<b>User:</b> {who}\n"
             f"{duration_text}"
@@ -165,7 +174,8 @@ async def mute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
     except Exception as e:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             f"Failed: <code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
@@ -185,14 +195,15 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not await is_admin_or_owner(update, context):
-        return await msg.reply_text("You are not an admin.")
+        return await reply_in_topic(msg, "You are not an admin.")
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     _, _, target_token, _ = extract_duration_target_reason(context.args or [], has_reply)
 
     target_id, who = await _resolve_target_display(update, context, target_token)
     if not target_id:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "Reply to a user or use: <code>/unmute user_id</code> / <code>/unmute @username</code>",
             parse_mode="HTML",
         )
@@ -204,14 +215,16 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             permissions=UNMUTED_PERMISSIONS,
             until_date=None,
         )
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "<b>Unmuted</b>\n"
             f"<b>User:</b> {who}",
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
     except Exception as e:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             f"Failed: <code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
@@ -231,14 +244,15 @@ async def kick_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not await is_admin_or_owner(update, context):
-        return await msg.reply_text("You are not an admin.")
+        return await reply_in_topic(msg, "You are not an admin.")
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     target_token, reason = extract_target_reason(context.args or [], has_reply)
 
     target_id, who = await _resolve_target_display(update, context, target_token)
     if not target_id:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "Reply to a user or use:\n"
             "<code>/kick userid reason</code>\n"
             "<code>/kick @username reason</code>",
@@ -257,7 +271,8 @@ async def kick_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id=int(target_id),
             only_if_banned=True,
         )
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             "<b>Kicked</b>\n"
             f"<b>User:</b> {who}\n"
             f"<b>Reason:</b> <code>{html.escape(reason)}</code>",
@@ -265,7 +280,8 @@ async def kick_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
     except Exception as e:
-        return await msg.reply_text(
+        return await reply_in_topic(
+            msg,
             f"Failed: <code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )

@@ -1,35 +1,54 @@
 import html
+import logging
+import re
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update
-from telegram.constants import MessageEntityType
+from telegram import Update, MessageEntityType
 from telegram.ext import ContextTypes
 
-from database.moderation_db import lookup_user_id
+from database.usernames_db import lookup_user_id
+
+log = logging.getLogger(__name__)
+
+DURATION_RE = re.compile(r"^(\d+)([smhdw])$", re.I)
 
 
-def parse_duration(token: str) -> tuple[datetime | None, str | None]:
-    t = (token or "").strip().lower()
-    if not t:
+def get_message_thread_id(msg) -> int | None:
+    if not msg:
+        return None
+
+    thread_id = getattr(msg, "message_thread_id", None)
+    if thread_id is None:
+        return None
+
+    try:
+        return int(thread_id)
+    except Exception:
+        return None
+
+
+def get_topic_reply_kwargs(msg) -> dict:
+    thread_id = get_message_thread_id(msg)
+    if thread_id is None:
+        return {}
+    return {"message_thread_id": thread_id}
+
+
+async def reply_in_topic(msg, text: str, **kwargs):
+    if not msg:
+        return None
+    kwargs = {**get_topic_reply_kwargs(msg), **kwargs}
+    return await msg.reply_text(text, **kwargs)
+
+
+def parse_duration(raw: str) -> tuple[datetime | None, str | None]:
+    m = DURATION_RE.match((raw or "").strip())
+    if not m:
         return None, None
 
-    num = ""
-    unit = ""
-    for ch in t:
-        if ch.isdigit():
-            if unit:
-                return None, None
-            num += ch
-        else:
-            unit += ch
+    n = int(m.group(1))
+    unit = m.group(2).lower()
 
-    if not num or not unit:
-        return None, None
-
-    if unit not in ("s", "m", "h", "d", "w"):
-        return None, None
-
-    n = int(num)
     if n <= 0:
         return None, None
 
@@ -167,12 +186,18 @@ async def resolve_user_obj_for_display_by_id(update: Update, context: ContextTyp
             user = getattr(member, "user", None)
             if user:
                 return user
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(
+                "Failed to get chat member for moderation display | chat_id=%s user_id=%s err=%s",
+                getattr(chat, "id", None),
+                user_id,
+                e,
+            )
 
     try:
         return await context.bot.get_chat(int(user_id))
-    except Exception:
+    except Exception as e:
+        log.warning("Failed to get user chat for moderation display | user_id=%s err=%s", user_id, e)
         return None
 
 
