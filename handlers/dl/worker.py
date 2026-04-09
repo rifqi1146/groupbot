@@ -1,6 +1,7 @@
 import os
 import uuid
 import html
+import logging
 import subprocess
 import asyncio
 
@@ -12,10 +13,13 @@ from telegram.error import RetryAfter
 from .instagram_api import is_instagram_url, instagram_api_download
 from .youtube_api import is_youtube_url, sonzai_youtube_download
 
+log = logging.getLogger(__name__)
+
+
 def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
 
-    subprocess.run(
+    result = subprocess.run(
         [
             "ffmpeg",
             "-y",
@@ -33,6 +37,9 @@ def reencode_mp3(src_path: str) -> str:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
 
     if not os.path.exists(fixed_path):
         raise RuntimeError("FFmpeg re-encode failed")
@@ -91,6 +98,24 @@ def _build_safe_photo_caption(title: str, bot_name: str, max_len: int = 1024) ->
     short_title = clean_title[:allowed].rstrip() + "..."
     return f"{prefix}{html.escape(short_title)}{closing}{suffix}"
 
+
+async def _safe_edit_status(bot, chat_id, message_id, text: str):
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning(
+            "Failed to edit status message | chat_id=%s message_id=%s err=%s",
+            chat_id,
+            message_id,
+            e,
+        )
+
+
 async def _send_media_group_result(
     bot,
     chat_id,
@@ -117,6 +142,11 @@ async def _send_media_group_result(
             for i, item in enumerate(chunk):
                 file_path = item.get("path")
                 if not file_path or not os.path.exists(file_path):
+                    log.warning(
+                        "Skipping media group item because file is missing | chat_id=%s path=%s",
+                        chat_id,
+                        file_path,
+                    )
                     continue
 
                 media_type = detect_media_type(file_path)
@@ -146,6 +176,11 @@ async def _send_media_group_result(
                     )
 
             if not media:
+                log.warning(
+                    "No valid media items to send in chunk | chat_id=%s chunk_index=%s",
+                    chat_id,
+                    idx,
+                )
                 continue
 
             while True:
@@ -158,6 +193,11 @@ async def _send_media_group_result(
                     break
                 except RetryAfter as e:
                     wait_time = int(getattr(e, "retry_after", cooldown)) + 1
+                    log.warning(
+                        "RetryAfter while sending media group | chat_id=%s wait=%s",
+                        chat_id,
+                        wait_time,
+                    )
                     await asyncio.sleep(wait_time)
 
             if idx < len(chunks) - 1:
@@ -167,9 +207,14 @@ async def _send_media_group_result(
             for fh in handles:
                 try:
                     fh.close()
-                except Exception:
-                    pass
-                    
+                except Exception as e:
+                    log.warning(
+                        "Failed to close media file handle | chat_id=%s err=%s",
+                        chat_id,
+                        e,
+                    )
+
+
 async def send_downloaded_media(
     bot,
     chat_id,
@@ -179,11 +224,11 @@ async def send_downloaded_media(
     fmt_key,
 ):
     if isinstance(path, dict) and path.get("items"):
-        await bot.edit_message_text(
+        await _safe_edit_status(
+            bot=bot,
             chat_id=chat_id,
             message_id=status_msg_id,
             text="<b>Uploading...</b>",
-            parse_mode="HTML",
         )
 
         await _send_media_group_result(
@@ -204,11 +249,11 @@ async def send_downloaded_media(
     if os.path.exists(file_path) and os.path.getsize(file_path) > MAX_TG_SIZE:
         raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
 
-    await bot.edit_message_text(
+    await _safe_edit_status(
+        bot=bot,
         chat_id=chat_id,
         message_id=status_msg_id,
         text="<b>Uploading...</b>",
-        parse_mode="HTML",
     )
 
     bot_name = (await bot.get_me()).first_name or "Bot"
@@ -216,18 +261,29 @@ async def send_downloaded_media(
     media_type = detect_media_type(file_path)
 
     if fmt_key == "mp3":
-        fixed_audio = reencode_mp3(file_path)
-        await bot.send_audio(
-            chat_id=chat_id,
-            audio=fixed_audio,
-            title=caption_text[:64],
-            performer=bot_name,
-            filename=f"{caption_text[:50]}.mp3",
-            reply_to_message_id=reply_to,
-            disable_notification=True,
-        )
-        os.remove(fixed_audio)
-        return
+        fixed_audio = None
+        try:
+            fixed_audio = reencode_mp3(file_path)
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=fixed_audio,
+                title=caption_text[:64],
+                performer=bot_name,
+                filename=f"{caption_text[:50]}.mp3",
+                reply_to_message_id=reply_to,
+                disable_notification=True,
+            )
+            return
+        finally:
+            if fixed_audio and os.path.exists(fixed_audio):
+                try:
+                    os.remove(fixed_audio)
+                except Exception as e:
+                    log.warning(
+                        "Failed to remove temporary re-encoded mp3 | path=%s err=%s",
+                        fixed_audio,
+                        e,
+                    )
 
     if media_type == "photo":
         await bot.send_photo(
@@ -254,6 +310,7 @@ async def send_downloaded_media(
 
     raise RuntimeError("Media tidak didukung")
 
+
 async def download_non_tiktok(
     raw_url,
     fmt_key,
@@ -273,21 +330,22 @@ async def download_non_tiktok(
                 status_msg_id=status_msg_id,
             )
         except Exception as e:
-            print("[INSTAGRAM API FALLBACK TO YTDLP]", repr(e))
+            log.warning(
+                "Instagram API download failed, falling back to yt-dlp | url=%s err=%r",
+                raw_url,
+                e,
+            )
 
     if is_youtube_url(raw_url):
         yt_error = None
 
         try:
-            try:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text="<b>Trying yt-dlp...</b>",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+            await _safe_edit_status(
+                bot=bot,
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text="<b>Trying yt-dlp...</b>",
+            )
 
             result = await ytdlp_download(
                 raw_url,
@@ -307,20 +365,21 @@ async def download_non_tiktok(
 
         except Exception as e:
             yt_error = str(e) or repr(e)
-            print("[YTDLP YOUTUBE FAILED, FALLBACK TO SONZAI]", repr(e))
+            log.warning(
+                "yt-dlp YouTube download failed, falling back to Sonzai | url=%s err=%r",
+                raw_url,
+                e,
+            )
 
-            try:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=(
-                        "<b>yt-dlp failed</b>\n\n"
-                        "<i>Fallback to Sonzai API...</i>"
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+            await _safe_edit_status(
+                bot=bot,
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=(
+                    "<b>yt-dlp failed</b>\n\n"
+                    "<i>Fallback to Sonzai API...</i>"
+                ),
+            )
 
             try:
                 result = await sonzai_youtube_download(
@@ -339,6 +398,11 @@ async def download_non_tiktok(
                 return result
 
             except Exception as fallback_error:
+                log.warning(
+                    "Sonzai YouTube fallback failed | url=%s err=%r",
+                    raw_url,
+                    fallback_error,
+                )
                 raise RuntimeError(
                     f"yt-dlp: {yt_error}\nSonzai: {fallback_error}"
                 ) from fallback_error
