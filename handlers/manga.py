@@ -2,9 +2,11 @@ import os
 import logging
 import asyncio
 import aiohttp
+import sqlite3
 import re
 import hashlib
 import urllib.parse
+import html as html_lib
 from io import BytesIO
 
 from bs4 import BeautifulSoup
@@ -12,7 +14,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMe
 from telegram.ext import ContextTypes
 
 from utils.http import get_http_session
-from database.nsfw_db import is_nsfw_allowed
 
 try:
     from PIL import Image
@@ -27,10 +28,49 @@ UPLOADS_URL = "https://uploads.mangadex.org"
 MAID_URL = "https://www.maid.my.id"
 NH_API_URL = "https://nhentai.net/api/v2"
 
-_http_session = None
+NSFW_DB = "data/nsfw.sqlite3"
+
+_WAIFU_STYLE_NSFW_CACHE_UNUSED = None
 _MANGA_MESSAGE_LOCKS = {}
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
+
+
+def _nsfw_db_init():
+    os.makedirs("data", exist_ok=True)
+    con = sqlite3.connect(NSFW_DB)
+    try:
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS nsfw_groups (
+                chat_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _is_nsfw_enabled(chat_id: int, chat_type: str) -> bool:
+    if chat_type == "private":
+        return True
+
+    _nsfw_db_init()
+    con = sqlite3.connect(NSFW_DB)
+    try:
+        cur = con.execute(
+            "SELECT enabled FROM nsfw_groups WHERE chat_id=?",
+            (int(chat_id),),
+        )
+        row = cur.fetchone()
+        return bool(row and int(row[0]) == 1)
+    finally:
+        con.close()
 
 
 def _message_lock_key(chat_id: int, message_id: int):
@@ -61,7 +101,7 @@ def _move_message_lock(old_chat_id: int, old_message_id: int, new_chat_id: int, 
 async def _ensure_manga_allowed(chat) -> bool:
     if not chat:
         return False
-    return is_nsfw_allowed(chat.id, chat.type)
+    return _is_nsfw_enabled(chat.id, chat.type)
 
 
 async def _ensure_callback_lock(query) -> bool:
@@ -81,6 +121,10 @@ async def _ensure_callback_lock(query) -> bool:
         return False
 
     return True
+
+
+def _escape(text) -> str:
+    return html_lib.escape(str(text or ""))
 
 
 async def fetch_json(url, params=None, custom_headers=None):
@@ -201,8 +245,8 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
         try:
             sent = await context.bot.send_message(
                 query.message.chat_id,
-                "❌ **Telegram menolak mengirim halaman ini.**\nServer gagal merender gambar terlalu ekstrem.",
-                parse_mode="Markdown",
+                "❌ <b>Telegram menolak mengirim halaman ini.</b>\nServer gagal merender gambar terlalu ekstrem.",
+                parse_mode="HTML",
                 reply_markup=keyboard
             )
             _move_message_lock(
@@ -295,7 +339,7 @@ async def build_search_list(query: str, offset: int, context: ContextTypes.DEFAU
         keyboard.append(nav_buttons)
 
     keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
-    return f"🔍 Hasil MangaDex: **{query}** ({(offset//5)+1})", InlineKeyboardMarkup(keyboard)
+    return f"🔍 Hasil MangaDex: <b>{_escape(query)}</b> ({(offset//5)+1})", InlineKeyboardMarkup(keyboard)
 
 
 def get_nh_cover_url(g_data):
@@ -316,11 +360,13 @@ def build_nh_detail_ui(data):
     if len(tags) > 500:
         tags = tags[:500] + "..."
 
-    text = f"📚 **{title}**\n\n" \
-           f"🆔 **Code:** `{data['id']}`\n" \
-           f"📄 **Pages:** {data['num_pages']}\n" \
-           f"❤️ **Favorites:** {data['num_favorites']}\n" \
-           f"🏷 **Tags:** {tags}"
+    text = (
+        f"📚 <b>{_escape(title)}</b>\n\n"
+        f"🆔 <b>Code:</b> <code>{_escape(data['id'])}</code>\n"
+        f"📄 <b>Pages:</b> {_escape(data['num_pages'])}\n"
+        f"❤️ <b>Favorites:</b> {_escape(data['num_favorites'])}\n"
+        f"🏷 <b>Tags:</b> {_escape(tags)}"
+    )
 
     keyboard = [
         [InlineKeyboardButton("📖 Baca Sekarang", callback_data=f"nhread_read_{data['id']}_0")],
@@ -337,7 +383,8 @@ async def build_nh_search_list(query: str, page: int, context: ContextTypes.DEFA
     context.user_data["last_nh_query"] = query
     keyboard = []
     for item in data["result"]:
-        title = item["english_title"][:40] + "..." if len(item["english_title"]) > 40 else item["english_title"]
+        raw_title = item["english_title"] or "Unknown"
+        title = raw_title[:40] + "..." if len(raw_title) > 40 else raw_title
         gallery_id = item["id"]
         keyboard.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"nhdetail_{gallery_id}")])
 
@@ -351,7 +398,7 @@ async def build_nh_search_list(query: str, page: int, context: ContextTypes.DEFA
         keyboard.append(nav_buttons)
     keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
 
-    return f"🔍 Hasil nHentai: **{query}** (Page {page}/{data['num_pages']})", InlineKeyboardMarkup(keyboard)
+    return f"🔍 Hasil nHentai: <b>{_escape(query)}</b> (Page {page}/{data['num_pages']})", InlineKeyboardMarkup(keyboard)
 
 
 NH_API_KEY = os.getenv("NH_API")
@@ -366,37 +413,40 @@ else:
 async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or len(context.args) < 2:
         help_txt = (
-            "⚠️ **Format Salah!**\n\n"
-            "Gunakan: `/manga <sumber> <judul/kode>`\n\n"
-            "📚 **Sumber:** `dex` | `maid` | `nh`\n"
-            "💡 **Example:**\n"
-            "`/manga dex Haimiya-senpai`\n"
-            "`/manga maid Osananajimi wo Onnanoko`\n"
-            "`/manga nh Zenles Zone Zero Or 642563`\n"
+            "⚠️ <b>Format Salah!</b>\n\n"
+            "Gunakan: <code>/manga &lt;sumber&gt; &lt;judul/kode&gt;</code>\n\n"
+            "📚 <b>Sumber:</b> <code>dex</code> | <code>maid</code> | <code>nh</code>\n"
+            "💡 <b>Example:</b>\n"
+            "<code>/manga dex Haimiya-senpai</code>\n"
+            "<code>/manga maid Osananajimi wo Onnanoko</code>\n"
+            "<code>/manga nh Zenles Zone Zero Or 642563</code>\n"
         )
-        return await update.message.reply_text(help_txt, parse_mode="Markdown")
+        return await update.message.reply_text(help_txt, parse_mode="HTML")
 
     chat = update.effective_chat
-    if not await _ensure_manga_allowed(chat):
-        return await update.message.reply_text("❌ Fitur ini hanya bisa dipakai di grup yang mengaktifkan NSFW.")
+    if not _is_nsfw_enabled(chat.id, chat.type):
+        return await update.message.reply_text("❌ NSFW tidak diaktifkan di grup ini.")
 
     source = context.args[0].lower()
     full_query = " ".join(context.args[1:])
-    msg = await update.message.reply_text(f"🔍 Memproses `{full_query}` di {source.upper()}...", parse_mode="Markdown")
+    msg = await update.message.reply_text(
+        f"🔍 Memproses <code>{_escape(full_query)}</code> di <b>{_escape(source.upper())}</b>...",
+        parse_mode="HTML"
+    )
     _set_message_lock(msg.chat_id, msg.message_id, update.effective_user.id)
 
     if source in ["dex", "mangadex"]:
         text, markup = await build_search_list(full_query, 0, context)
         if text:
-            await msg.edit_text(text, parse_mode="Markdown", reply_markup=markup)
+            await msg.edit_text(text, parse_mode="HTML", reply_markup=markup)
         else:
-            await msg.edit_text("❌ Manga tidak ditemukan di MangaDex.")
+            await msg.edit_text("❌ Manga tidak ditemukan di MangaDex.", parse_mode="HTML")
 
     elif source in ["maid", "maidmanga"]:
         url = f"{MAID_URL}/?s={urllib.parse.quote(full_query)}"
         html_doc = await fetch_html(url)
         if not html_doc:
-            return await msg.edit_text("❌ Gagal menghubungi server Maid-Manga.")
+            return await msg.edit_text("❌ Gagal menghubungi server Maid-Manga.", parse_mode="HTML")
 
         soup = BeautifulSoup(html_doc, "html.parser")
         keyboard = []
@@ -420,19 +470,23 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
 
         if not keyboard:
-            return await msg.edit_text("❌ Manga tidak ditemukan di Maid-Manga.")
+            return await msg.edit_text("❌ Manga tidak ditemukan di Maid-Manga.", parse_mode="HTML")
 
         keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
-        await msg.edit_text(f"🔍 **Maid-Manga:** `{full_query}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await msg.edit_text(
+            f"🔍 <b>Maid-Manga:</b> <code>{_escape(full_query)}</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     elif source in ["nh", "nhentai"]:
-        if not is_nsfw_allowed(chat.id, chat.type):
-            return await msg.edit_text("❌ Fitur NSFW dimatikan di grup ini.")
+        if not _is_nsfw_enabled(chat.id, chat.type):
+            return await msg.edit_text("❌ NSFW tidak diaktifkan di grup ini.", parse_mode="HTML")
 
         if full_query.isdigit():
             data = await fetch_json(f"{NH_API_URL}/galleries/{full_query}", custom_headers=NH_HEADERS)
             if not data:
-                return await msg.edit_text("❌ Doujin tidak ditemukan (kode salah).")
+                return await msg.edit_text("❌ Doujin tidak ditemukan (kode salah).", parse_mode="HTML")
 
             text, markup = build_nh_detail_ui(data)
             cover_url = get_nh_cover_url(data)
@@ -445,28 +499,31 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msg.chat_id,
                     photo=img_safe,
                     caption=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=markup
                 )
                 _move_message_lock(msg.chat_id, msg.message_id, sent.chat_id, sent.message_id, fallback_user_id=update.effective_user.id)
             else:
-                await msg.edit_text(text, parse_mode="Markdown", reply_markup=markup)
+                await msg.edit_text(text, parse_mode="HTML", reply_markup=markup)
         else:
             text, markup = await build_nh_search_list(full_query, 1, context)
             if text:
-                await msg.edit_text(text, parse_mode="Markdown", reply_markup=markup)
+                await msg.edit_text(text, parse_mode="HTML", reply_markup=markup)
             else:
-                await msg.edit_text("❌ Doujin tidak ditemukan.")
+                await msg.edit_text("❌ Doujin tidak ditemukan.", parse_mode="HTML")
     else:
-        await msg.edit_text("❌ **Sumber tidak dikenal.**\nPilih `dex`, `maid`, atau `nh`.", parse_mode="Markdown")
+        await msg.edit_text(
+            "❌ <b>Sumber tidak dikenal.</b>\nPilih <code>dex</code>, <code>maid</code>, atau <code>nh</code>.",
+            parse_mode="HTML"
+        )
 
 
 async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
 
-    if not await _ensure_manga_allowed(query.message.chat):
-        return await query.answer("❌ Fitur ini hanya bisa dipakai di grup yang mengaktifkan NSFW.", show_alert=True)
+    if not _is_nsfw_enabled(query.message.chat_id, query.message.chat.type):
+        return await query.answer("❌ NSFW tidak diaktifkan di grup ini.", show_alert=True)
 
     if not await _ensure_callback_lock(query):
         return
@@ -492,12 +549,12 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 sent = await context.bot.send_message(
                     chat_id=query.message.chat_id,
                     text=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=markup
                 )
                 _move_message_lock(query.message.chat_id, query.message.message_id, sent.chat_id, sent.message_id, fallback_user_id=query.from_user.id)
             else:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+                await query.edit_message_text(text, parse_mode="HTML", reply_markup=markup)
 
     elif data.startswith("detailmanga_"):
         parts = data.split("_")
@@ -518,7 +575,9 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         feed = await fetch_json(f"{MANGADEX_API}/manga/{manga_id}/feed", {
             "translatedLanguage[]": ["en", "id"],
-            "limit": 10, "offset": offset, "order[chapter]": "desc"
+            "limit": 10,
+            "offset": offset,
+            "order[chapter]": "desc"
         })
 
         keyboard = []
@@ -539,10 +598,10 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton("🔙 Kembali ke Pencarian", callback_data="msearch_0")])
         keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
 
-        caption = f"📚 **{title}**\n\n📝 {desc}"
+        caption = f"📚 <b>{_escape(title)}</b>\n\n📝 {_escape(desc)}"
 
         if query.message.photo:
-            await query.edit_message_caption(caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
             _set_message_lock(query.message.chat_id, query.message.message_id, query.from_user.id)
         else:
             if cover_url:
@@ -551,12 +610,12 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     query.message.chat_id,
                     photo=cover_url,
                     caption=caption,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
                 _move_message_lock(query.message.chat_id, query.message.message_id, sent.chat_id, sent.message_id, fallback_user_id=query.from_user.id)
             else:
-                await query.edit_message_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                await query.edit_message_text(caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
                 _set_message_lock(query.message.chat_id, query.message.message_id, query.from_user.id)
 
     elif data.startswith("readmanga_") or data.startswith("switchch_"):
@@ -574,7 +633,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data[f"manga_{chapter_id}"] = urls
 
         keyboard = get_nav_keyboard(chapter_id, 0, len(urls), prev_ch, next_ch)
-        caption_text = f"📖 <b>{m_title}</b> | Ch:{m_ch} | 🌐 {m_lang}"
+        caption_text = f"📖 <b>{_escape(m_title)}</b> | Ch:{_escape(m_ch)} | 🌐 {_escape(m_lang)}"
 
         img_bytes = await fetch_image_bytes(urls[0])
         if not img_bytes:
@@ -598,7 +657,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if img_bytes:
             keyboard = get_nav_keyboard(chapter_id, page_idx, len(urls), prev_ch, next_ch)
-            caption_text = f"📖 <b>{m_title}</b> | Ch:{m_ch} | 🌐 {m_lang}"
+            caption_text = f"📖 <b>{_escape(m_title)}</b> | Ch:{_escape(m_ch)} | 🌐 {_escape(m_lang)}"
             await safe_render_page(query, context, img_bytes, caption_text, keyboard, True, owner_id=query.from_user.id)
 
     elif data.startswith("maiddet_"):
@@ -646,7 +705,10 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             p_sid = hashlib.md5(all_chapters[i + 1].get("href").replace(MAID_URL, "").encode()).hexdigest()[:8] if i < total_ch - 1 else None
 
             context.user_data[f"maid_ctx_{ch_sid}"] = {
-                "next_ch": n_sid, "prev_ch": p_sid, "title": title, "ch_num": ch_num
+                "next_ch": n_sid,
+                "prev_ch": p_sid,
+                "title": title,
+                "ch_num": ch_num
             }
             if offset <= i < offset + 5:
                 keyboard.append([InlineKeyboardButton(f"📖 Ch. {ch_num}", callback_data=f"maidread_{ch_sid}")])
@@ -660,10 +722,14 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append(list_nav)
 
         keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
-        caption = f"📚 **{title}**\n\n📝 {desc[:300]}...\n\n🗂 _Chapter {offset+1}-{min(offset+5, total_ch)} dari {total_ch}_"
+        caption = (
+            f"📚 <b>{_escape(title)}</b>\n\n"
+            f"📝 {_escape(desc[:300])}...\n\n"
+            f"🗂 <i>Chapter {offset+1}-{min(offset+5, total_ch)} dari {total_ch}</i>"
+        )
 
         if query.message.photo:
-            await query.edit_message_caption(caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
             _set_message_lock(query.message.chat_id, query.message.message_id, query.from_user.id)
         else:
             if cover_url:
@@ -672,12 +738,12 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     query.message.chat_id,
                     photo=cover_url,
                     caption=caption,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
                 _move_message_lock(query.message.chat_id, query.message.message_id, sent.chat_id, sent.message_id, fallback_user_id=query.from_user.id)
             else:
-                await query.edit_message_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                await query.edit_message_text(caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
                 _set_message_lock(query.message.chat_id, query.message.message_id, query.from_user.id)
 
     elif data.startswith("maidread_"):
@@ -727,7 +793,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ch_nav.append(InlineKeyboardButton("Ch Next ⏩", callback_data=f"maidread_{ctx['next_ch']}"))
 
         keyboard = InlineKeyboardMarkup([nav, ch_nav])
-        caption = f"📖 <b>{manga_title}</b> | Ch:{ch_num}"
+        caption = f"📖 <b>{_escape(manga_title)}</b> | Ch:{_escape(ch_num)}"
 
         is_edit = hasattr(query, "edit_message_media")
         await safe_render_page(query, context, img_bytes, caption, keyboard, is_edit, owner_id=query.from_user.id)
@@ -760,7 +826,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ctx.get("next_ch"):
                 ch_nav.append(InlineKeyboardButton("Ch Next ⏩", callback_data=f"maidread_{ctx['next_ch']}"))
 
-            caption = f"📖 <b>{ctx.get('title')}</b> | Ch:{ctx.get('ch_num')}"
+            caption = f"📖 <b>{_escape(ctx.get('title'))}</b> | Ch:{_escape(ctx.get('ch_num'))}"
             await safe_render_page(
                 query,
                 context,
@@ -779,7 +845,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text, markup = await build_nh_search_list(q, page, context)
         if text:
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=markup)
 
     elif data.startswith("nhdetail_"):
         gallery_id = data.split("_")[1]
@@ -796,7 +862,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if cover_bytes:
                 img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, cover_bytes)
                 await query.edit_message_media(
-                    media=InputMediaPhoto(media=img_safe, caption=text, parse_mode="Markdown"),
+                    media=InputMediaPhoto(media=img_safe, caption=text, parse_mode="HTML"),
                     reply_markup=markup
                 )
                 _set_message_lock(query.message.chat_id, query.message.message_id, query.from_user.id)
@@ -805,7 +871,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 sent = await context.bot.send_message(
                     query.message.chat_id,
                     text=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=markup
                 )
                 _move_message_lock(query.message.chat_id, query.message.message_id, sent.chat_id, sent.message_id, fallback_user_id=query.from_user.id)
@@ -817,12 +883,12 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     query.message.chat_id,
                     photo=img_safe,
                     caption=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=markup
                 )
                 _move_message_lock(query.message.chat_id, query.message.message_id, sent.chat_id, sent.message_id, fallback_user_id=query.from_user.id)
             else:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+                await query.edit_message_text(text, parse_mode="HTML", reply_markup=markup)
                 _set_message_lock(query.message.chat_id, query.message.message_id, query.from_user.id)
 
     elif data.startswith("nhread_") or data.startswith("nhnav_"):
@@ -869,7 +935,14 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
         title = g_data["title"]["pretty"] or g_data["title"]["english"]
-        caption_text = f"🔞 <b>{title[:100]}</b>\n📄 Hal: {page_idx + 1}/{len(pages)}"
+        caption_text = f"🔞 <b>{_escape(title[:100])}</b>\n📄 Hal: {page_idx + 1}/{len(pages)}"
 
         is_edit = action == "nhnav_" and hasattr(query, "edit_message_media")
         await safe_render_page(query, context, img_bytes, caption_text, keyboard, is_edit, owner_id=query.from_user.id)
+
+
+try:
+    _nsfw_db_init()
+except Exception as e:
+    log.warning(f"Failed to init manga nsfw db: {e}")
+    
