@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import logging
 import mimetypes
 import aiohttp
 import aiofiles
@@ -17,13 +18,16 @@ from .instagram_scrape import (
 
 INSTAGRAM_API_URL = "https://api.sonzaix.indevs.in/sosmed/instagram"
 
+log = logging.getLogger(__name__)
+
 
 def is_instagram_url(url: str) -> bool:
     try:
         host = (urlparse((url or "").strip()).hostname or "").lower()
         return host == "instagram.com" or host.endswith(".instagram.com") or host == "instagr.am"
-    except Exception:
+    except Exception as e:
         text = (url or "").lower()
+        log.warning("Failed to parse Instagram URL host | url=%s err=%s", url, e)
         return "instagram.com" in text or "instagr.am" in text
 
 
@@ -33,8 +37,8 @@ def _guess_ext_from_url(url: str) -> str:
         ext = os.path.splitext(path)[1].lower()
         if ext in (".mp4", ".mov", ".m4v", ".jpg", ".jpeg", ".png", ".webp"):
             return ext
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Failed to guess extension from media URL | url=%s err=%s", url, e)
     return ""
 
 
@@ -167,6 +171,23 @@ def _pick_media_for_format(candidates: list[tuple[str, str]], fmt_key: str) -> t
     return candidates[0]
 
 
+async def _safe_edit_status(bot, chat_id, message_id, text: str):
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning(
+            "Failed to edit Instagram status message | chat_id=%s message_id=%s err=%s",
+            chat_id,
+            message_id,
+            e,
+        )
+
+
 async def instagram_api_download(
     raw_url: str,
     fmt_key: str,
@@ -175,16 +196,14 @@ async def instagram_api_download(
     status_msg_id,
 ):
     session = await get_http_session()
+    out_path = None
 
-    try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="<b>Fetching Instagram media...</b>",
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
+    await _safe_edit_status(
+        bot=bot,
+        chat_id=chat_id,
+        message_id=status_msg_id,
+        text="<b>Fetching Instagram media...</b>",
+    )
 
     try:
         async with session.get(
@@ -192,6 +211,9 @@ async def instagram_api_download(
             params={"url": raw_url},
             timeout=aiohttp.ClientTimeout(total=25),
         ) as resp:
+            if resp.status >= 400:
+                raise RuntimeError(f"Instagram API request failed: HTTP {resp.status}")
+
             data = await resp.json(content_type=None)
 
         if not isinstance(data, dict):
@@ -235,18 +257,15 @@ async def instagram_api_download(
 
                     if total and time.time() - last >= 1.0:
                         pct = downloaded / total * 100
-                        try:
-                            await bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=status_msg_id,
-                                text=(
-                                    "<b>Download use sonzai api...</b>\n\n"
-                                    f"<code>{progress_bar(pct)}</code>"
-                                ),
-                                parse_mode="HTML",
-                            )
-                        except Exception:
-                            pass
+                        await _safe_edit_status(
+                            bot=bot,
+                            chat_id=chat_id,
+                            message_id=status_msg_id,
+                            text=(
+                                "<b>Download use sonzai api...</b>\n\n"
+                                f"<code>{progress_bar(pct)}</code>"
+                            ),
+                        )
                         last = time.time()
 
         return {
@@ -255,17 +274,29 @@ async def instagram_api_download(
         }
 
     except Exception as e:
-        print("[INSTAGRAM SONZAI FAILED]", repr(e))
-
-    try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="<b>Sonzai failed, fallback to Indown...</b>",
-            parse_mode="HTML",
+        log.warning(
+            "Instagram Sonzai API download failed, falling back to Indown | url=%s fmt=%s err=%r",
+            raw_url,
+            fmt_key,
+            e,
         )
-    except Exception:
-        pass
+
+        if out_path and os.path.exists(out_path):
+            try:
+                os.remove(out_path)
+            except Exception as cleanup_err:
+                log.warning(
+                    "Failed to remove partial Instagram API file | path=%s err=%s",
+                    out_path,
+                    cleanup_err,
+                )
+
+    await _safe_edit_status(
+        bot=bot,
+        chat_id=chat_id,
+        message_id=status_msg_id,
+        text="<b>Sonzai failed, fallback to Indown...</b>",
+    )
 
     return await igdl_download_for_fallback(
         bot=bot,
@@ -312,3 +343,4 @@ async def send_instagram_result(bot, chat_id: int, reply_to: int, result: dict):
 
 async def cleanup_instagram_result(result: dict):
     await cleanup_instagram_fallback_result(result)
+    
