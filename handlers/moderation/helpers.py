@@ -40,7 +40,16 @@ async def reply_in_topic(msg, text: str, **kwargs):
     kwargs = {**get_topic_reply_kwargs(msg), **kwargs}
     return await msg.reply_text(text, **kwargs)
 
-
+def _looks_like_explicit_target(token: str | None) -> bool:
+    t = (token or "").strip()
+    if not t:
+        return False
+    if t.startswith("@"):
+        return True
+    if t.isdigit():
+        return True
+    return False
+    
 def parse_duration(raw: str) -> tuple[datetime | None, str | None]:
     m = DURATION_RE.match((raw or "").strip())
     if not m:
@@ -115,17 +124,28 @@ def extract_duration_target_reason(args: list[str], has_reply_target: bool) -> t
 
     until, dur_human = parse_duration(a[0])
 
-    if has_reply_target:
-        if until is not None:
+    if until is not None:
+        if len(a) >= 2 and _looks_like_explicit_target(a[1]):
+            target = a[1]
+            reason = " ".join(a[2:]).strip() or "-"
+            return until, dur_human, target, reason
+
+        if has_reply_target:
             reason = " ".join(a[1:]).strip() or "-"
             return until, dur_human, None, reason
-        reason = " ".join(a).strip() or "-"
-        return None, None, None, reason
 
-    if until is not None:
         target = a[1] if len(a) >= 2 else None
         reason = " ".join(a[2:]).strip() or "-"
         return until, dur_human, target, reason
+
+    if _looks_like_explicit_target(a[0]):
+        target = a[0]
+        reason = " ".join(a[1:]).strip() or "-"
+        return None, None, target, reason
+
+    if has_reply_target:
+        reason = " ".join(a).strip() or "-"
+        return None, None, None, reason
 
     target = a[0]
     reason = " ".join(a[1:]).strip() or "-"
@@ -134,15 +154,35 @@ def extract_duration_target_reason(args: list[str], has_reply_target: bool) -> t
 
 def extract_target_reason(args: list[str], has_reply_target: bool) -> tuple[str | None, str]:
     a = [x for x in (args or []) if (x or "").strip()]
-    if has_reply_target:
-        return None, (" ".join(a).strip() or "-")
+
     if not a:
         return None, "-"
+
+    if _looks_like_explicit_target(a[0]):
+        return a[0], (" ".join(a[1:]).strip() or "-")
+
+    if has_reply_target:
+        return None, (" ".join(a).strip() or "-")
+
     return a[0], (" ".join(a[1:]).strip() or "-")
 
 
 async def resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None) -> int | None:
     msg = update.message
+
+    raw = (token or "").strip()
+    if raw:
+        ent_user = text_mention_user_from_message(msg, token)
+        if ent_user and getattr(ent_user, "id", None):
+            return int(ent_user.id)
+
+        if raw.isdigit():
+            return int(raw)
+
+        if raw.startswith("@"):
+            raw = raw[1:].strip()
+
+        return lookup_user_id(raw)
 
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
         return int(msg.reply_to_message.from_user.id)
@@ -151,21 +191,18 @@ async def resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_T
     if ent_user and getattr(ent_user, "id", None):
         return int(ent_user.id)
 
-    raw = (token or "").strip()
-    if not raw:
-        return None
-
-    if raw.isdigit():
-        return int(raw)
-
-    if raw.startswith("@"):
-        raw = raw[1:].strip()
-
-    return lookup_user_id(raw)
+    return None
 
 
 async def resolve_target_user_obj_for_display(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str | None):
     msg = update.message
+    raw = (token or "").strip()
+
+    if raw:
+        ent_user = text_mention_user_from_message(msg, token)
+        if ent_user:
+            return ent_user
+        return None
 
     if msg and msg.reply_to_message and msg.reply_to_message.from_user:
         return msg.reply_to_message.from_user
