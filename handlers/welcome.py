@@ -33,6 +33,7 @@ VERIFIED_USERS = {}
 PENDING_VERIFY = {}
 PENDING_VERIFY_TASKS = {}
 WELCOME_MESSAGES = {}
+VERIFY_LOCKS = {}
 
 VERIFY_TIMEOUT_SECONDS = 5 * 60
 RESTORE_MAX_AGE_SECONDS = 15 * 60
@@ -40,6 +41,15 @@ RESTORE_MAX_AGE_SECONDS = 15 * 60
 
 def _verify_key(chat_id: int, user_id: int):
     return (chat_id, user_id)
+
+
+def _get_verify_lock(chat_id: int, user_id: int) -> asyncio.Lock:
+    key = _verify_key(chat_id, user_id)
+    lock = VERIFY_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        VERIFY_LOCKS[key] = lock
+    return lock
 
 
 def generate_math_question(user_id: int, chat_id: int):
@@ -268,19 +278,20 @@ async def _verify_timeout_worker(app, chat_id: int, user_id: int, delay: float):
         if delay > 0:
             await asyncio.sleep(delay)
 
-        pending = PENDING_VERIFY.get(key)
-        if not pending:
-            return
+        async with _get_verify_lock(chat_id, user_id):
+            pending = PENDING_VERIFY.get(key)
+            if not pending:
+                return
 
-        should_enforce = await _should_enforce_verification(app.bot, chat_id, user_id)
-        if not should_enforce:
-            await _cleanup_pending_state(app.bot, chat_id, user_id, delete_message=True)
-            return
+            should_enforce = await _should_enforce_verification(app.bot, chat_id, user_id)
+            if not should_enforce:
+                await _cleanup_pending_state(app.bot, chat_id, user_id, delete_message=True)
+                return
 
-        PENDING_VERIFY.pop(key, None)
+            PENDING_VERIFY.pop(key, None)
 
-        await _delete_welcome_message(app.bot, chat_id, user_id)
-        await _kick_unverified_user(app.bot, chat_id, user_id)
+            await _delete_welcome_message(app.bot, chat_id, user_id)
+            await _kick_unverified_user(app.bot, chat_id, user_id)
 
     except asyncio.CancelledError:
         raise
@@ -322,41 +333,42 @@ async def restore_pending_verifications(app):
 
         key = _verify_key(chat_id, user_id)
 
-        elapsed = max(0, now - created_at)
-        if elapsed > RESTORE_MAX_AGE_SECONDS:
-            try:
-                pop_pending_welcome(chat_id, user_id)
-            except Exception as e:
-                log.warning(
-                    f"Failed to drop expired pending welcome for user {user_id} in chat {chat_id}: {e}"
-                )
-            WELCOME_MESSAGES.pop(key, None)
-            PENDING_VERIFY.pop(key, None)
-            skipped += 1
-            continue
+        async with _get_verify_lock(chat_id, user_id):
+            elapsed = max(0, now - created_at)
+            if elapsed > RESTORE_MAX_AGE_SECONDS:
+                try:
+                    pop_pending_welcome(chat_id, user_id)
+                except Exception as e:
+                    log.warning(
+                        f"Failed to drop expired pending welcome for user {user_id} in chat {chat_id}: {e}"
+                    )
+                WELCOME_MESSAGES.pop(key, None)
+                PENDING_VERIFY.pop(key, None)
+                skipped += 1
+                continue
 
-        should_enforce = await _should_enforce_verification(app.bot, chat_id, user_id)
-        if not should_enforce:
-            await _cleanup_pending_state(app.bot, chat_id, user_id, delete_message=True)
-            skipped += 1
-            continue
+            should_enforce = await _should_enforce_verification(app.bot, chat_id, user_id)
+            if not should_enforce:
+                await _cleanup_pending_state(app.bot, chat_id, user_id, delete_message=True)
+                skipped += 1
+                continue
 
-        WELCOME_MESSAGES[key] = message_id
-        PENDING_VERIFY[key] = {
-            "chat_id": chat_id,
-            "user_id": user_id,
-            "answer": None,
-            "created_at": created_at,
-        }
+            WELCOME_MESSAGES[key] = message_id
+            PENDING_VERIFY[key] = {
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "answer": None,
+                "created_at": created_at,
+            }
 
-        remaining = VERIFY_TIMEOUT_SECONDS - elapsed
+            remaining = VERIFY_TIMEOUT_SECONDS - elapsed
 
-        if remaining <= 0:
-            _schedule_verify_timeout(app, chat_id, user_id, delay=0)
-            expired += 1
-        else:
-            _schedule_verify_timeout(app, chat_id, user_id, delay=remaining)
-            restored += 1
+            if remaining <= 0:
+                _schedule_verify_timeout(app, chat_id, user_id, delay=0)
+                expired += 1
+            else:
+                _schedule_verify_timeout(app, chat_id, user_id, delay=remaining)
+                restored += 1
 
     if restored or skipped or expired:
         log.info(
@@ -463,50 +475,51 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_username = ""
 
     for user in msg.new_chat_members:
-        if user.id in VERIFIED_USERS.get(chat.id, set()):
-            VERIFIED_USERS.setdefault(chat.id, set()).discard(user.id)
+        async with _get_verify_lock(chat.id, user.id):
+            if user.id in VERIFIED_USERS.get(chat.id, set()):
+                VERIFIED_USERS.setdefault(chat.id, set()).discard(user.id)
+                try:
+                    delete_verified_user(chat.id, user.id)
+                except Exception as e:
+                    log.warning(f"Failed to clear verified status for rejoined user {user.id} in chat {chat.id}: {e}")
+
+            await _cleanup_pending_state(context.bot, chat.id, user.id, delete_message=True)
+
             try:
-                delete_verified_user(chat.id, user.id)
+                await context.bot.restrict_chat_member(
+                    chat_id=chat.id,
+                    user_id=user.id,
+                    permissions=ChatPermissions(can_send_messages=False)
+                )
             except Exception as e:
-                log.warning(f"Failed to clear verified status for rejoined user {user.id} in chat {chat.id}: {e}")
+                log.warning(f"Failed to restrict user {user.id} in chat {chat.id}: {e}")
 
-        await _cleanup_pending_state(context.bot, chat.id, user.id, delete_message=True)
+            try:
+                sent = await _send_welcome_message(
+                    context=context,
+                    chat=chat,
+                    user=user,
+                    bot_username=bot_username,
+                )
+            except Exception as e:
+                log.warning(f"Welcome message failed for user {user.id} in chat {chat.id}: {e}")
+                continue
 
-        try:
-            await context.bot.restrict_chat_member(
-                chat_id=chat.id,
-                user_id=user.id,
-                permissions=ChatPermissions(can_send_messages=False)
-            )
-        except Exception as e:
-            log.warning(f"Failed to restrict user {user.id} in chat {chat.id}: {e}")
+            key = _verify_key(chat.id, user.id)
+            WELCOME_MESSAGES[key] = sent.message_id
 
-        try:
-            sent = await _send_welcome_message(
-                context=context,
-                chat=chat,
-                user=user,
-                bot_username=bot_username,
-            )
-        except Exception as e:
-            log.warning(f"Welcome message failed for user {user.id} in chat {chat.id}: {e}")
-            continue
+            try:
+                save_pending_welcome(chat.id, user.id, sent.message_id)
+            except Exception as e:
+                log.warning(f"Failed to save pending welcome for user {user.id} in chat {chat.id}: {e}")
 
-        key = _verify_key(chat.id, user.id)
-        WELCOME_MESSAGES[key] = sent.message_id
-
-        try:
-            save_pending_welcome(chat.id, user.id, sent.message_id)
-        except Exception as e:
-            log.warning(f"Failed to save pending welcome for user {user.id} in chat {chat.id}: {e}")
-
-        PENDING_VERIFY[key] = {
-            "chat_id": chat.id,
-            "user_id": user.id,
-            "answer": None,
-            "created_at": time.time(),
-        }
-        _schedule_verify_timeout(context.application, chat.id, user.id)
+            PENDING_VERIFY[key] = {
+                "chat_id": chat.id,
+                "user_id": user.id,
+                "answer": None,
+                "created_at": time.time(),
+            }
+            _schedule_verify_timeout(context.application, chat.id, user.id)
 
 
 async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -525,22 +538,25 @@ async def start_verify_pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if update.effective_user.id != user_id:
-        return
-
-    key = _verify_key(chat_id, user_id)
-    pending = PENDING_VERIFY.get(key)
-    if not pending:
         return await update.message.reply_text(
-            "Verification expired or not found. Please rejoin the group."
+            "This verification request is not for you."
         )
 
-    text, keyboard = generate_math_question(user_id, chat_id)
+    async with _get_verify_lock(chat_id, user_id):
+        key = _verify_key(chat_id, user_id)
+        pending = PENDING_VERIFY.get(key)
+        if not pending:
+            return await update.message.reply_text(
+                "Verification expired or not found. Please rejoin the group."
+            )
 
-    await update.message.reply_text(
-        text,
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+        text, keyboard = generate_math_question(user_id, chat_id)
+
+        await update.message.reply_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
 
 
 async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -560,85 +576,86 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     if q.from_user.id != user_id:
-        await q.answer("Not your button.", show_alert=True)
+        await q.answer("This is not your verification button.", show_alert=True)
         return
 
-    key = _verify_key(chat_id, user_id)
-    pending = PENDING_VERIFY.get(key)
+    async with _get_verify_lock(chat_id, user_id):
+        key = _verify_key(chat_id, user_id)
+        pending = PENDING_VERIFY.get(key)
 
-    if not pending or pending["chat_id"] != chat_id:
-        await q.answer("Invalid verification.", show_alert=True)
-        return
+        if not pending or pending["chat_id"] != chat_id:
+            await q.answer("Invalid verification.", show_alert=True)
+            return
 
-    if pending.get("answer") is None:
-        await q.answer("Please start verification from the bot chat first.", show_alert=True)
-        return
+        if pending.get("answer") is None:
+            await q.answer("Please start verification from the bot chat first.", show_alert=True)
+            return
 
-    if chosen != pending["answer"]:
-        await q.answer("Wrong answer. Try again.", show_alert=True)
-        text, keyboard = generate_math_question(user_id, chat_id)
+        if chosen != pending["answer"]:
+            await q.answer("Wrong answer. Try again.", show_alert=True)
+            text, keyboard = generate_math_question(user_id, chat_id)
+            try:
+                await q.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            except Exception as e:
+                log.warning(
+                    f"Failed to edit verification question for user {user_id} in chat {chat_id}: {e}"
+                )
+                try:
+                    await q.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+                except Exception as reply_err:
+                    log.warning(
+                        f"Failed to resend verification question for user {user_id} in chat {chat_id}: {reply_err}"
+                    )
+            return
+
+        await q.answer("Verification successful!", show_alert=False)
+
         try:
-            await q.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await context.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=user_id,
+                permissions=ChatPermissions(
+                    can_invite_users=True,
+                    can_send_audios=True,
+                    can_send_documents=True,
+                    can_send_messages=True,
+                    can_send_other_messages=True,
+                    can_send_photos=True,
+                    can_send_polls=True,
+                    can_send_video_notes=True,
+                    can_send_videos=True,
+                    can_send_voice_notes=True,
+                )
+            )
+        except Exception as e:
+            log.warning(f"Failed to unrestrict verified user {user_id} in chat {chat_id}: {e}")
+
+        VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
+        try:
+            save_verified_user(chat_id, user_id)
+        except Exception as e:
+            log.warning(f"Failed to persist verified user {user_id} in chat {chat_id}: {e}")
+
+        _cancel_verify_timeout(chat_id, user_id)
+        PENDING_VERIFY.pop(key, None)
+
+        await _delete_welcome_message(context.bot, chat_id, user_id)
+
+        try:
+            await q.message.edit_text("Verification successful. You may return to the group.")
         except Exception as e:
             log.warning(
-                f"Failed to edit verification question for user {user_id} in chat {chat_id}: {e}"
+                f"Failed to edit verification success message for user {user_id} in chat {chat_id}: {e}"
             )
             try:
-                await q.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
-            except Exception as reply_err:
-                log.warning(
-                    f"Failed to resend verification question for user {user_id} in chat {chat_id}: {reply_err}"
+                await context.bot.send_message(
+                    chat_id=q.message.chat_id,
+                    text="Verification successful. You may return to the group."
                 )
-        return
-
-    await q.answer("Verification successful!", show_alert=False)
-
-    try:
-        await context.bot.restrict_chat_member(
-            chat_id=chat_id,
-            user_id=user_id,
-            permissions=ChatPermissions(
-                can_invite_users=True,
-                can_send_audios=True,
-                can_send_documents=True,
-                can_send_messages=True,
-                can_send_other_messages=True,
-                can_send_photos=True,
-                can_send_polls=True,
-                can_send_video_notes=True,
-                can_send_videos=True,
-                can_send_voice_notes=True,
-            )
-        )
-    except Exception as e:
-        log.warning(f"Failed to unrestrict verified user {user_id} in chat {chat_id}: {e}")
-
-    VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
-    try:
-        save_verified_user(chat_id, user_id)
-    except Exception as e:
-        log.warning(f"Failed to persist verified user {user_id} in chat {chat_id}: {e}")
-
-    _cancel_verify_timeout(chat_id, user_id)
-    PENDING_VERIFY.pop(key, None)
-
-    await _delete_welcome_message(context.bot, chat_id, user_id)
-
-    try:
-        await q.message.edit_text("Verification successful. You may return to the group.")
-    except Exception as e:
-        log.warning(
-            f"Failed to edit verification success message for user {user_id} in chat {chat_id}: {e}"
-        )
-        try:
-            await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text="Verification successful. You may return to the group."
-            )
-        except Exception as send_err:
-            log.warning(
-                f"Failed to send verification success fallback for user {user_id} in chat {chat_id}: {send_err}"
-            )
+            except Exception as send_err:
+                log.warning(
+                    f"Failed to send verification success fallback for user {user_id} in chat {chat_id}: {send_err}"
+                )
 
 
 try:
