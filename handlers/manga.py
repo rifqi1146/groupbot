@@ -8,6 +8,7 @@ import hashlib
 import urllib.parse
 from io import BytesIO
 from bs4 import BeautifulSoup
+from database.premium import is_premium
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 
@@ -402,6 +403,16 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"🔍 **Maid-Manga:** `{full_query}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif source in ["nh", "nhentai"]:
+
+        if not is_premium(update.effective_user.id):
+            help_premium = (
+                "🌟 **AKSES DITOLAK: KHUSUS PREMIUM!** 🌟\n\n"
+                "Fitur pencarian dan baca manga dari `nHentai` eksklusif "
+                "hanya untuk pengguna Premium.\n\n"
+                "Silakan Donate untuk membuka fitur ini!"
+            )
+            return await msg.edit_text(help_premium, parse_mode="Markdown")
+
         chat = update.effective_chat 
         if not _is_nsfw_enabled(chat.id, chat.type):
             return await msg.edit_text("❌ Fitur NSFW dimatikan di grup ini.")
@@ -439,6 +450,10 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner_id = context.chat_data.get(f"manga_owner_{query.message.message_id}")
     if owner_id and owner_id != query.from_user.id:
         return await query.answer("❌ Bukan Milik Mu Tolol! Silakan request sendiri menggunakan /manga", show_alert=True)
+
+    if data.startswith("nh"):
+        if not is_premium(query.from_user.id):
+            return await query.answer("🌟 Tombol nHentai ini khusus User Premium!", show_alert=True)
     
     if data == "ignore":
         return await query.answer()
