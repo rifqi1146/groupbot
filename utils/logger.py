@@ -1,3 +1,4 @@
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 import html
@@ -5,6 +6,7 @@ import html
 from utils.config import LOG_CHAT_ID
 from utils.commands import BOT_COMMANDS
 
+log = logging.getLogger(__name__)
 
 async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -14,28 +16,35 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = msg.from_user
     name = user.first_name or "Unknown"
     uid = user.id
+    username = f"(@{user.username})" if user.username else ""
 
     chat = update.effective_chat
     chat_type = chat.type.upper()
     chat_name = chat.title or "Private"
 
-    text = (msg.text or "").strip()
+    text = (msg.text or msg.caption or "").strip()
     is_command = text.startswith("/") or text.startswith("$")
 
     if is_command:
         cmd = text[1:].split()[0].split("@")[0].lower()
         if cmd not in BOT_COMMANDS:
             return
+        
         title = "<b>Command Log</b>"
         content = f"<code>{html.escape(text)}</code>"
+
+        log.info(f"💻 [CMD] {name} {username} di {chat_type} '{chat_name}': {text}")
 
     elif msg.reply_to_message:
         bot = context.bot
         replied = msg.reply_to_message
         if not replied.from_user or replied.from_user.id != bot.id:
             return
+            
         title = "<b>Reply Log</b>"
         content = html.escape(text) if text else "<i>(non-text message)</i>"
+
+        log.info(f"💬 [REPLY] {name} {username} membalas bot di {chat_type} '{chat_name}': {text}")
 
     else:
         return
@@ -55,5 +64,5 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             disable_notification=True
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log.error(f"Gagal mengirim log ke Telegram: {e}")
