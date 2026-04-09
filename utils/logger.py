@@ -56,4 +56,4 @@ async def log_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_notification=True
         )
     except Exception:
-        pass
+        log.exception("log chat id not set")

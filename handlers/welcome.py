@@ -189,13 +189,18 @@ async def _delete_welcome_message(bot, chat_id: int, user_id: int):
     if msg_id is None:
         try:
             msg_id = pop_pending_welcome(chat_id, user_id)
-        except Exception:
+        except Exception as e:
+            log.warning(
+                f"Failed to restore pending welcome message id for user {user_id} in chat {chat_id}: {e}"
+            )
             msg_id = None
     else:
         try:
             pop_pending_welcome(chat_id, user_id)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(
+                f"Failed to remove pending welcome record for user {user_id} in chat {chat_id}: {e}"
+            )
 
     if msg_id:
         try:
@@ -215,8 +220,10 @@ async def _cleanup_pending_state(bot, chat_id: int, user_id: int, delete_message
         WELCOME_MESSAGES.pop(key, None)
         try:
             pop_pending_welcome(chat_id, user_id)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(
+                f"Failed to clear pending welcome state for user {user_id} in chat {chat_id}: {e}"
+            )
 
 
 async def _kick_unverified_user(bot, chat_id: int, user_id: int):
@@ -319,8 +326,10 @@ async def restore_pending_verifications(app):
         if elapsed > RESTORE_MAX_AGE_SECONDS:
             try:
                 pop_pending_welcome(chat_id, user_id)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(
+                    f"Failed to drop expired pending welcome for user {user_id} in chat {chat_id}: {e}"
+                )
             WELCOME_MESSAGES.pop(key, None)
             PENDING_VERIFY.pop(key, None)
             skipped += 1
@@ -368,7 +377,10 @@ async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
         return member.status in ("administrator", "creator")
-    except Exception:
+    except Exception as e:
+        log.warning(
+            f"Failed to check admin status for user {user.id} in chat {chat.id}: {e}"
+        )
         return False
 
 
@@ -446,11 +458,11 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             me = await context.bot.get_me()
             bot_username = me.username or ""
-        except Exception:
+        except Exception as e:
+            log.warning(f"Failed to resolve bot username in chat {chat.id}: {e}")
             bot_username = ""
 
     for user in msg.new_chat_members:
-        # Rejoin = wajib captcha lagi
         if user.id in VERIFIED_USERS.get(chat.id, set()):
             VERIFIED_USERS.setdefault(chat.id, set()).discard(user.id)
             try:
@@ -458,7 +470,6 @@ async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 log.warning(f"Failed to clear verified status for rejoined user {user.id} in chat {chat.id}: {e}")
 
-        # bersihin state lama kalau ada
         await _cleanup_pending_state(context.bot, chat.id, user.id, delete_message=True)
 
         try:
@@ -568,8 +579,16 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
         text, keyboard = generate_math_question(user_id, chat_id)
         try:
             await q.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        except Exception:
-            await q.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception as e:
+            log.warning(
+                f"Failed to edit verification question for user {user_id} in chat {chat_id}: {e}"
+            )
+            try:
+                await q.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+            except Exception as reply_err:
+                log.warning(
+                    f"Failed to resend verification question for user {user_id} in chat {chat_id}: {reply_err}"
+                )
         return
 
     await q.answer("Verification successful!", show_alert=False)
@@ -597,8 +616,8 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
     VERIFIED_USERS.setdefault(chat_id, set()).add(user_id)
     try:
         save_verified_user(chat_id, user_id)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"Failed to persist verified user {user_id} in chat {chat_id}: {e}")
 
     _cancel_verify_timeout(chat_id, user_id)
     PENDING_VERIFY.pop(key, None)
@@ -607,27 +626,34 @@ async def verify_answer_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         await q.message.edit_text("Verification successful. You may return to the group.")
-    except Exception:
+    except Exception as e:
+        log.warning(
+            f"Failed to edit verification success message for user {user_id} in chat {chat_id}: {e}"
+        )
         try:
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text="Verification successful. You may return to the group."
             )
-        except Exception:
-            pass
+        except Exception as send_err:
+            log.warning(
+                f"Failed to send verification success fallback for user {user_id} in chat {chat_id}: {send_err}"
+            )
 
 
 try:
     init_welcome_db()
 except Exception:
-    pass
+    log.exception("Failed to initialize welcome database")
 
 try:
     WELCOME_ENABLED_CHATS = load_welcome_chats()
 except Exception:
+    log.exception("Failed to load welcome-enabled chats; using empty set")
     WELCOME_ENABLED_CHATS = set()
 
 try:
     VERIFIED_USERS = load_verified()
 except Exception:
+    log.exception("Failed to load verified users; using empty cache")
     VERIFIED_USERS = {}
