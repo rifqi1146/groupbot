@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 DATA_DIR = "data"
 DB_PATH = os.path.join(DATA_DIR, "bot.db")
-INTERVAL = 6 * 60 * 60  # 6 jam
+INTERVAL = 6 * 60 * 60
 
 
 def _normalize_owner_ids():
@@ -118,6 +118,58 @@ def _safe_extract_zip(zip_path: str, extract_to: str):
                 dst.write(src.read())
 
 
+async def _reload_runtime_state(app) -> list[str]:
+    errors = []
+
+    try:
+        from handlers import welcome
+
+        for key, task in list(welcome.PENDING_VERIFY_TASKS.items()):
+            try:
+                if task and not task.done():
+                    task.cancel()
+            except Exception as e:
+                log.warning("Failed to cancel welcome task %s: %s", key, e)
+
+        welcome.PENDING_VERIFY_TASKS.clear()
+        welcome.PENDING_VERIFY.clear()
+        welcome.WELCOME_MESSAGES.clear()
+
+        welcome.WELCOME_ENABLED_CHATS = welcome.load_welcome_chats()
+        welcome.VERIFIED_USERS = welcome.load_verified()
+        await welcome.restore_pending_verifications(app)
+        log.info(
+            "✓ Welcome runtime reloaded | chats=%s verified_chats=%s pending=%s",
+            len(welcome.WELCOME_ENABLED_CHATS),
+            len(welcome.VERIFIED_USERS),
+            len(welcome.PENDING_VERIFY),
+        )
+    except Exception:
+        log.exception("Failed to reload welcome runtime state after restore")
+        errors.append("welcome")
+
+    try:
+        from handlers.asupan import load_asupan_groups, load_autodel_groups
+
+        load_asupan_groups()
+        load_autodel_groups()
+        log.info("✓ Asupan runtime reloaded")
+    except Exception:
+        log.exception("Failed to reload asupan runtime state after restore")
+        errors.append("asupan")
+
+    try:
+        from database import premium_service
+
+        premium_service.init()
+        log.info("✓ Premium runtime reloaded")
+    except Exception:
+        log.exception("Failed to reload premium runtime state after restore")
+        errors.append("premium")
+
+    return errors
+
+
 async def run_backup(bot):
     if not LOG_CHAT_ID:
         raise ValueError("LOG_CHAT_ID kosong")
@@ -161,8 +213,8 @@ async def auto_backup_loop(app):
                     await run_backup(app.bot)
                     log.info("✓ Auto backup sent")
 
-            except Exception as e:
-                log.warning(f"Auto backup failed: {e}")
+            except Exception:
+                log.exception("Auto backup failed")
 
             await asyncio.sleep(INTERVAL)
 
@@ -258,15 +310,30 @@ async def restore_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         _safe_extract_zip(zip_path, DATA_DIR)
 
-        await status.edit_text("Restore completed.")
+        await status.edit_text("Restore extracted. Reloading runtime state...")
+
+        reload_errors = await _reload_runtime_state(context.application)
+
+        if reload_errors:
+            await status.edit_text(
+                "Restore completed with partial reload issues.\n\n"
+                f"<code>{html.escape(', '.join(reload_errors))}</code>",
+                parse_mode="HTML"
+            )
+        else:
+            await status.edit_text("Restore completed and runtime state reloaded.")
 
         if LOG_CHAT_ID:
             await context.bot.send_message(
                 chat_id=LOG_CHAT_ID,
-                text="Data restore completed."
+                text=(
+                    "Data restore completed.\n"
+                    f"Reload errors: {', '.join(reload_errors) if reload_errors else 'none'}"
+                )
             )
 
     except Exception as e:
+        log.exception("Restore failed")
         await status.edit_text(
             f"Error:\n<code>{html.escape(str(e))}</code>",
             parse_mode="HTML"
@@ -311,5 +378,4 @@ async def autobackup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text(f"Auto backup is {status}")
 
     return await msg.reply_text("Usage: /autobackup [enable|disable|status]")
-    
     
