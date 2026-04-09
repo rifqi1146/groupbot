@@ -11,12 +11,11 @@ from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 
-# --- IMPORT BARU UNTUK ANTI-CLOUDFLARE ---
 try:
     from curl_cffi.requests import AsyncSession as CurlSession
 except ImportError:
     CurlSession = None
-    logging.warning("curl_cffi tidak terinstall! Bypass Cloudflare Maid-Manga mungkin gagal. (pip install curl_cffi)")
+    logging.warning("curl_cffi is not installed! Maid-Manga Cloudflare bypass may fail.")
 
 try:
     from PIL import Image
@@ -92,7 +91,6 @@ async def fetch_json(url, params=None, custom_headers=None):
     return None
 
 async def fetch_html(url):
-    """Mengambil HTML dengan TLS Fingerprint Chrome untuk bypass perlindungan ketat"""
     if CurlSession is None:
         log.error("Membutuhkan curl_cffi untuk fetch_html Maid.")
         return None
@@ -108,14 +106,13 @@ async def fetch_html(url):
             if response.status_code == 200:
                 return response.text
             else:
-                log.warning(f"Fetch HTML gagal. HTTP Status: {response.status_code} URL: {url}")
+                log.warning(f"Fetch HTML failed. HTTP Status: {response.status_code} URL: {url}")
                 return None
     except Exception as e:
-        log.error(f"Error fetch HTML Maid (Cloudflare bypass): {type(e).__name__} - {e}")
+        log.error(f"HTML Maid fetch error (Cloudflare bypass): {type(e).__name__} - {e}")
     return None
 
 async def fetch_image_bytes(url, referer="https://mangadex.org/"):
-    """Mengambil bytes gambar, menggunakan curl_cffi khusus untuk MAID_URL jika perlu"""
     if "maid.my.id" in url and CurlSession is not None:
         try:
             async with CurlSession(impersonate="chrome120") as session:
@@ -124,7 +121,7 @@ async def fetch_image_bytes(url, referer="https://mangadex.org/"):
                 if response.status_code == 200:
                     return response.content
         except Exception as e:
-            log.error(f"Error fetch gambar via curl_cffi: {type(e).__name__} - {e}")
+            log.error(f"Error fetching image via curl_cffi: {type(e).__name__} - {e}")
             return None
             
     headers = {
@@ -137,7 +134,7 @@ async def fetch_image_bytes(url, referer="https://mangadex.org/"):
             if response.status == 200:
                 return await response.read()
     except Exception as e:
-        log.error(f"Error fetch gambar: {e}")
+        log.error(f"Image fetch error: {e}")
     return None
 
 
@@ -173,46 +170,49 @@ def enforce_telegram_photo_limits(img_bytes):
             
         return img_bytes
     except Exception as e:
-        log.error(f"Gagal menurunkan resolusi via Pillow: {e}")
+        log.error(f"Failed to lower resolution via Pillow: {e}")
         return img_bytes
 
 async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit=True):
     # Execute Pillow in the background so as not to interfere with the bot Asyncio loop
     img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, img_bytes)
 
+    if is_edit and query.message.photo:
+        try:
+            await query.edit_message_media(
+                media=InputMediaPhoto(media=img_safe, caption=caption, parse_mode="HTML"),
+                reply_markup=keyboard
+            )
+            return 
+        except Exception as e:
+            log.warning(f"Edit failed, fallback to delete-resend: {e}")
+            pass
+    
+    if is_edit:
+        try: await query.message.delete()
+        except: pass
+            
     try:
-        if is_edit and query.message.photo:
-            try:
-                await query.edit_message_media(
-                    media=InputMediaPhoto(media=img_safe, caption=caption, parse_mode="HTML"),
-                    reply_markup=keyboard
-                )
-                return 
-            except Exception as e:
-                log.warning(f"Gagal edit, fallback ke delete-resend: {e}")
-                pass
-        
-        if is_edit:
-            try: await query.message.delete()
-            except: pass
-                
-        await context.bot.send_photo(
+        msg = await context.bot.send_photo(
             query.message.chat_id, 
             photo=img_safe, 
             caption=caption,
             parse_mode="HTML", 
             reply_markup=keyboard
         )
-
+        # Re-register ownership for the new photo message
+        context.chat_data[f"manga_owner_{msg.message_id}"] = query.from_user.id
     except Exception as e:
-        log.error(f"Gagal mengirim foto setelah difilter: {e}")
+        log.error(f"Failed to send photo after filtering: {e}")
         try:
-            await context.bot.send_message(
+            msg = await context.bot.send_message(
                 query.message.chat_id, 
-                "❌ **Telegram menolak mengirim halaman ini.**\nServer gagal merender gambar terlalu ekstrem.",
+                "❌ **Telegram menolak gambar ini.**\nServer gagal me-render halaman karena terlalu ekstrem.",
                 parse_mode="Markdown",
                 reply_markup=keyboard
             )
+            # Re-register ownership for fallback text message
+            context.chat_data[f"manga_owner_{msg.message_id}"] = query.from_user.id
         except: pass
 
 async def get_chapter_context(chapter_id: str, context: ContextTypes.DEFAULT_TYPE):
@@ -258,7 +258,7 @@ def get_nav_keyboard(chapter_id: str, current_idx: int, total_pages: int, prev_c
 
     chapter_nav = []
     if prev_ch: chapter_nav.append(InlineKeyboardButton("⏪ Ch Prev", callback_data=f"switchch_{prev_ch}"))
-    chapter_nav.append(InlineKeyboardButton("❌ Tutup", callback_data="close_manga"))
+    chapter_nav.append(InlineKeyboardButton("❌ Close", callback_data="close_manga"))
     if next_ch: chapter_nav.append(InlineKeyboardButton("Ch Next ⏩", callback_data=f"switchch_{next_ch}"))
 
     return InlineKeyboardMarkup([page_nav, chapter_nav])
@@ -285,7 +285,7 @@ async def build_search_list(query: str, offset: int, context: ContextTypes.DEFAU
     if nav_buttons:
         keyboard.append(nav_buttons)
         
-    keyboard.append([InlineKeyboardButton("❌ Tutup", callback_data="close_manga")])
+    keyboard.append([InlineKeyboardButton("❌ Close", callback_data="close_manga")])
     return f"🔍 Hasil MangaDex: **{query}** ({(offset//5)+1})", InlineKeyboardMarkup(keyboard)
 
 def get_nh_cover_url(g_data):
@@ -339,26 +339,27 @@ async def build_nh_search_list(query: str, page: int, context: ContextTypes.DEFA
 async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or len(context.args) < 2:
         help_txt = (
-                    "❌ **Format Perintah Tidak Sesuai**\n\n"
-                    "Gunakan format berikut untuk mencari komik:\n"
-                    "👉 `/manga <sumber> <judul_atau_kode>`\n\n"
-                    "📚 **Daftar Sumber yang Tersedia:**\n"
-                    "• `dex`  : MangaDex\n"
-                    "• `maid` : MangaMaid\n"
-                    "• `nh`   : nhentai\n\n"
-                    "💡 **Contoh Penggunaan:**\n"
-                    "Mencari berdasarkan judul:\n"
-                    "`/manga dex Haimiya-senpai`\n"
-                    "`/manga maid Osananajimi wo Onnanoko`\n"
-                    "`/manga nh Zenless Zone Zero`\n\n"
-                    "Membaca langsung dengan kode:\n"
-                    "`/manga nh 642563`"
-                )
+            "⚠️ **Waduh, format perintahnya kurang tepat nih!** 😅\n\n"
+            "Biar bot bisa nyariin komiknya, pastikan formatmu seperti ini:\n"
+            "📖 `/manga <kode_sumber> <judul/angka>`\n\n"
+            "🗂️ **Daftar Kode Sumber:**\n"
+            "🔹 `dex`  — MangaDex\n"
+            "🔹 `maid` — MangaMaid\n"
+            "🔹 `nh`   — nhentai\n\n"
+            "💡 **Contoh Biar Nggak Bingung:**\n"
+            "• `/manga dex Haimiya-senpai`\n"
+            "• `/manga maid Osananajimi wo Onnanoko`\n"
+            "• `/manga nh Azur Lane` *(Cari dari judul)*\n"
+            "• `/manga nh 177013` *(Langsung pakai 6 digit angka)*"
+        )
         return await update.message.reply_text(help_txt, parse_mode="Markdown")
 
     source = context.args[0].lower()
     full_query = " ".join(context.args[1:])
     msg = await update.message.reply_text(f"🔍 Memproses `{full_query}` di {source.upper()}...", parse_mode="Markdown")
+    
+    # [PROTECTION] Daftarkan siapa pemilik command ini
+    context.chat_data[f"manga_owner_{msg.message_id}"] = update.effective_user.id
 
     if source in ["dex", "mangadex"]:
         text, markup = await build_search_list(full_query, 0, context)
@@ -416,9 +417,10 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if cover_bytes:
                 await msg.delete()
-                # Async thread offload
                 img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, cover_bytes)
-                await context.bot.send_photo(msg.chat_id, photo=img_safe, caption=text, parse_mode="Markdown", reply_markup=markup)
+                new_msg = await context.bot.send_photo(msg.chat_id, photo=img_safe, caption=text, parse_mode="Markdown", reply_markup=markup)
+                # Re-register new message_id
+                context.chat_data[f"manga_owner_{new_msg.message_id}"] = update.effective_user.id
             else:
                 await msg.edit_text(text, parse_mode="Markdown", reply_markup=markup)
         else:
@@ -433,11 +435,16 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
+
+    owner_id = context.chat_data.get(f"manga_owner_{query.message.message_id}")
+    if owner_id and owner_id != query.from_user.id:
+        return await query.answer("❌ Bukan Milik Mu Tolol! Silakan request sendiri menggunakan /manga", show_alert=True)
     
     if data == "ignore":
         return await query.answer()
     elif data == "close_manga":
         await query.answer("Pembaca ditutup.")
+        context.chat_data.pop(f"manga_owner_{query.message.message_id}", None)
         return await query.message.delete()
 
     elif data.startswith("msearch_"):
@@ -449,7 +456,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text:
             if query.message.photo:
                 await query.message.delete()
-                await context.bot.send_message(chat_id=query.message.chat_id, text=text, parse_mode="Markdown", reply_markup=markup)
+                new_msg = await context.bot.send_message(chat_id=query.message.chat_id, text=text, parse_mode="Markdown", reply_markup=markup)
+                context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
 
@@ -498,7 +506,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             if cover_url:
                 await query.message.delete()
-                await context.bot.send_photo(query.message.chat_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                new_msg = await context.bot.send_photo(query.message.chat_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -604,7 +613,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             if cover_url:
                 await query.message.delete()
-                await context.bot.send_photo(query.message.chat_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                new_msg = await context.bot.send_photo(query.message.chat_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -703,12 +713,14 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_media(media=InputMediaPhoto(media=img_safe, caption=text, parse_mode="Markdown"), reply_markup=markup)
             else:
                 await query.message.delete()
-                await context.bot.send_message(query.message.chat_id, text=text, parse_mode="Markdown", reply_markup=markup)
+                new_msg = await context.bot.send_message(query.message.chat_id, text=text, parse_mode="Markdown", reply_markup=markup)
+                context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
         else:
             if cover_bytes:
                 await query.message.delete()
                 img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, cover_bytes)
-                await context.bot.send_photo(query.message.chat_id, photo=img_safe, caption=text, parse_mode="Markdown", reply_markup=markup)
+                new_msg = await context.bot.send_photo(query.message.chat_id, photo=img_safe, caption=text, parse_mode="Markdown", reply_markup=markup)
+                context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
 
