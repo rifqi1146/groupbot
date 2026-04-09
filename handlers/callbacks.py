@@ -13,6 +13,7 @@ from handlers.music import music_callback
 from handlers.quiz import quiz_callback
 from handlers.broadcast import broadcast_callback
 from handlers.setting import setting_callback
+from handlers.manga import manga_callback
 
 def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
