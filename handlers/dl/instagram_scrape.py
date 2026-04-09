@@ -34,8 +34,9 @@ def is_instagram_url(url: str) -> bool:
     try:
         host = (urlparse((url or "").strip()).hostname or "").lower()
         return host == "instagram.com" or host.endswith(".instagram.com") or host == "instagr.am"
-    except Exception:
+    except Exception as e:
         text = (url or "").lower()
+        log.warning("Failed to parse Instagram URL host | url=%s err=%s", url, e)
         return "instagram.com" in text or "instagr.am" in text
 
 
@@ -69,6 +70,12 @@ def _uniq_media_urls(items: list[str]) -> list[str]:
     out = []
     seen = set()
 
+    cdn_hosts_strip_query = (
+        "cdninstagram.com",
+        "fbcdn.net",
+        "d.rapidcdn.app",
+    )
+
     for item in items:
         raw = (item or "").strip()
         if not raw:
@@ -76,8 +83,16 @@ def _uniq_media_urls(items: list[str]) -> list[str]:
 
         try:
             parsed = urlparse(raw)
-            normalized = parsed._replace(fragment="").geturl()
-        except Exception:
+            host = (parsed.hostname or "").lower()
+            path = parsed.path or ""
+
+            if any(host == h or host.endswith("." + h) for h in cdn_hosts_strip_query):
+                normalized = f"{parsed.scheme}://{host}{path}"
+            else:
+                normalized = parsed._replace(fragment="").geturl()
+
+        except Exception as e:
+            log.warning("Failed to normalize media URL | url=%s err=%s", raw, e)
             normalized = raw
 
         if normalized in seen:
@@ -96,7 +111,8 @@ def _decode_indown_fetch(link: str) -> str:
         raw = (qs.get("url") or [""])[0]
         raw = unquote(raw or "").strip()
         return raw or link
-    except Exception:
+    except Exception as e:
+        log.warning("Failed to decode Indown fetch URL | url=%s err=%s", link, e)
         return link
 
 
@@ -267,6 +283,67 @@ def _is_retryable_download_exception(exc: Exception) -> bool:
     return False
 
 
+async def _safe_edit_message(bot, chat_id: int, message_id: int, text: str):
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning(
+            "Failed to edit Instagram status message | chat_id=%s message_id=%s err=%s",
+            chat_id,
+            message_id,
+            e,
+        )
+
+
+async def _safe_edit_status_message(status, text: str):
+    try:
+        await status.edit_text(
+            text,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning(
+            "Failed to edit status message | chat_id=%s message_id=%s err=%s",
+            getattr(status, "chat_id", None),
+            getattr(status, "message_id", None),
+            e,
+        )
+
+
+async def _safe_delete_message(message):
+    try:
+        await message.delete()
+    except Exception as e:
+        log.warning(
+            "Failed to delete message | chat_id=%s message_id=%s err=%s",
+            getattr(message, "chat_id", None),
+            getattr(message, "message_id", None),
+            e,
+        )
+
+
+def _safe_remove_file(path: str, context: str = ""):
+    if not path or not os.path.exists(path):
+        return
+
+    try:
+        os.remove(path)
+    except Exception as e:
+        log.warning("Failed to remove file | path=%s context=%s err=%s", path, context, e)
+
+
+def _safe_close_handle(fh, context: str = ""):
+    try:
+        fh.close()
+    except Exception as e:
+        log.warning("Failed to close file handle | context=%s err=%s", context, e)
+
+
 async def _download_remote_media(url: str, source: str = "") -> dict:
     _ensure_tmp_dir()
     session = await get_http_session()
@@ -310,7 +387,12 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
                     try:
                         preview = await resp.text()
                         preview = _truncate_text(preview.replace("\n", " ").strip(), 120)
-                    except Exception:
+                    except Exception as preview_err:
+                        log.warning(
+                            "Failed to read invalid media response preview | url=%s err=%s",
+                            url,
+                            preview_err,
+                        )
                         preview = ""
 
                     msg = f"Invalid media response: {content_type or 'unknown content-type'}"
@@ -346,12 +428,16 @@ async def _download_remote_media(url: str, source: str = "") -> dict:
             last_error = e
 
             if out_path and os.path.exists(out_path):
-                try:
-                    os.remove(out_path)
-                except Exception:
-                    pass
+                _safe_remove_file(out_path, context="download_remote_media_cleanup")
 
             if attempt < 2 and _is_retryable_download_exception(e):
+                log.warning(
+                    "Retryable Instagram media download error | url=%s source=%s attempt=%s err=%r",
+                    url,
+                    source,
+                    attempt + 1,
+                    e,
+                )
                 await asyncio.sleep(1.2 * (attempt + 1))
                 continue
 
@@ -382,15 +468,13 @@ def _dedupe_downloaded_items(items: list[dict]) -> list[dict]:
 
         try:
             sig = _file_sha1(path)
-        except Exception:
+        except Exception as e:
+            log.warning("Failed to hash downloaded Instagram media | path=%s err=%s", path, e)
             unique.append(item)
             continue
 
         if sig in seen_hashes:
-            try:
-                os.remove(path)
-            except Exception:
-                pass
+            _safe_remove_file(path, context="dedupe_downloaded_items")
             continue
 
         seen_hashes.add(sig)
@@ -438,15 +522,12 @@ async def _collect_instagram_downloads(url: str) -> dict:
 
 
 async def igdl_download_for_fallback(bot, chat_id: int, reply_to: int, status_msg_id: int, url: str) -> dict:
-    try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text="<b>Downloading Instagram media...</b>",
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
+    await _safe_edit_message(
+        bot=bot,
+        chat_id=chat_id,
+        message_id=status_msg_id,
+        text="<b>Downloading Instagram media...</b>",
+    )
 
     collected = await _collect_instagram_downloads(url)
     downloaded = collected["items"]
@@ -511,18 +592,15 @@ async def cleanup_instagram_fallback_result(result: dict):
 
     path = result.get("path")
     if path and os.path.exists(path):
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+        _safe_remove_file(path, context="cleanup_instagram_fallback_result_single")
 
     for item in result.get("items") or []:
         try:
             p = item.get("path")
             if p and os.path.exists(p):
-                os.remove(p)
-        except Exception:
-            pass
+                _safe_remove_file(p, context="cleanup_instagram_fallback_result_items")
+        except Exception as e:
+            log.warning("Failed while cleaning Instagram fallback item | err=%s", e)
 
 
 async def _send_ig_result(bot, chat_id: int, reply_to: int, items: list[dict], source: str):
@@ -614,10 +692,7 @@ async def _send_ig_result(bot, chat_id: int, reply_to: int, items: list[dict], s
 
         finally:
             for fh in handles:
-                try:
-                    fh.close()
-                except Exception:
-                    pass
+                _safe_close_handle(fh, context="_send_ig_result")
 
 
 async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -647,13 +722,10 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     downloaded = []
 
     try:
-        try:
-            await status.edit_text(
-                "<b>Downloading Instagram media...</b>",
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
+        await _safe_edit_status_message(
+            status,
+            "<b>Downloading Instagram media...</b>",
+        )
 
         collected = await _collect_instagram_downloads(url)
         downloaded = collected["items"]
@@ -661,24 +733,18 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         failed_count = collected["failed_count"]
 
         if failed_count:
-            try:
-                await status.edit_text(
-                    (
-                        "<b>Uploading Instagram media...</b>\n\n"
-                        f"<i>Downloaded {len(downloaded)} item(s), skipped {failed_count} item(s).</i>"
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+            await _safe_edit_status_message(
+                status,
+                (
+                    "<b>Uploading Instagram media...</b>\n\n"
+                    f"<i>Downloaded {len(downloaded)} item(s), skipped {failed_count} item(s).</i>"
+                ),
+            )
         else:
-            try:
-                await status.edit_text(
-                    "<b>Uploading Instagram media...</b>",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+            await _safe_edit_status_message(
+                status,
+                "<b>Uploading Instagram media...</b>",
+            )
 
         await _send_ig_result(
             bot=context.bot,
@@ -688,10 +754,7 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             source=source,
         )
 
-        try:
-            await status.delete()
-        except Exception:
-            pass
+        await _safe_delete_message(status)
 
     except Exception as e:
         await status.edit_text(
@@ -703,6 +766,6 @@ async def ig_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 path = item.get("path")
                 if path and os.path.exists(path):
-                    os.remove(path)
-            except Exception:
-                pass
+                    _safe_remove_file(path, context="ig_cmd_finally")
+            except Exception as e:
+                log.warning("Failed while cleaning downloaded Instagram item | err=%s", e)
