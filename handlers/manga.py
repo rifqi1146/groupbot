@@ -931,10 +931,9 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("nhread_") or data.startswith("nhnav_"):
         await query.answer("Downloading page... ⏳")
         parts = data.split("_")
-        action = parts[0]
         gallery_id = parts[-2]
         page_idx = int(parts[-1])
-
+    
         cache_key = f"nh_{gallery_id}"
         if cache_key not in context.user_data:
             g_data = await fetch_json(f"{NH_API_URL}/galleries/{gallery_id}", custom_headers=NH_HEADERS)
@@ -943,38 +942,41 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data[cache_key] = g_data
         else:
             g_data = context.user_data[cache_key]
-
+    
         pages = g_data["pages"]
         config = await fetch_json(f"{NH_API_URL}/config", custom_headers=NH_HEADERS)
         img_server = config["image_servers"][0] if config and "image_servers" in config else "https://i.nhentai.net"
-
+    
         path = pages[page_idx]["path"]
         if path.startswith("http"):
             img_url = path
         else:
             ext = path.split(".")[-1] if "." in path else "jpg"
-            img_url = f"{img_server}/galleries/{g_data['media_id']}/{page_idx+1}.{ext}"
-
+            img_url = f"{img_server}/galleries/{g_data['media_id']}/{page_idx + 1}.{ext}"
+    
         img_bytes = await fetch_image_bytes(img_url, referer="https://nhentai.net/")
         if not img_bytes:
             return await context.bot.send_message(query.message.chat_id, "❌ Failed to download page.")
-
+    
         nav = []
         if page_idx > 0:
             nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"nhnav_{gallery_id}_{page_idx - 1}"))
         nav.append(InlineKeyboardButton(f"📄 {page_idx + 1}/{len(pages)}", callback_data="ignore"))
         if page_idx < len(pages) - 1:
             nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"nhnav_{gallery_id}_{page_idx + 1}"))
-
+    
         keyboard = InlineKeyboardMarkup([
             nav,
-            [InlineKeyboardButton("🔙 Detail", callback_data=f"nhdetail_{gallery_id}"), InlineKeyboardButton("❌ Tutup", callback_data="close_manga")]
+            [
+                InlineKeyboardButton("🔙 Detail", callback_data=f"nhdetail_{gallery_id}"),
+                InlineKeyboardButton("❌ Tutup", callback_data="close_manga")
+            ]
         ])
-
+    
         title = g_data["title"]["pretty"] or g_data["title"]["english"]
         caption_text = f"🔞 <b>{_escape(title[:100])}</b>\n📄 Page: {page_idx + 1}/{len(pages)}"
-
-        is_edit = action == "nhnav_" and hasattr(query, "edit_message_media")
+    
+        is_edit = bool(getattr(query.message, "photo", None))
         await safe_render_page(query, context, img_bytes, caption_text, keyboard, is_edit, owner_id=query.from_user.id)
 
 
