@@ -1,17 +1,18 @@
-from telegram.ext import MessageHandler, filters
+from telegram.ext import MessageHandler, ChatMemberHandler, filters
 
 from utils.logger import log_commands
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
 from handlers.dl.handlers import auto_dl_detect
 from handlers.bot_dollar import dollar_router
-from handlers.welcome import welcome_handler
+from handlers.welcome import welcome_handler, welcome_chat_member_handler
 from utils.user_collector import user_collector
 from handlers.caca import meta_query
 from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
 from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
+
 
 async def ai_reply_router(update, context):
     msg = update.message
@@ -56,7 +57,8 @@ async def ai_reply_router(update, context):
         )
 
     return
-    
+
+
 def register_messages(app):
     app.add_handler(
         MessageHandler(filters.ALL, collect_chat),
@@ -65,6 +67,11 @@ def register_messages(app):
 
     app.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_handler),
+        group=1,
+    )
+
+    app.add_handler(
+        ChatMemberHandler(welcome_chat_member_handler, ChatMemberHandler.CHAT_MEMBER),
         group=1,
     )
 
@@ -87,14 +94,13 @@ def register_messages(app):
         MessageHandler(filters.ALL, log_commands),
         group=99,
     )
-    
+
     app.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
         group=1
     )
-    
+
     app.add_handler(
         MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, ai_reply_router),
         group=-1
     )
-    

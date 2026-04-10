@@ -375,6 +375,68 @@ async def restore_pending_verifications(app):
             f"✓ Restored pending welcomes: active={restored}, skipped={skipped}, expired={expired}"
         )
 
+async def _process_new_member(chat, user, context: ContextTypes.DEFAULT_TYPE):
+    if chat.id not in WELCOME_ENABLED_CHATS:
+        log.info(f"Welcome skipped in chat {chat.id}: not enabled")
+        return
+
+    bot_username = context.bot.username
+    if not bot_username:
+        try:
+            me = await context.bot.get_me()
+            bot_username = me.username or ""
+        except Exception as e:
+            log.warning(f"Failed to resolve bot username in chat {chat.id}: {e}")
+            bot_username = ""
+
+    async with _get_verify_lock(chat.id, user.id):
+        if user.id in VERIFIED_USERS.get(chat.id, set()):
+            VERIFIED_USERS.setdefault(chat.id, set()).discard(user.id)
+            try:
+                delete_verified_user(chat.id, user.id)
+            except Exception as e:
+                log.warning(
+                    f"Failed to clear verified status for rejoined user {user.id} in chat {chat.id}: {e}"
+                )
+
+        await _cleanup_pending_state(context.bot, chat.id, user.id, delete_message=True)
+
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=chat.id,
+                user_id=user.id,
+                permissions=ChatPermissions(can_send_messages=False)
+            )
+        except Exception as e:
+            log.warning(f"Failed to restrict user {user.id} in chat {chat.id}: {e}")
+
+        try:
+            sent = await _send_welcome_message(
+                context=context,
+                chat=chat,
+                user=user,
+                bot_username=bot_username,
+            )
+        except Exception as e:
+            log.warning(f"Welcome message failed for user {user.id} in chat {chat.id}: {e}")
+            return
+
+        key = _verify_key(chat.id, user.id)
+        WELCOME_MESSAGES[key] = sent.message_id
+
+        try:
+            save_pending_welcome(chat.id, user.id, sent.message_id)
+        except Exception as e:
+            log.warning(f"Failed to save pending welcome for user {user.id} in chat {chat.id}: {e}")
+
+        PENDING_VERIFY[key] = {
+            "chat_id": chat.id,
+            "user_id": user.id,
+            "answer": None,
+            "created_at": time.time(),
+        }
+        _schedule_verify_timeout(context.application, chat.id, user.id)
+        
 
 async def is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -450,16 +512,38 @@ async def wlc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+async def welcome_chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cmu = update.chat_member
+    if not cmu:
+        return
+
+    chat = cmu.chat
+    old_status = getattr(cmu.old_chat_member, "status", None)
+    new_status = getattr(cmu.new_chat_member, "status", None)
+    user = cmu.new_chat_member.user
+
+    if chat.id not in WELCOME_ENABLED_CHATS:
+        return
+
+    joined = (
+        old_status in ("left", "kicked")
+        and new_status in ("member", "restricted")
+    )
+
+    if not joined:
+        return
+
+    await _process_new_member(chat, user, context)
 
 async def welcome_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
 
-    if not msg or not chat:
+    if not msg or not chat or not msg.new_chat_members:
         return
 
-    if not msg.new_chat_members:
-        return
+    for user in msg.new_chat_members:
+        await _process_new_member(chat, user, context)
 
     if chat.id not in WELCOME_ENABLED_CHATS:
         log.info(f"Welcome skipped in chat {chat.id}: not enabled")
