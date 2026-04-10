@@ -231,6 +231,17 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
                     await asyncio.sleep(0.8)
                     continue
 
+                hard_fallback = (
+                    "there is no media in the message to edit" in err
+                    or "message can't be edited" in err
+                    or "message to edit not found" in err
+                    or "wrong file identifier" in err
+                )
+
+                if not hard_fallback:
+                    log.warning(f"Edit failed, keeping current message instead of resend: {e}")
+                    return
+
                 log.warning(f"Edit failed, falling back to delete-resend: {e}")
                 break
 
