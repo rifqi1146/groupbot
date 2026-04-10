@@ -165,6 +165,7 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
     try:
         msg = await context.bot.send_photo(
             query.message.chat_id, 
+            message_thread_id=query.message.message_thread_id,
             photo=img_safe, 
             caption=caption,
             parse_mode="HTML", 
@@ -325,7 +326,7 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     source = context.args[0].lower()
     full_query = " ".join(context.args[1:])
-    msg = await update.message.reply_text(f"🔍 Memproses `{full_query}` di {source.upper()}...", parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🔍 Memproses `{full_query}` di {source.upper()}...", parse_mode="Markdown", message_thread_id=update.message.message_thread_id)
     
     context.chat_data[f"manga_owner_{msg.message_id}"] = update.effective_user.id
 
@@ -488,7 +489,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             if cover_url:
                 await query.message.delete()
-                new_msg = await context.bot.send_photo(query.message.chat_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                new_msg = await context.bot.send_photo(query.message.chat_id, message_thread_id=query.message.message_thread_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
                 context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -595,7 +596,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             if cover_url:
                 await query.message.delete()
-                new_msg = await context.bot.send_photo(query.message.chat_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                new_msg = await context.bot.send_photo(query.message.chat_id, message_thread_id=query.message.message_thread_id, photo=cover_url, caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
                 context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -701,7 +702,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if cover_bytes:
                 await query.message.delete()
                 img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, cover_bytes)
-                new_msg = await context.bot.send_photo(query.message.chat_id, photo=img_safe, caption=text, parse_mode="Markdown", reply_markup=markup)
+                new_msg = await context.bot.send_photo(query.message.chat_id, message_thread_id=query.message.message_thread_id, photo=img_safe, caption=text, parse_mode="Markdown", reply_markup=markup)
                 context.chat_data[f"manga_owner_{new_msg.message_id}"] = query.from_user.id
             else:
                 await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
