@@ -67,8 +67,8 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         return []
 
     bestaudio_size = _pick_bestaudio_size(formats)
-    out = []
-    seen = set()
+
+    grouped: dict[int, list[dict]] = {}
 
     for f in formats:
         if str(f.get("vcodec") or "") == "none":
@@ -97,21 +97,29 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         if total_size and total_size > MAX_TG_SIZE:
             continue
 
-        key = (height, str(format_id))
-        if key in seen:
-            continue
-        seen.add(key)
+        item = {
+            "height": height,
+            "format_id": str(format_id),
+            "ext": str(f.get("ext") or ""),
+            "has_audio": has_audio,
+            "filesize": filesize,
+            "total_size": total_size,
+        }
+        grouped.setdefault(height, []).append(item)
 
-        out.append(
-            {
-                "height": height,
-                "format_id": str(format_id),
-                "ext": str(f.get("ext") or ""),
-                "has_audio": has_audio,
-                "filesize": filesize,
-                "total_size": total_size,
-            }
+    def _score(item: dict):
+        ext = (item.get("ext") or "").lower()
+        return (
+            1 if item.get("has_audio") else 0,
+            1 if ext == "mp4" else 0,
+            int(item.get("total_size") or 0),
+            int(item.get("filesize") or 0),
         )
+
+    out = []
+    for height, items in grouped.items():
+        best = max(items, key=_score)
+        out.append(best)
 
     out.sort(key=lambda x: x["height"], reverse=True)
     return out
