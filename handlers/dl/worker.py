@@ -319,6 +319,7 @@ async def download_non_tiktok(
     status_msg_id,
     format_id: str | None,
     has_audio: bool,
+    engine: str | None = None,
 ):
     if is_instagram_url(raw_url):
         try:
@@ -337,6 +338,29 @@ async def download_non_tiktok(
             )
 
     if is_youtube_url(raw_url):
+        chosen_engine = (engine or "").strip().lower()
+
+        if chosen_engine == "sonzai":
+            return await sonzai_youtube_download(
+                raw_url=raw_url,
+                fmt_key=fmt_key,
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                format_id=format_id,
+            )
+
+        if chosen_engine == "ytdlp":
+            return await ytdlp_download(
+                raw_url,
+                fmt_key,
+                bot,
+                chat_id,
+                status_msg_id,
+                format_id=format_id,
+                has_audio=has_audio,
+            )
+
         yt_error = None
 
         try:

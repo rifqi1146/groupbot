@@ -2,7 +2,7 @@ from telegram.ext import CallbackQueryHandler
 
 from handlers.help import help_callback
 from handlers.gsearch import gsearch_callback
-from handlers.dl.handlers import dl_callback, dlask_callback, dlres_callback
+from handlers.dl.handlers import dl_callback, dlask_callback, dlres_callback, dlengine_callback
 from handlers.asupan import asupan_callback
 from handlers.helpowner import helpowner_callback
 from handlers.reminder import reminder_cancel_cb
@@ -33,5 +33,6 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(broadcast_callback, pattern=r"^broadcast:"))
     app.add_handler(CallbackQueryHandler(setting_callback, pattern=r"^setting:"))
     app.add_handler(CallbackQueryHandler(manga_callback, pattern="^(readmanga_|switchch_|nav_|msearch_|detailmanga_|ignore|close_manga|nhsearch_|nhdetail_|nhread_|nhnav_|maiddet_|maidread_|maidnav_)"))
+    app.add_handler(CallbackQueryHandler(dlengine_callback, pattern=r"^dlengine:"))
     
     

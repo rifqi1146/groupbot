@@ -6,6 +6,7 @@ import json
 from .constants import COOKIES_PATH, MAX_TG_SIZE
 from .youtube_api import is_youtube_url, sonzai_get_resolutions
 
+
 def _pick_bestaudio_size(formats: list[dict]) -> int:
     best = None
     best_abr = -1.0
@@ -40,12 +41,12 @@ def _pick_bestaudio_size(formats: list[dict]) -> int:
 
 
 def _probe_resolutions_sync(url: str) -> list[dict]:
-    YT_DLP = shutil.which("yt-dlp")
-    if not YT_DLP:
+    yt_dlp_bin = shutil.which("yt-dlp")
+    if not yt_dlp_bin:
         return []
 
     cmd = [
-        YT_DLP,
+        yt_dlp_bin,
         "--cookies",
         COOKIES_PATH,
         "--no-playlist",
@@ -62,33 +63,26 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         return []
 
     formats = info.get("formats") or []
-    bestaudio_size = _pick_bestaudio_size(formats)
+    if not isinstance(formats, list):
+        return []
 
-    by_h: dict[int, dict] = {}
+    bestaudio_size = _pick_bestaudio_size(formats)
+    out = []
+    seen = set()
 
     for f in formats:
-        h = f.get("height")
-        if not h:
+        if str(f.get("vcodec") or "") == "none":
+            continue
+
+        height = f.get("height")
+        format_id = f.get("format_id")
+        if not height or not format_id:
             continue
 
         try:
-            h = int(h)
+            height = int(height)
         except Exception:
             continue
-
-        if h < 144 or h > 2160:
-            continue
-
-        vcodec = str(f.get("vcodec") or "")
-        if vcodec == "none":
-            continue
-
-        fid = str(f.get("format_id") or "")
-        if not fid:
-            continue
-
-        acodec = str(f.get("acodec") or "")
-        ext = str(f.get("ext") or "")
 
         filesize = f.get("filesize") or f.get("filesize_approx") or 0
         try:
@@ -96,57 +90,57 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         except Exception:
             filesize = 0
 
+        acodec = str(f.get("acodec") or "")
         has_audio = acodec != "none"
-        total_size = 0
-        if filesize:
-            total_size = filesize if has_audio else (filesize + (bestaudio_size or 0))
+        total_size = filesize if has_audio else (filesize + bestaudio_size if filesize else 0)
 
-        pick = {
-            "height": h,
-            "format_id": fid,
-            "ext": ext,
-            "has_audio": has_audio,
-            "filesize": filesize,
-            "total_size": total_size,
-        }
-
-        cur = by_h.get(h)
-        if not cur:
-            by_h[h] = pick
+        if total_size and total_size > MAX_TG_SIZE:
             continue
 
-        cur_total = int(cur.get("total_size") or 0)
-        if pick["total_size"] and (not cur_total or pick["total_size"] < cur_total):
-            by_h[h] = pick
+        key = (height, str(format_id))
+        if key in seen:
             continue
+        seen.add(key)
 
-        cur_size = int(cur.get("filesize") or 0)
-        if pick["filesize"] and (not cur_size or pick["filesize"] < cur_size):
-            by_h[h] = pick
+        out.append(
+            {
+                "height": height,
+                "format_id": str(format_id),
+                "ext": str(f.get("ext") or ""),
+                "has_audio": has_audio,
+                "filesize": filesize,
+                "total_size": total_size,
+            }
+        )
 
-    out = list(by_h.values())
-    out = [x for x in out if not x.get("total_size") or int(x["total_size"]) <= MAX_TG_SIZE]
-    out.sort(key=lambda x: int(x.get("height") or 0), reverse=True)
+    out.sort(key=lambda x: x["height"], reverse=True)
     return out
 
 
-async def get_resolutions(url: str) -> list[dict]:
-    if is_youtube_url(url):
-        try:
-            res = await asyncio.to_thread(_probe_resolutions_sync, url)
-            if res:
-                return res
-        except Exception as e:
-            print("[YTDLP RESOLUTION FAILED, FALLBACK TO SONZAI]", e)
+async def get_resolutions(url: str, engine: str | None = None) -> list[dict]:
+    if not is_youtube_url(url):
+        return await asyncio.to_thread(_probe_resolutions_sync, url)
 
-        try:
-            res = await sonzai_get_resolutions(url)
-            if res:
-                return res
-        except Exception as e:
-            print("[SONZAI YOUTUBE RESOLUTION FAILED]", e)
+    chosen = (engine or "").strip().lower()
 
+    if chosen == "sonzai":
+        try:
+            return await sonzai_get_resolutions(url)
+        except Exception:
+            return []
+
+    if chosen == "ytdlp":
+        return await asyncio.to_thread(_probe_resolutions_sync, url)
+
+    try:
+        res = await asyncio.to_thread(_probe_resolutions_sync, url)
+        if res:
+            return res
+    except Exception:
+        pass
+
+    try:
+        return await sonzai_get_resolutions(url)
+    except Exception:
         return []
-
-    return await asyncio.to_thread(_probe_resolutions_sync, url)
-    
+        
