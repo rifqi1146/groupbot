@@ -45,17 +45,22 @@ def _sticker_format_from_obj(sticker) -> str | None:
     return "static"
 
 
-def _pack_identity(user, bot_username: str, bot_first_name: str, sticker_format: str) -> tuple[str, str]:
+def _pack_identity(
+    user,
+    bot_username: str,
+    bot_first_name: str,
+    sticker_format: str,
+) -> tuple[str, str, str]:
     pack_base = _pick_user_pack_base(user)
 
     if sticker_format == "animated":
-        base_name = f"{pack_base}_anim_by_{bot_username}"
+        name_prefix = f"{pack_base}_anim"
     elif sticker_format == "video":
-        base_name = f"{pack_base}_vid_by_{bot_username}"
+        name_prefix = f"{pack_base}_vid"
     else:
-        base_name = f"{pack_base}_by_{bot_username}"
+        name_prefix = pack_base
 
-    base_name = base_name[:64]
+    name_suffix = f"_by_{bot_username}"
 
     pack_title_name = user.first_name or user.username or f"User {user.id}"
     if sticker_format == "animated":
@@ -65,44 +70,37 @@ def _pack_identity(user, bot_username: str, bot_first_name: str, sticker_format:
     else:
         base_title = f"{pack_title_name} by {bot_first_name}"
 
-    return base_name, base_title[:64]
+    return name_prefix, name_suffix, base_title[:64]
 
 
-def _with_suffix(base: str, suffix: str, max_len: int = 64) -> str:
-    if len(base) + len(suffix) <= max_len:
-        return base + suffix
-    return base[: max_len - len(suffix)] + suffix
-
-
-def _make_pack_name(base_name: str, version: int) -> str:
-    if version <= 1:
-        return base_name
-    return _with_suffix(base_name, f"_v{version}")
+def _make_pack_name(name_prefix: str, name_suffix: str, version: int) -> str:
+    middle = "" if version <= 1 else f"_v{version}"
+    max_prefix_len = 64 - len(name_suffix) - len(middle)
+    if max_prefix_len <= 0:
+        raise RuntimeError("Nama bot terlalu panjang untuk sticker pack Telegram")
+    trimmed_prefix = name_prefix[:max_prefix_len]
+    return f"{trimmed_prefix}{middle}{name_suffix}"
 
 
 def _make_pack_title(base_title: str, version: int) -> str:
     if version <= 1:
-        return base_title
-    return _with_suffix(base_title, f" v{version}")
+        return base_title[:64]
+    suffix = f" v{version}"
+    return (base_title[: 64 - len(suffix)] + suffix)[:64]
 
 
 async def _find_or_create_target_pack(
     bot,
     user_id: int,
-    base_name: str,
+    name_prefix: str,
+    name_suffix: str,
     base_title: str,
     input_sticker: InputSticker,
     max_stickers: int = MAX_STICKERS_PER_PACK,
     max_versions: int = 999,
 ):
-    """
-    Cari pack pertama yang:
-    - belum ada -> langsung create
-    - ada dan belum penuh -> pakai itu
-    - ada tapi penuh -> lanjut ke v2/v3/dst
-    """
     for version in range(1, max_versions + 1):
-        pack_name = _make_pack_name(base_name, version)
+        pack_name = _make_pack_name(name_prefix, name_suffix, version)
         pack_title = _make_pack_title(base_title, version)
 
         try:
@@ -239,12 +237,15 @@ async def kang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if hasattr(input_sticker.sticker, "read"):
             opened_file = input_sticker.sticker
 
-        base_name, base_title = _pack_identity(user, bot_username, bot_first_name, sticker_format)
+        name_prefix, name_suffix, base_title = _pack_identity(
+            user, bot_username, bot_first_name, sticker_format
+        )
 
         pack_name, created = await _find_or_create_target_pack(
             bot=context.bot,
             user_id=user.id,
-            base_name=base_name,
+            name_prefix=name_prefix,
+            name_suffix=name_suffix,
             base_title=base_title,
             input_sticker=input_sticker,
         )
@@ -261,7 +262,8 @@ async def kang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pack_name, created = await _find_or_create_target_pack(
                         bot=context.bot,
                         user_id=user.id,
-                        base_name=base_name,
+                        name_prefix=name_prefix,
+                        name_suffix=name_suffix,
                         base_title=base_title,
                         input_sticker=input_sticker,
                     )
@@ -280,7 +282,7 @@ async def kang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
         await wait.edit_text(
-            f"Berhasil dikang ke pack: {pack_name}",
+            "Berhasil dikang",
             reply_markup=keyboard
         )
 
