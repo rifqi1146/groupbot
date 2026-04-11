@@ -22,6 +22,7 @@ PREMIUM_ONLY_DOMAINS = {
     "japanhdv.com",
     "youporn.com",
     "eporner.com",
+    "xhamster.com",
     "japaneseporn.xxx",
     "xhsocial.com",
 }
@@ -29,6 +30,7 @@ PREMIUM_ONLY_DOMAINS = {
 AUTO_DOWNLOAD_DOMAINS = {
     "pornhub.com",
     "xnxx.com",
+    "xhamster.com",
     "redtube.com",
     "xvideos.com",
     "vjav.com",
