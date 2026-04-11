@@ -7,6 +7,9 @@ from telegram import Update, InputSticker, InlineKeyboardMarkup, InlineKeyboardB
 from telegram.ext import ContextTypes
 
 
+MAX_STICKERS_PER_PACK = 120
+
+
 def _slug_name(text: str, fallback: str = "user") -> str:
     text = (text or "").lower().strip()
     text = re.sub(r"[^a-z0-9_]+", "_", text)
@@ -42,27 +45,82 @@ def _sticker_format_from_obj(sticker) -> str | None:
     return "static"
 
 
-def _pack_names(user, bot_username: str, bot_first_name: str, sticker_format: str) -> tuple[str, str]:
+def _pack_identity(user, bot_username: str, bot_first_name: str, sticker_format: str) -> tuple[str, str]:
     pack_base = _pick_user_pack_base(user)
 
     if sticker_format == "animated":
-        pack_name = f"{pack_base}_anim_by_{bot_username}"
+        base_name = f"{pack_base}_anim_by_{bot_username}"
     elif sticker_format == "video":
-        pack_name = f"{pack_base}_vid_by_{bot_username}"
+        base_name = f"{pack_base}_vid_by_{bot_username}"
     else:
-        pack_name = f"{pack_base}_by_{bot_username}"
+        base_name = f"{pack_base}_by_{bot_username}"
 
-    pack_name = pack_name[:64]
+    base_name = base_name[:64]
 
     pack_title_name = user.first_name or user.username or f"User {user.id}"
     if sticker_format == "animated":
-        pack_title = f"{pack_title_name} animated by {bot_first_name}"
+        base_title = f"{pack_title_name} animated by {bot_first_name}"
     elif sticker_format == "video":
-        pack_title = f"{pack_title_name} video by {bot_first_name}"
+        base_title = f"{pack_title_name} video by {bot_first_name}"
     else:
-        pack_title = f"{pack_title_name} by {bot_first_name}"
+        base_title = f"{pack_title_name} by {bot_first_name}"
 
-    return pack_name, pack_title[:64]
+    return base_name, base_title[:64]
+
+
+def _with_suffix(base: str, suffix: str, max_len: int = 64) -> str:
+    if len(base) + len(suffix) <= max_len:
+        return base + suffix
+    return base[: max_len - len(suffix)] + suffix
+
+
+def _make_pack_name(base_name: str, version: int) -> str:
+    if version <= 1:
+        return base_name
+    return _with_suffix(base_name, f"_v{version}")
+
+
+def _make_pack_title(base_title: str, version: int) -> str:
+    if version <= 1:
+        return base_title
+    return _with_suffix(base_title, f" v{version}")
+
+
+async def _find_or_create_target_pack(
+    bot,
+    user_id: int,
+    base_name: str,
+    base_title: str,
+    input_sticker: InputSticker,
+    max_stickers: int = MAX_STICKERS_PER_PACK,
+    max_versions: int = 999,
+):
+    """
+    Cari pack pertama yang:
+    - belum ada -> langsung create
+    - ada dan belum penuh -> pakai itu
+    - ada tapi penuh -> lanjut ke v2/v3/dst
+    """
+    for version in range(1, max_versions + 1):
+        pack_name = _make_pack_name(base_name, version)
+        pack_title = _make_pack_title(base_title, version)
+
+        try:
+            sticker_set = await bot.get_sticker_set(pack_name)
+        except Exception:
+            await bot.create_new_sticker_set(
+                user_id=user_id,
+                name=pack_name,
+                title=pack_title,
+                stickers=[input_sticker],
+            )
+            return pack_name, True
+
+        stickers = getattr(sticker_set, "stickers", None) or []
+        if len(stickers) < max_stickers:
+            return pack_name, False
+
+    raise RuntimeError("Semua pack versi sudah penuh, tidak bisa menambah sticker lagi")
 
 
 async def _download_file_bytes(bot, file_id: str) -> bytes:
@@ -181,27 +239,40 @@ async def kang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if hasattr(input_sticker.sticker, "read"):
             opened_file = input_sticker.sticker
 
-        pack_name, pack_title = _pack_names(user, bot_username, bot_first_name, sticker_format)
+        base_name, base_title = _pack_identity(user, bot_username, bot_first_name, sticker_format)
 
-        created = False
-
-        try:
-            await context.bot.get_sticker_set(pack_name)
-        except Exception:
-            await context.bot.create_new_sticker_set(
-                user_id=user.id,
-                name=pack_name,
-                title=pack_title,
-                stickers=[input_sticker],
-            )
-            created = True
+        pack_name, created = await _find_or_create_target_pack(
+            bot=context.bot,
+            user_id=user.id,
+            base_name=base_name,
+            base_title=base_title,
+            input_sticker=input_sticker,
+        )
 
         if not created:
-            await context.bot.add_sticker_to_set(
-                user_id=user.id,
-                name=pack_name,
-                sticker=input_sticker,
-            )
+            try:
+                await context.bot.add_sticker_to_set(
+                    user_id=user.id,
+                    name=pack_name,
+                    sticker=input_sticker,
+                )
+            except Exception as e:
+                if "Stickers_too_much" in str(e):
+                    pack_name, created = await _find_or_create_target_pack(
+                        bot=context.bot,
+                        user_id=user.id,
+                        base_name=base_name,
+                        base_title=base_title,
+                        input_sticker=input_sticker,
+                    )
+                    if not created:
+                        await context.bot.add_sticker_to_set(
+                            user_id=user.id,
+                            name=pack_name,
+                            sticker=input_sticker,
+                        )
+                else:
+                    raise
 
         pack_url = f"https://t.me/addstickers/{pack_name}"
         keyboard = InlineKeyboardMarkup([
@@ -209,7 +280,7 @@ async def kang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
         await wait.edit_text(
-            "Berhasil dikang",
+            f"Berhasil dikang ke pack: {pack_name}",
             reply_markup=keyboard
         )
 
