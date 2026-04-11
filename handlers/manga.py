@@ -49,7 +49,6 @@ def _nsfw_db_init():
     finally:
         con.close()
 
-
 def _is_nsfw_enabled(chat_id: int, chat_type: str) -> bool:
     if chat_type == "private":
         return True
@@ -66,22 +65,18 @@ def _is_nsfw_enabled(chat_id: int, chat_type: str) -> bool:
     finally:
         con.close()
 
-
 def _message_lock_key(chat_id: int, message_id: int):
     return (int(chat_id), int(message_id))
-
 
 def _set_message_lock(chat_id: int, message_id: int, user_id: int):
     if chat_id is None or message_id is None or user_id is None:
         return
     _MANGA_MESSAGE_LOCKS[_message_lock_key(chat_id, message_id)] = int(user_id)
 
-
 def _clear_message_lock(chat_id: int, message_id: int):
     if chat_id is None or message_id is None:
         return
     _MANGA_MESSAGE_LOCKS.pop(_message_lock_key(chat_id, message_id), None)
-
 
 def _move_message_lock(old_chat_id: int, old_message_id: int, new_chat_id: int, new_message_id: int, fallback_user_id: int | None = None):
     owner_id = _MANGA_MESSAGE_LOCKS.pop(_message_lock_key(old_chat_id, old_message_id), None)
@@ -91,12 +86,10 @@ def _move_message_lock(old_chat_id: int, old_message_id: int, new_chat_id: int, 
     if owner_id is not None and new_chat_id is not None and new_message_id is not None:
         _MANGA_MESSAGE_LOCKS[_message_lock_key(new_chat_id, new_message_id)] = int(owner_id)
 
-
 async def _ensure_manga_allowed(chat) -> bool:
     if not chat:
         return False
     return _is_nsfw_enabled(chat.id, chat.type)
-
 
 async def _ensure_callback_lock(query) -> bool:
     msg = query.message
@@ -116,10 +109,8 @@ async def _ensure_callback_lock(query) -> bool:
 
     return True
 
-
 def _escape(text) -> str:
     return html_lib.escape(str(text or ""))
-
 
 async def fetch_json(url, params=None, custom_headers=None):
     headers = custom_headers if custom_headers else {"User-Agent": "MangaBot/3.0"}
@@ -131,7 +122,6 @@ async def fetch_json(url, params=None, custom_headers=None):
     except Exception as e:
         log.error(f"Error fetching JSON: {e}")
     return None
-
 
 async def fetch_image_bytes(url, referer="https://mangadex.org/"):
     headers = {
@@ -147,7 +137,6 @@ async def fetch_image_bytes(url, referer="https://mangadex.org/"):
         log.error(f"Error fetching image: {e}")
     return None
 
-
 async def fetch_html(url):
     headers = {"User-Agent": USER_AGENT}
     session = await get_http_session()
@@ -158,7 +147,6 @@ async def fetch_html(url):
     except Exception as e:
         log.error(f"Error fetching Maid HTML: {e}")
     return None
-
 
 def enforce_telegram_photo_limits(img_bytes):
     if not Image:
@@ -193,7 +181,6 @@ def enforce_telegram_photo_limits(img_bytes):
     except Exception as e:
         log.error(f"Failed to resize image via Pillow: {e}")
         return img_bytes
-
 
 async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit=True, owner_id=None):
     img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, img_bytes)
@@ -253,7 +240,8 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
                 log.warning(f"Failed to delete old message while rendering page: {e}")
 
         sent = await context.bot.send_photo(
-            query.message.chat_id,
+            chat_id=query.message.chat_id,
+            message_thread_id=query.message.message_thread_id,
             photo=img_safe,
             caption=caption,
             parse_mode="HTML",
@@ -271,8 +259,9 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
         log.error(f"Failed to send filtered photo: {e}")
         try:
             sent = await context.bot.send_message(
-                query.message.chat_id,
-                "<b>Telegram refuses to send this page.</b>",
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="<b>Telegram refuses to send this page.</b>",
                 parse_mode="HTML",
                 reply_markup=keyboard
             )
@@ -285,7 +274,6 @@ async def safe_render_page(query, context, img_bytes, caption, keyboard, is_edit
             )
         except Exception as send_err:
             log.warning(f"Failed to send manga fallback error message: {send_err}")
-
 
 async def get_chapter_context(chapter_id: str, context: ContextTypes.DEFAULT_TYPE):
     cache_key = f"ctx_{chapter_id}"
@@ -323,7 +311,6 @@ async def get_chapter_context(chapter_id: str, context: ContextTypes.DEFAULT_TYP
     context.user_data[cache_key] = res
     return res
 
-
 def get_nav_keyboard(chapter_id: str, current_idx: int, total_pages: int, prev_ch: str = None, next_ch: str = None):
     page_nav = []
     if current_idx > 0:
@@ -340,7 +327,6 @@ def get_nav_keyboard(chapter_id: str, current_idx: int, total_pages: int, prev_c
         chapter_nav.append(InlineKeyboardButton("Ch Next ⏩", callback_data=f"switchch_{next_ch}"))
 
     return InlineKeyboardMarkup([page_nav, chapter_nav])
-
 
 async def build_search_list(query: str, offset: int, context: ContextTypes.DEFAULT_TYPE):
     search_url = f"{MANGADEX_API}/manga"
@@ -368,7 +354,6 @@ async def build_search_list(query: str, offset: int, context: ContextTypes.DEFAU
     keyboard.append([InlineKeyboardButton("❌ Close", callback_data="close_manga")])
     return f"🔍 MangaDex results: <b>{_escape(query)}</b> ({(offset//5)+1})", InlineKeyboardMarkup(keyboard)
 
-
 def get_nh_cover_url(g_data):
     pages = g_data.get("pages", [])
     media_id = g_data.get("media_id")
@@ -379,7 +364,6 @@ def get_nh_cover_url(g_data):
         return path
     ext = path.split(".")[-1] if "." in path else "jpg"
     return f"https://i.nhentai.net/galleries/{media_id}/1.{ext}"
-
 
 def build_nh_detail_ui(data):
     title = data["title"]["pretty"] or data["title"]["english"]
@@ -400,7 +384,6 @@ def build_nh_detail_ui(data):
         [InlineKeyboardButton("❌ Close", callback_data="close_manga")]
     ]
     return text, InlineKeyboardMarkup(keyboard)
-
 
 async def build_nh_search_list(query: str, page: int, context: ContextTypes.DEFAULT_TYPE):
     data = await fetch_json(f"{NH_API_URL}/search", {"query": query, "page": page}, custom_headers=NH_HEADERS)
@@ -427,7 +410,6 @@ async def build_nh_search_list(query: str, page: int, context: ContextTypes.DEFA
 
     return f"🔍 nHentai results: <b>{_escape(query)}</b> (Page {page}/{data['num_pages']})", InlineKeyboardMarkup(keyboard)
 
-
 NH_API_KEY = os.getenv("NH_API")
 NH_HEADERS = {"User-Agent": "PrivateMangaBot/3.0 (Telegram Bot)"}
 if NH_API_KEY:
@@ -435,7 +417,6 @@ if NH_API_KEY:
     log.info("Loaded NH API Key.")
 else:
     log.info("NH API Key not found, Running In Public Mode.")
-
 
 async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -549,7 +530,6 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-
 async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -585,6 +565,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.delete()
                 sent = await context.bot.send_message(
                     chat_id=query.message.chat_id,
+                    message_thread_id=query.message.message_thread_id,
                     text=text,
                     parse_mode="HTML",
                     reply_markup=markup
@@ -644,7 +625,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if cover_url:
                 await query.message.delete()
                 sent = await context.bot.send_photo(
-                    query.message.chat_id,
+                    chat_id=query.message.chat_id,
+                    message_thread_id=query.message.message_thread_id,
                     photo=cover_url,
                     caption=caption,
                     parse_mode="HTML",
@@ -661,7 +643,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         server_data = await fetch_json(f"{MANGADEX_API}/at-home/server/{chapter_id}")
         if not server_data or not server_data["chapter"]["data"]:
-            return await context.bot.send_message(query.message.chat_id, "❌ Failed to load chapter.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ Failed to load chapter."
+            )
 
         prev_ch, next_ch, m_title, m_ch, m_lang = await get_chapter_context(chapter_id, context)
         base_url = server_data["baseUrl"]
@@ -674,7 +660,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         img_bytes = await fetch_image_bytes(urls[0])
         if not img_bytes:
-            return await context.bot.send_message(query.message.chat_id, "❌ Failed to download image.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ Failed to download image."
+            )
 
         is_edit = data.startswith("switchch_") or hasattr(query, "edit_message_media")
         await safe_render_page(query, context, img_bytes, caption_text, keyboard, is_edit, owner_id=query.from_user.id)
@@ -772,7 +762,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if cover_url:
                 await query.message.delete()
                 sent = await context.bot.send_photo(
-                    query.message.chat_id,
+                    chat_id=query.message.chat_id,
+                    message_thread_id=query.message.message_thread_id,
                     photo=cover_url,
                     caption=caption,
                     parse_mode="HTML",
@@ -789,7 +780,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         path = context.user_data.get(f"maid_map_{short_id}")
         if not path:
-            return await context.bot.send_message(query.message.chat_id, "❌ Session expired.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ Session expired."
+            )
 
         ctx = context.user_data.get(f"maid_ctx_{short_id}", {})
         manga_title = ctx.get("title", "Manga Maid")
@@ -798,7 +793,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_url = f"{MAID_URL}{path}" if path.startswith("/") else f"{MAID_URL}/{path}"
         html_doc = await fetch_html(target_url)
         if not html_doc:
-            return await context.bot.send_message(query.message.chat_id, "❌ Failed to load chapter.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ Failed to load chapter."
+            )
 
         soup = BeautifulSoup(html_doc, "html.parser")
         img_tags = soup.select("#readerarea img, .reader-area img, .chapter-image img, .mangareader img")
@@ -810,12 +809,20 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 urls.append(src)
 
         if not urls:
-            return await context.bot.send_message(query.message.chat_id, "❌ No pages found.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ No pages found."
+            )
 
         context.user_data[f"maid_imgs_{short_id}"] = urls
         img_bytes = await fetch_image_bytes(urls[0], referer=MAID_URL)
         if not img_bytes:
-            return await context.bot.send_message(query.message.chat_id, "❌ Download error.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ Download error."
+            )
 
         nav = [
             InlineKeyboardButton(f"📄 1/{len(urls)}", callback_data="ignore"),
@@ -906,7 +913,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.message.delete()
                 sent = await context.bot.send_message(
-                    query.message.chat_id,
+                    chat_id=query.message.chat_id,
+                    message_thread_id=query.message.message_thread_id,
                     text=text,
                     parse_mode="HTML",
                     reply_markup=markup
@@ -917,7 +925,8 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.delete()
                 img_safe = await asyncio.to_thread(enforce_telegram_photo_limits, cover_bytes)
                 sent = await context.bot.send_photo(
-                    query.message.chat_id,
+                    chat_id=query.message.chat_id,
+                    message_thread_id=query.message.message_thread_id,
                     photo=img_safe,
                     caption=text,
                     parse_mode="HTML",
@@ -956,7 +965,11 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
         img_bytes = await fetch_image_bytes(img_url, referer="https://nhentai.net/")
         if not img_bytes:
-            return await context.bot.send_message(query.message.chat_id, "❌ Failed to download page.")
+            return await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                message_thread_id=query.message.message_thread_id,
+                text="❌ Failed to download page."
+            )
     
         nav = []
         if page_idx > 0:
@@ -978,7 +991,6 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
         is_edit = bool(getattr(query.message, "photo", None))
         await safe_render_page(query, context, img_bytes, caption_text, keyboard, is_edit, owner_id=query.from_user.id)
-
 
 try:
     _nsfw_db_init()
