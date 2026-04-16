@@ -7,7 +7,7 @@ import aiohttp
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from utils.sanitize_ai_output import split_message, sanitize_ai_output
+from utils.text import split_message, sanitize_ai_output
 from utils.config import GEMINI_API_KEY
 from utils.http import get_http_session
 

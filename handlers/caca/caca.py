@@ -12,7 +12,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.gsearch import google_search
-from utils.sanitize_ai_output import split_message, sanitize_ai_output
+from utils.text import split_message
 from .caca_prompt import PERSONAS
 from utils.http import get_http_session
 
