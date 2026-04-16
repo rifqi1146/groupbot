@@ -44,7 +44,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-GROQ_MODEL2 = "llama-3.3-70b-versatile"
 GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "30"))
 COOLDOWN = int(os.getenv("GROQ_COOLDOWN", "2"))
 GROQ_MEMORY = {}
@@ -55,3 +54,8 @@ DONATE_URL = os.getenv("DONATE_URL")
 
 # fonts
 FONT_DIR = os.getenv("FONT_DIR")
+
+#Cloudflare
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+CLOUDFLARE_AUTH_TOKEN = os.getenv("CLOUDFLARE_AUTH_TOKEN", "").strip()
+CLOUDFLARE_MODEL = "@cf/moonshotai/kimi-k2.5"

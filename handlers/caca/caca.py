@@ -17,16 +17,17 @@ from utils.http import get_http_session
 
 from database import caca_db
 from utils import caca_memory
-
+from utils.config import (
+    CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_AUTH_TOKEN,
+    CLOUDFLARE_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
-CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
-CLOUDFLARE_AUTH_TOKEN = os.getenv("CLOUDFLARE_AUTH_TOKEN", "").strip()
-CLOUDFLARE_MODEL = "@cf/moonshotai/kimi-k2.5"
 CLOUDFLARE_TIMEOUT = int(os.getenv("CLOUDFLARE_TIMEOUT", "60"))
 
-_EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
+_EMOS = ["🌸", "💖", "🧸", "🎀", "🌟", "💫"]
 _URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
 
 
