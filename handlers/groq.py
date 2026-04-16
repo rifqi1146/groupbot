@@ -13,7 +13,7 @@ from telegram.ext import ContextTypes
 from rag.retriever import retrieve_context
 from rag.loader import load_local_contexts
 
-from utils.system_prompt import split_message, sanitize_ai_output
+from utils.sanitize_ai_output import split_message, sanitize_ai_output
 from utils.config import (
     COOLDOWN,
     GROQ_TIMEOUT,
