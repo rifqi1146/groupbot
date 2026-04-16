@@ -173,7 +173,7 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             json={
                 "messages": messages,
                 "temperature": 0.9,
-                "max_completion_tokens": 2048,
+                "max_completion_tokens": 1024,
                 "chat_template_kwargs": {
                     "enable_thinking": False,
                     "clear_thinking": True,
