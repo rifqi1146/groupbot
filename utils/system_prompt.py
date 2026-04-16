@@ -64,28 +64,39 @@ def sanitize_ai_output(text: str) -> str:
 
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+
     text = html.escape(text)
+
     text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)
     text = re.sub(r"\*(.+?)\*", r"\1", text)
     text = re.sub(r"__(.+?)__", r"\1", text)
     text = re.sub(r"~~(.+?)~~", r"\1", text)
+
     text = re.sub(r"(?m)^&gt;\s*", "", text)
+
     text = re.sub(
-        r"(?m)^#{1,6}\s*(.+)$",
-        r"\n<b>\1</b>",
+        r"(?m)^#{1,6}\s*(.+?)\s*$",
+        r"<b>\1</b>",
         text
     )
+
     text = re.sub(r"(?m)^\s*\d+\.\s+", "• ", text)
-    text = re.sub(r"(?m)^\s*-\s+", "• ", text)
+    text = re.sub(r"(?m)^\s*[-*]\s+", "• ", text)
+
     text = re.sub(r"\|", " ", text)
-    text = re.sub(r"(?m)^[-:\s]{3,}$", "", text)
+    text = re.sub(r"(?m)^\s*[-:\s]{3,}\s*$", "", text)
+
     text = re.sub(
-        r"(?m)^\s*([A-Za-z0-9 _/().-]{2,})\s{2,}(.+)$",
-        r"• <b>\1</b>\n  \2",
+        r"(?m)^\s*([A-Za-z0-9 _/().-]{2,})\s{2,}(.+?)\s*$",
+        r"• <b>\1</b>\n\2",
         text
     )
-    text = re.sub(r"\s*•\s*", "\n• ", text)
+
+    lines = [line.rstrip() for line in text.split("\n")]
+    text = "\n".join(lines)
+    
     text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n[ \t]+\n", "\n\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
