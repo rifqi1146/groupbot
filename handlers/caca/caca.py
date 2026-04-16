@@ -60,6 +60,46 @@ async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     except Exception:
         pass
 
+def _normalize_caca_output(text: str) -> str:
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    # buang spasi kosong di baris kosong
+    text = re.sub(r"\n[ \t]+\n", "\n\n", text)
+
+    lines = [line.strip() for line in text.split("\n")]
+
+    merged = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        if not line:
+            i += 1
+            continue
+
+        # kalau ketemu single short line lalu lanjut line lain,
+        # gabung aja biar ga terlalu bolong-bolong
+        if i + 1 < len(lines) and lines[i + 1]:
+            current = line
+            nxt = lines[i + 1]
+
+            # gabung kalau baris pertama pendek / salam / beat pendek
+            if len(current) <= 35:
+                merged.append(f"{current} {nxt}".strip())
+                i += 2
+                continue
+
+        merged.append(line)
+        i += 1
+
+    text = "\n".join(merged)
+
+    # rapetin newline
+    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+
+    return text.strip()
 
 async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_memory()
@@ -216,7 +256,8 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stop.set()
         typing.cancel()
 
-        chunks = split_message(sanitize_ai_output(raw), 4000)
+        cleaned = _normalize_caca_output(sanitize_ai_output(raw))
+        chunks = split_message(cleaned, 4000)
 
         sent = None
         for i, chunk in enumerate(chunks):
