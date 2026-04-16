@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from utils.system_prompt import PERSONAS
+from .caca_prompt import PERSONAS
 from database import premium_service
 from database import caca_db
 from utils import caca_memory
