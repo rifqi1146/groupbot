@@ -357,7 +357,7 @@ async def ytdlp_download(
     os.makedirs(TMP_DIR, exist_ok=True)
     job_id = uuid.uuid4().hex[:10]
     out_tpl = f"{TMP_DIR}/{job_id}_%(title)s.%(ext)s"
-    update_interval = 3
+    update_interval = 5
     is_ig = is_instagram_url(url)
     is_x = is_x_url(url)
     async def run(cmd):
@@ -458,7 +458,7 @@ async def ytdlp_download(
         if not est_size and format_id:
             update_interval = 7
         else:
-            update_interval = 7 if est_size >= _SIZE_100MB else 2
+            update_interval = 7 if est_size >= _SIZE_100MB else 5
         cmd = [YT_DLP]
         if is_ig:
             cmd += ["--ignore-errors", "--no-abort-on-error"]
