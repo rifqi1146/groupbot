@@ -1,4 +1,3 @@
-import time
 import re
 import os
 import asyncio
@@ -14,7 +13,6 @@ from telegram.ext import ContextTypes
 
 from handlers.gsearch import google_search
 from utils.system_prompt import split_message, sanitize_ai_output, PERSONAS
-from utils.config import GROQ_BASE, GROQ_KEY, GROQ_MODEL2, GROQ_TIMEOUT
 from utils.http import get_http_session
 
 from database import caca_db
@@ -22,6 +20,11 @@ from utils import caca_memory
 
 
 logger = logging.getLogger(__name__)
+
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+CLOUDFLARE_AUTH_TOKEN = os.getenv("CLOUDFLARE_AUTH_TOKEN", "").strip()
+CLOUDFLARE_MODEL = "@cf/moonshotai/kimi-k2.5"
+CLOUDFLARE_TIMEOUT = int(os.getenv("CLOUDFLARE_TIMEOUT", "60"))
 
 _EMOS = ["🌸", "💖", "🧸", "🎀", "✨", "🌟", "💫"]
 _URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
@@ -31,10 +34,6 @@ def _emo():
     return random.choice(_EMOS)
 
 
-def _find_urls(text: str) -> List[str]:
-    return _URL_RE.findall(text) if text else []
-
-
 def _parse_html(html_text: str) -> Optional[str]:
     soup = BeautifulSoup(html_text, "html.parser")
     for t in soup(["script", "style", "iframe", "noscript"]):
@@ -42,20 +41,6 @@ def _parse_html(html_text: str) -> Optional[str]:
 
     ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
     return ("\n\n".join(ps))[:12000] or None
-
-
-async def _fetch_article(url: str) -> Optional[str]:
-    try:
-        session = await get_http_session()
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            if r.status != 200:
-                return None
-            html_text = await r.text(errors="ignore")
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _parse_html, html_text)
-    except Exception:
-        return None
 
 
 def _cleanup_memory():
@@ -168,20 +153,57 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         ]
 
+        if not CLOUDFLARE_ACCOUNT_ID or not CLOUDFLARE_AUTH_TOKEN:
+            raise RuntimeError("CLOUDFLARE_ACCOUNT_ID atau CLOUDFLARE_AUTH_TOKEN belum diset")
+
         session = await get_http_session()
         async with session.post(
-            f"{GROQ_BASE}/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_KEY}"},
+            f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL}",
+            headers={"Authorization": f"Bearer {CLOUDFLARE_AUTH_TOKEN}"},
             json={
-                "model": GROQ_MODEL2,
                 "messages": messages,
                 "temperature": 0.9,
-                "max_tokens": 2048,
+                "max_completion_tokens": 2048,
+                "chat_template_kwargs": {
+                    "enable_thinking": False,
+                    "clear_thinking": True,
+                },
             },
-            timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
+            timeout=aiohttp.ClientTimeout(total=CLOUDFLARE_TIMEOUT),
         ) as r:
-            data = await r.json()
-            raw = data["choices"][0]["message"]["content"]
+            data = await r.json(content_type=None)
+
+            if r.status >= 400:
+                raise RuntimeError(
+                    data.get("errors", [{}])[0].get("message")
+                    or data.get("error")
+                    or f"Cloudflare HTTP {r.status}"
+                )
+
+            if data.get("success") is False:
+                raise RuntimeError(
+                    data.get("errors", [{}])[0].get("message")
+                    or data.get("error")
+                    or "Cloudflare request failed"
+                )
+
+            result = data.get("result") or {}
+
+            raw = (
+                result.get("response")
+                or result.get("output_text")
+                or result.get("text")
+                or (
+                    result.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content")
+                    if isinstance(result.get("choices"), list) and result.get("choices")
+                    else None
+                )
+            )
+
+            if not raw:
+                raise RuntimeError(f"Unexpected Cloudflare response: {data}")
 
         history += [
             {"role": "user", "content": prompt},
