@@ -264,7 +264,7 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if auto_choice in ("video", "mp3"):
         status = await msg.reply_text(
-            f"📥 <b>Auto selecting {auto_choice.upper()}...</b>",
+            f"<b>Auto selecting {auto_choice.upper()}...</b>",
             parse_mode="HTML",
         )
         return await _process_choice(
