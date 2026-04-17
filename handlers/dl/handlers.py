@@ -21,7 +21,7 @@ from database.user_settings_db import get_user_settings
 
 os.makedirs(TMP_DIR, exist_ok=True)
 
-TIKTOK_LOCK = asyncio.Semaphore(10)
+TIKTOK_LOCK = asyncio.Semaphore(3)
 YTDLP_SEM = asyncio.Semaphore(3)
 
 from urllib.parse import urlparse
