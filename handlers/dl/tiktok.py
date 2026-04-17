@@ -184,7 +184,7 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         elapsed = max(now - last_sample_ts, 0.001)
         speed_bps = max(downloaded - last_sample_size, 0) / elapsed
         eta_seconds = ((total - downloaded) / speed_bps) if total > 0 and speed_bps > 0 and downloaded <= total else None
-        if now - last_edit < 10 and last_edit >= 0:
+        if now - last_edit < 3 and last_edit >= 0:
             continue
         await _safe_edit_progress(bot, chat_id, status_msg_id, title_text, downloaded, total, speed_bps, eta_seconds)
         last_edit = now
