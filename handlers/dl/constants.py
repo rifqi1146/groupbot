@@ -9,8 +9,8 @@ AUTO_DL_DB = "data/auto_dl.sqlite3"
 MAX_TG_SIZE = 1999 * 1024 * 1024
 
 DL_FORMATS = {
-    "video": {"label": "🎥 Video"},
-    "mp3": {"label": "🎵 MP3"},
+    "video": {"label": "Video"},
+    "mp3": {"label": "MP3"},
 }
 
 PREMIUM_ONLY_DOMAINS = {
