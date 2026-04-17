@@ -173,36 +173,41 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
             if m:
                 eta_text = m.group(1)
 
-    reader_task = asyncio.create_task(_reader())
+    def _build_text():
+        lines = ["<b>Downloading YouTube...</b>", ""]
+        if downloaded_text and total_text:
+            lines.append(f"<code>{html.escape(downloaded_text)}/{html.escape(total_text)} downloaded</code>")
+        elif downloaded_text:
+            lines.append(f"<code>{html.escape(downloaded_text)} downloaded</code>")
+        if pct_text:
+            lines.append(f"<code>{html.escape(pct_text)}%</code>")
+        if speed_text:
+            lines.append(f"<code>Speed: {html.escape(speed_text)}</code>")
+        if eta_text:
+            lines.append(f"<code>ETA: {html.escape(eta_text)}</code>")
+        return "\n".join(lines)
 
+    reader_task = asyncio.create_task(_reader())
     try:
         while proc.returncode is None:
             await asyncio.sleep(0.7)
-            if not downloaded_text and os.path.exists(out_path):
+            if os.path.exists(out_path):
                 try:
                     downloaded = os.path.getsize(out_path)
-                    downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
-                    if total > 0:
-                        total_text = f"{total / (1024 * 1024):.1f} MB"
-                        pct_text = str(min(int(downloaded * 100 / total), 100))
+                    if downloaded > 0:
+                        downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
+                        if total > 0:
+                            total_text = f"{total / (1024 * 1024):.1f} MB"
+                            pct_text = str(min(int(downloaded * 100 / total), 100))
                 except Exception:
                     pass
+            if not downloaded_text:
+                continue
             now = time.time()
             if now - last < 10:
                 continue
             try:
-                lines = ["<b>Downloading YouTube media...</b>", ""]
-                if downloaded_text and total_text:
-                    lines.append(f"<code>{downloaded_text}/{total_text} downloaded</code>")
-                elif downloaded_text:
-                    lines.append(f"<code>{downloaded_text} downloaded</code>")
-                if pct_text:
-                    lines.append(f"<code>{pct_text}%</code>")
-                if speed_text:
-                    lines.append(f"<code>Speed: {speed_text}</code>")
-                if eta_text:
-                    lines.append(f"<code>ETA: {eta_text}</code>")
-                await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
+                await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=_build_text(), parse_mode="HTML")
             except Exception:
                 pass
             last = now
@@ -210,27 +215,18 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         if os.path.exists(out_path):
             try:
                 downloaded = os.path.getsize(out_path)
-                downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
-                if total > 0:
-                    total_text = f"{total / (1024 * 1024):.1f} MB"
-                    pct_text = "100"
+                if downloaded > 0:
+                    downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
+                    if total > 0:
+                        total_text = f"{total / (1024 * 1024):.1f} MB"
+                        pct_text = "100"
             except Exception:
                 pass
-        try:
-            lines = ["<b>Downloading YouTube media...</b>", ""]
-            if downloaded_text and total_text:
-                lines.append(f"<code>{downloaded_text}/{total_text} downloaded</code>")
-            elif downloaded_text:
-                lines.append(f"<code>{downloaded_text} downloaded</code>")
-            if pct_text:
-                lines.append(f"<code>{pct_text}%</code>")
-            if speed_text:
-                lines.append(f"<code>Speed: {speed_text}</code>")
-            if eta_text:
-                lines.append(f"<code>ETA: {eta_text}</code>")
-            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
-        except Exception:
-            pass
+        if downloaded_text:
+            try:
+                await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=_build_text(), parse_mode="HTML")
+            except Exception:
+                pass
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
             err = stderr.decode(errors="ignore").strip() if stderr else ""
