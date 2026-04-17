@@ -158,11 +158,15 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
             continue
         try:
             if total > 0:
-                pct = min(downloaded / total * 100, 100.0)
-                text = f"<b>Downloading YouTube media...</b>\n\n<code>{progress_bar(pct)}</code>"
+                downloaded_mb = downloaded / (1024 * 1024)
+                total_mb = total / (1024 * 1024)
+                text = (
+                    "<b>Downloading YouTube media...</b>\n\n"
+                    f"<code>{downloaded_mb:.1f} MB/{total_mb:.1f} MB downloaded</code>"
+                )
             else:
-                mb = downloaded / (1024 * 1024)
-                text = f"<b>Downloading YouTube media...</b>\n\n<code>{mb:.1f} MB downloaded</code>"
+                downloaded_mb = downloaded / (1024 * 1024)
+                text = f"<b>Downloading YouTube media...</b>\n\n<code>{downloaded_mb:.1f} MB downloaded</code>"
             await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=text, parse_mode="HTML")
         except Exception:
             pass
