@@ -1,6 +1,9 @@
 import os
+import re
+import time
 import uuid
 import html
+import shutil
 import aiohttp
 import asyncio
 import aiofiles
@@ -8,7 +11,7 @@ from telegram import InputMediaPhoto
 from telegram.error import RetryAfter
 from utils.http import get_http_session
 from .constants import TMP_DIR
-from .utils import sanitize_filename, progress_bar, is_invalid_video
+from .utils import sanitize_filename, is_invalid_video
 from .worker import reencode_mp3
 
 def is_tiktok(url: str) -> bool:
@@ -65,6 +68,170 @@ def _build_safe_album_caption(title: str, bot_name: str, max_len: int = 1024) ->
         short_title = "TikTok Slideshow"
     return f"<blockquote expandable>🖼️ {html.escape(short_title)}</blockquote>\n\n🪄 <i>Powered by {html.escape(clean_bot)}</i>"
 
+def _format_size(num_bytes: int) -> str:
+    if num_bytes <= 0:
+        return "0 B"
+    value = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+def _format_speed(bytes_per_sec: float) -> str:
+    if bytes_per_sec <= 0:
+        return "0 B/s"
+    value = float(bytes_per_sec)
+    for unit in ("B/s", "KB/s", "MB/s", "GB/s"):
+        if value < 1024 or unit == "GB/s":
+            if unit == "B/s":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GB/s"
+
+def _format_eta(seconds: float) -> str:
+    if seconds <= 0:
+        return "0s"
+    seconds = int(seconds)
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        return f"{h}h {m}m {s}s"
+    if m > 0:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+async def _safe_edit_progress(bot, chat_id, status_msg_id, title: str, downloaded: int, total: int = 0, speed_bps: float = 0.0, eta_seconds: float | None = None):
+    lines = [f"<b>{html.escape(title)}</b>", ""]
+    if total > 0:
+        pct = min(downloaded * 100 / total, 100.0)
+        lines.append(f"<code>{html.escape(_format_size(downloaded))}/{html.escape(_format_size(total))} downloaded</code>")
+        lines.append(f"<code>{pct:.1f}%</code>")
+    else:
+        lines.append(f"<code>{html.escape(_format_size(downloaded))} downloaded</code>")
+    if speed_bps > 0:
+        lines.append(f"<code>Speed: {html.escape(_format_speed(speed_bps))}</code>")
+    if eta_seconds is not None and eta_seconds >= 0 and total > 0 and speed_bps > 0:
+        lines.append(f"<code>ETA: {html.escape(_format_eta(eta_seconds))}</code>")
+    try:
+        await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
+    except Exception:
+        pass
+
+async def _probe_total_bytes(session, url: str) -> int:
+    total = 0
+    try:
+        async with session.head(url, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+            total = int(resp.headers.get("Content-Length", 0) or 0)
+    except Exception:
+        total = 0
+    if total > 0:
+        return total
+    try:
+        async with session.get(url, headers={"Range": "bytes=0-0"}, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+            content_range = resp.headers.get("Content-Range", "")
+            m = re.search(r"/(\d+)$", content_range)
+            if m:
+                return int(m.group(1))
+            if resp.headers.get("Content-Length"):
+                return int(resp.headers.get("Content-Length", 0) or 0)
+    except Exception:
+        pass
+    return 0
+
+async def _aria2c_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
+    aria2 = shutil.which("aria2c")
+    if not aria2:
+        raise RuntimeError("aria2c not found in PATH")
+    total = await _probe_total_bytes(session, media_url)
+    out_dir = os.path.dirname(out_path) or "."
+    out_name = os.path.basename(out_path)
+    cmd = [
+        aria2,
+        "--dir", out_dir,
+        "--out", out_name,
+        "--file-allocation=none",
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--continue=true",
+        "--max-connection-per-server=8",
+        "--split=8",
+        "--min-split-size=1M",
+        "--summary-interval=0",
+        "--download-result=hide",
+        "--console-log-level=warn",
+        media_url,
+    ]
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+    last_edit = -10.0
+    last_sample_size = 0
+    last_sample_ts = time.time()
+    while proc.returncode is None:
+        await asyncio.sleep(0.7)
+        if not os.path.exists(out_path):
+            continue
+        try:
+            downloaded = os.path.getsize(out_path)
+        except Exception:
+            continue
+        if downloaded <= 0:
+            continue
+        now = time.time()
+        elapsed = max(now - last_sample_ts, 0.001)
+        speed_bps = max(downloaded - last_sample_size, 0) / elapsed
+        eta_seconds = ((total - downloaded) / speed_bps) if total > 0 and speed_bps > 0 and downloaded <= total else None
+        if now - last_edit < 10 and last_edit >= 0:
+            continue
+        await _safe_edit_progress(bot, chat_id, status_msg_id, title_text, downloaded, total, speed_bps, eta_seconds)
+        last_edit = now
+        last_sample_size = downloaded
+        last_sample_ts = now
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        err = stderr.decode(errors="ignore").strip() if stderr else ""
+        raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
+
+async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
+    async with session.get(media_url, timeout=aiohttp.ClientTimeout(total=600)) as r:
+        if r.status >= 400:
+            raise RuntimeError(f"Download failed: HTTP {r.status}")
+        total = int(r.headers.get("Content-Length", 0) or 0)
+        downloaded = 0
+        last_edit = -10.0
+        last_sample_size = 0
+        last_sample_ts = time.time()
+        async with aiofiles.open(out_path, "wb") as f:
+            async for chunk in r.content.iter_chunked(64 * 1024):
+                if not chunk:
+                    continue
+                await f.write(chunk)
+                downloaded += len(chunk)
+                now = time.time()
+                elapsed = max(now - last_sample_ts, 0.001)
+                speed_bps = max(downloaded - last_sample_size, 0) / elapsed
+                eta_seconds = ((total - downloaded) / speed_bps) if total > 0 and speed_bps > 0 and downloaded <= total else None
+                if now - last_edit < 10 and last_edit >= 0:
+                    continue
+                await _safe_edit_progress(bot, chat_id, status_msg_id, title_text, downloaded, total, speed_bps, eta_seconds)
+                last_edit = now
+                last_sample_size = downloaded
+                last_sample_ts = now
+
+async def _download_with_best_engine(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
+    try:
+        await _aria2c_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, title_text)
+    except Exception:
+        if os.path.exists(out_path):
+            try:
+                os.remove(out_path)
+            except Exception:
+                pass
+        await _aiohttp_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, title_text)
+
 async def douyin_download(url, bot, chat_id, status_msg_id):
     session = await get_http_session()
     async with session.post("https://www.tikwm.com/api/", data={"url": url}, timeout=aiohttp.ClientTimeout(total=20)) as r:
@@ -82,19 +249,7 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     safe_title = sanitize_filename(title)
     uid = uuid.uuid4().hex
     out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
-    async with session.get(video_url) as r:
-        total = int(r.headers.get("Content-Length", 0))
-        downloaded = 0
-        last = 0
-        async with aiofiles.open(out_path, "wb") as f:
-            async for chunk in r.content.iter_chunked(64 * 1024):
-                await f.write(chunk)
-                downloaded += len(chunk)
-                import time
-                if total and time.time() - last >= 3:
-                    pct = downloaded / total * 100
-                    await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=f"<b>Downloading...</b>\n\n<code>{progress_bar(pct)}</code>", parse_mode="HTML")
-                    last = time.time()
+    await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading TikTok video...")
     return {"path": out_path, "title": title.strip() or "TikTok Video"}
 
 async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_key):
@@ -131,10 +286,7 @@ async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_k
         if not music_url:
             raise RuntimeError("Audio not found")
         tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
-        async with session.get(music_url) as r:
-            async with aiofiles.open(tmp_audio, "wb") as f:
-                async for chunk in r.content.iter_chunked(64 * 1024):
-                    await f.write(chunk)
+        await _download_with_best_engine(session, music_url, tmp_audio, bot, chat_id, status_msg_id, "Downloading TikTok audio...")
         title = info.get("title") or info.get("desc") or "TikTok Audio"
         bot_name = (await bot.get_me()).first_name or "Bot"
         fixed_audio = reencode_mp3(tmp_audio)
@@ -176,23 +328,7 @@ async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_k
         safe_title = sanitize_filename(title)
         uid = uuid.uuid4().hex
         out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
-        async with session.get(video_url) as r:
-            total = int(r.headers.get("Content-Length", 0))
-            downloaded = 0
-            last = 0.0
-            async with aiofiles.open(out_path, "wb") as f:
-                async for chunk in r.content.iter_chunked(64 * 1024):
-                    await f.write(chunk)
-                    downloaded += len(chunk)
-                    import time
-                    if total and time.time() - last >= 3:
-                        pct = downloaded / total * 100
-                        try:
-                            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=f"<b>Downloading...</b>\n\n<code>{progress_bar(pct)}</code>", parse_mode="HTML")
-                        except Exception as e:
-                            if "Message is not modified" in str(e):
-                                pass
-                        last = time.time()
+        await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading TikTok video...")
         await _set_uploading("video")
         await bot.send_chat_action(chat_id=chat_id, action="upload_video")
         bot_name = (await bot.get_me()).first_name or "Bot"
