@@ -3,6 +3,7 @@ import time
 import uuid
 import html
 import asyncio
+from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ContextTypes
 from .constants import MAX_TG_SIZE
@@ -23,8 +24,6 @@ os.makedirs(TMP_DIR, exist_ok=True)
 
 TIKTOK_LOCK = asyncio.Semaphore(3)
 YTDLP_SEM = asyncio.Semaphore(3)
-
-from urllib.parse import urlparse
 
 def _host(url: str) -> str:
     try:
@@ -80,13 +79,14 @@ async def _start_dl_task(context, message, data, fmt_key, format_id=None, has_au
         _dl_worker(
             app=context.application,
             chat_id=message.chat.id,
-            reply_to=data["reply_to"],
+            reply_to=data.get("reply_to"),
             raw_url=data["url"],
             fmt_key=fmt_key,
             status_msg_id=message.message_id,
             format_id=format_id,
             has_audio=has_audio,
             engine=engine,
+            message_thread_id=data.get("message_thread_id", getattr(message, "message_thread_id", None)),
         )
     )
 
@@ -140,14 +140,7 @@ async def _process_choice(context, message, dl_id: str, data: dict, choice: str,
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine="ytdlp")
     DL_CACHE.pop(dl_id, None)
-    return await _start_dl_task(
-        context=context,
-        message=message,
-        data=data,
-        fmt_key=choice,
-        format_id=None,
-        has_audio=False,
-    )
+    return await _start_dl_task(context=context, message=message, data=data, fmt_key=choice, format_id=None, has_audio=False)
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -231,19 +224,13 @@ async def auto_dl_detect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "url": text,
         "user": update.effective_user.id,
         "reply_to": msg.message_id,
+        "message_thread_id": getattr(msg, "message_thread_id", None),
         "ts": time.time(),
     }
     auto_choice = str(settings.get("autodl_format") or "ask").lower()
     if auto_choice in ("video", "mp3"):
         status = await msg.reply_text(f"<b>Auto selecting {auto_choice.upper()}...</b>", parse_mode="HTML")
-        return await _process_choice(
-            context=context,
-            message=status,
-            dl_id=dl_id,
-            data=DL_CACHE[dl_id],
-            choice=auto_choice,
-            user_id=update.effective_user.id,
-        )
+        return await _process_choice(context=context, message=status, dl_id=dl_id, data=DL_CACHE[dl_id], choice=auto_choice, user_id=update.effective_user.id)
     await msg.reply_text(
         "👀 <b>Link detected</b>\n\nDo you want me to download it?",
         reply_markup=autodl_detect_keyboard(dl_id),
@@ -266,22 +253,19 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.message.delete()
     await q.edit_message_text("📥 <b>Select format</b>", reply_markup=dl_keyboard(dl_id), parse_mode="HTML")
 
-async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id: str | None = None, has_audio: bool = False, engine: str | None = None):
+async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id: str | None = None, has_audio: bool = False, engine: str | None = None, message_thread_id: int | None = None):
     bot = app.bot
     path = None
     async def _tiktok_fetch() -> tuple[bool, str | None]:
         nonlocal path
         url = raw_url
-        try:
-            url = await resolve_tiktok_url(raw_url)
-        except Exception:
-            url = raw_url
         async with TIKTOK_LOCK:
             try:
                 path = await douyin_download(url, bot, chat_id, status_msg_id)
-                if is_invalid_video(path):
+                actual_path = path.get("path") if isinstance(path, dict) else path
+                if actual_path and is_invalid_video(actual_path):
                     try:
-                        os.remove(path)
+                        os.remove(actual_path)
                     except Exception:
                         pass
                     raise RuntimeError("Static video")
@@ -322,6 +306,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
             status_msg_id=status_msg_id,
             path=path,
             fmt_key=fmt_key,
+            message_thread_id=message_thread_id,
         )
         await bot.delete_message(chat_id, status_msg_id)
     except Exception as e:
@@ -334,15 +319,10 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
             except Exception:
                 wait_time = 5
             await asyncio.sleep(wait_time)
-            return await _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id, has_audio, engine)
+            return await _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id, has_audio, engine, message_thread_id)
         public_err = html.escape(err.strip())[:3500] or "Unknown downloader error"
         try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text=("<b>Download failed</b>\n\n" f"<code>{public_err}</code>"),
-                parse_mode="HTML",
-            )
+            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=("<b>Download failed</b>\n\n" f"<code>{public_err}</code>"), parse_mode="HTML")
         except Exception:
             pass
 
@@ -360,19 +340,13 @@ async def dl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "url": url,
         "user": update.effective_user.id,
         "reply_to": update.message.message_id,
+        "message_thread_id": getattr(update.message, "message_thread_id", None),
     }
     settings = get_user_settings(update.effective_user.id)
     auto_choice = str(settings.get("autodl_format") or "ask").lower()
     if auto_choice in ("video", "mp3"):
         status = await update.message.reply_text(f"📥 <b>Auto selecting {auto_choice.upper()}...</b>", parse_mode="HTML")
-        return await _process_choice(
-            context=context,
-            message=status,
-            dl_id=dl_id,
-            data=DL_CACHE[dl_id],
-            choice=auto_choice,
-            user_id=update.effective_user.id,
-        )
+        return await _process_choice(context=context, message=status, dl_id=dl_id, data=DL_CACHE[dl_id], choice=auto_choice, user_id=update.effective_user.id)
     await update.message.reply_text("📥 <b>Select format</b>", reply_markup=dl_keyboard(dl_id), parse_mode="HTML")
 
 async def dlengine_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -406,14 +380,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if choice == "cancel":
         DL_CACHE.pop(dl_id, None)
         return await q.edit_message_text("Cancelled")
-    return await _process_choice(
-        context=context,
-        message=q.message,
-        dl_id=dl_id,
-        data=data,
-        choice=choice,
-        user_id=q.from_user.id,
-    )
+    return await _process_choice(context=context, message=q.message, dl_id=dl_id, data=data, choice=choice, user_id=q.from_user.id)
 
 async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
