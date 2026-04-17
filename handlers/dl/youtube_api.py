@@ -104,10 +104,16 @@ async def sonzai_get_resolutions(raw_url: str) -> list[dict]:
     out.sort(key=lambda x: int(x.get("height") or 0), reverse=True)
     return out
 
-async def _aria2c_download_with_progress(media_url: str, out_path: str, bot, chat_id, status_msg_id):
+async def _aria2c_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id):
     aria2 = shutil.which("aria2c")
     if not aria2:
         raise RuntimeError("aria2c not found in PATH")
+    total = 0
+    try:
+        async with session.head(media_url, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+            total = int(resp.headers.get("Content-Length", 0) or 0)
+    except Exception:
+        total = 0
     out_dir = os.path.dirname(out_path) or "."
     out_name = os.path.basename(out_path)
     cmd = [
@@ -121,38 +127,36 @@ async def _aria2c_download_with_progress(media_url: str, out_path: str, bot, cha
         "--max-connection-per-server=8",
         "--split=8",
         "--min-split-size=1M",
-        "--summary-interval=1",
+        "--summary-interval=0",
         "--download-result=hide",
         "--console-log-level=warn",
         media_url,
     ]
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
     last = 0.0
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-        raw = line.decode(errors="ignore").strip()
-        m = re.search(r"\((\s*\d+%)\)", raw)
-        if not m:
+    while proc.returncode is None:
+        await asyncio.sleep(0.7)
+        await proc.poll()
+        if not os.path.exists(out_path):
             continue
-        pct_text = m.group(1).strip().replace("%", "")
         try:
-            pct = float(pct_text)
+            downloaded = os.path.getsize(out_path)
         except Exception:
             continue
         now = time.time()
-        if now - last >= 0.7:
-            try:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=f"<b>Downloading YouTube media...</b>\n\n<code>{progress_bar(pct)}</code>",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
-            last = now
+        if now - last < 0.7:
+            continue
+        try:
+            if total > 0:
+                pct = downloaded / total * 100
+                text = f"<b>Downloading YouTube media...</b>\n\n<code>{progress_bar(pct)}</code>"
+            else:
+                mb = downloaded / (1024 * 1024)
+                text = f"<b>Downloading YouTube media...</b>\n\n<code>{mb:.1f} MB</code>"
+            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=text, parse_mode="HTML")
+        except Exception:
+            pass
+        last = now
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         err = stderr.decode(errors="ignore").strip() if stderr else ""
@@ -201,7 +205,7 @@ async def sonzai_youtube_download(raw_url: str, fmt_key: str, bot, chat_id, stat
     safe_title = sanitize_filename(title)
     out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{safe_title}{ext}")
     try:
-        await _aria2c_download_with_progress(media_url, out_path, bot, chat_id, status_msg_id)
+        await _aria2c_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id)
     except Exception:
         if os.path.exists(out_path):
             try:
