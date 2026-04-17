@@ -138,36 +138,62 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         "--max-connection-per-server=8",
         "--split=8",
         "--min-split-size=1M",
-        "--summary-interval=0",
+        "--summary-interval=1",
         "--download-result=hide",
-        "--console-log-level=warn",
+        "--console-log-level=notice",
+        "--show-console-readout=true",
         media_url,
     ]
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-    last = 0.0
-    while proc.returncode is None:
-        await asyncio.sleep(0.7)
-        if not os.path.exists(out_path):
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    last = -10.0
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        raw = line.decode(errors="ignore").strip()
+        if not raw:
             continue
-        try:
-            downloaded = os.path.getsize(out_path)
-        except Exception:
-            continue
+        downloaded_text = None
+        total_text = None
+        pct_text = None
+        speed_text = None
+        eta_text = None
+        m = re.search(r"([0-9.]+(?:KiB|MiB|GiB|B))/([0-9.]+(?:KiB|MiB|GiB|B))\((\d+)%\)", raw)
+        if m:
+            downloaded_text = m.group(1)
+            total_text = m.group(2)
+            pct_text = m.group(3)
+        m = re.search(r"\bDL:([0-9.]+(?:KiB|MiB|GiB|B)/s)\b", raw)
+        if m:
+            speed_text = m.group(1)
+        m = re.search(r"\bETA:([0-9hms]+)\b", raw)
+        if m:
+            eta_text = m.group(1)
+        if not downloaded_text:
+            if os.path.exists(out_path):
+                try:
+                    downloaded = os.path.getsize(out_path)
+                    downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
+                    if total > 0:
+                        total_text = f"{total / (1024 * 1024):.1f} MB"
+                        pct_text = str(min(int(downloaded * 100 / total), 100))
+                except Exception:
+                    pass
         now = time.time()
         if now - last < 10:
             continue
         try:
-            if total > 0:
-                downloaded_mb = downloaded / (1024 * 1024)
-                total_mb = total / (1024 * 1024)
-                text = (
-                    "<b>Downloading YouTube media...</b>\n\n"
-                    f"<code>{downloaded_mb:.1f} MB/{total_mb:.1f} MB downloaded</code>"
-                )
-            else:
-                downloaded_mb = downloaded / (1024 * 1024)
-                text = f"<b>Downloading YouTube media...</b>\n\n<code>{downloaded_mb:.1f} MB downloaded</code>"
-            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=text, parse_mode="HTML")
+            lines = ["<b>Downloading YouTube media...</b>", ""]
+            if downloaded_text and total_text and pct_text:
+                lines.append(f"<code>{downloaded_text}/{total_text} downloaded</code>")
+                lines.append(f"<code>{pct_text}%</code>")
+            elif downloaded_text:
+                lines.append(f"<code>{downloaded_text} downloaded</code>")
+            if speed_text:
+                lines.append(f"<code>Speed: {speed_text}</code>")
+            if eta_text:
+                lines.append(f"<code>ETA: {eta_text}</code>")
+            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
         except Exception:
             pass
         last = now
