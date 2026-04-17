@@ -114,6 +114,17 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
             total = int(resp.headers.get("Content-Length", 0) or 0)
     except Exception:
         total = 0
+    if total <= 0:
+        try:
+            async with session.get(media_url, headers={"Range": "bytes=0-0"}, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+                content_range = resp.headers.get("Content-Range", "")
+                m = re.search(r"/(\d+)$", content_range)
+                if m:
+                    total = int(m.group(1))
+                elif resp.headers.get("Content-Length"):
+                    total = int(resp.headers.get("Content-Length", 0) or 0)
+        except Exception:
+            total = 0
     out_dir = os.path.dirname(out_path) or "."
     out_name = os.path.basename(out_path)
     cmd = [
@@ -136,7 +147,6 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
     last = 0.0
     while proc.returncode is None:
         await asyncio.sleep(0.7)
-        await proc.poll()
         if not os.path.exists(out_path):
             continue
         try:
@@ -144,15 +154,15 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         except Exception:
             continue
         now = time.time()
-        if now - last < 0.7:
+        if now - last < 10:
             continue
         try:
             if total > 0:
-                pct = downloaded / total * 100
+                pct = min(downloaded / total * 100, 100.0)
                 text = f"<b>Downloading YouTube media...</b>\n\n<code>{progress_bar(pct)}</code>"
             else:
                 mb = downloaded / (1024 * 1024)
-                text = f"<b>Downloading YouTube media...</b>\n\n<code>{mb:.1f} MB</code>"
+                text = f"<b>Downloading YouTube media...</b>\n\n<code>{mb:.1f} MB downloaded</code>"
             await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=text, parse_mode="HTML")
         except Exception:
             pass
