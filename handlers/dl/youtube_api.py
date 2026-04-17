@@ -108,23 +108,6 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
     aria2 = shutil.which("aria2c")
     if not aria2:
         raise RuntimeError("aria2c not found in PATH")
-    total = 0
-    try:
-        async with session.head(media_url, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
-            total = int(resp.headers.get("Content-Length", 0) or 0)
-    except Exception:
-        total = 0
-    if total <= 0:
-        try:
-            async with session.get(media_url, headers={"Range": "bytes=0-0"}, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
-                content_range = resp.headers.get("Content-Range", "")
-                m = re.search(r"/(\d+)$", content_range)
-                if m:
-                    total = int(m.group(1))
-                elif resp.headers.get("Content-Length"):
-                    total = int(resp.headers.get("Content-Length", 0) or 0)
-        except Exception:
-            total = 0
     out_dir = os.path.dirname(out_path) or "."
     out_name = os.path.basename(out_path)
     cmd = [
@@ -144,63 +127,77 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         "--show-console-readout=true",
         media_url,
     ]
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+    speed_text = None
+    cn_text = None
     last = -10.0
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-        raw = line.decode(errors="ignore").strip()
-        if not raw:
-            continue
-        downloaded_text = None
-        total_text = None
-        pct_text = None
-        speed_text = None
-        eta_text = None
-        m = re.search(r"([0-9.]+(?:KiB|MiB|GiB|B))/([0-9.]+(?:KiB|MiB|GiB|B))\((\d+)%\)", raw)
-        if m:
-            downloaded_text = m.group(1)
-            total_text = m.group(2)
-            pct_text = m.group(3)
-        m = re.search(r"\bDL:([0-9.]+(?:KiB|MiB|GiB|B)/s)\b", raw)
-        if m:
-            speed_text = m.group(1)
-        m = re.search(r"\bETA:([0-9hms]+)\b", raw)
-        if m:
-            eta_text = m.group(1)
-        if not downloaded_text:
-            if os.path.exists(out_path):
-                try:
-                    downloaded = os.path.getsize(out_path)
-                    downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
-                    if total > 0:
-                        total_text = f"{total / (1024 * 1024):.1f} MB"
-                        pct_text = str(min(int(downloaded * 100 / total), 100))
-                except Exception:
-                    pass
-        now = time.time()
-        if now - last < 10:
-            continue
-        try:
-            lines = ["<b>Downloading YouTube media...</b>", ""]
-            if downloaded_text and total_text and pct_text:
-                lines.append(f"<code>{downloaded_text}/{total_text} downloaded</code>")
-                lines.append(f"<code>{pct_text}%</code>")
-            elif downloaded_text:
-                lines.append(f"<code>{downloaded_text} downloaded</code>")
+
+    async def _read_stderr():
+        nonlocal speed_text, cn_text
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            raw = line.decode(errors="ignore").strip()
+            if not raw:
+                continue
+            m = re.search(r"\bCN:(\d+)\b", raw)
+            if m:
+                cn_text = m.group(1)
+            m = re.search(r"\bDL:([0-9.]+(?:KiB|MiB|GiB|B))\b", raw)
+            if m:
+                speed_text = m.group(1) + "/s"
+
+    reader_task = asyncio.create_task(_read_stderr())
+    try:
+        while proc.returncode is None:
+            await asyncio.sleep(0.7)
+            if not os.path.exists(out_path):
+                continue
+            try:
+                downloaded = os.path.getsize(out_path)
+            except Exception:
+                continue
+            if downloaded <= 0:
+                continue
+            now = time.time()
+            if now - last < 10:
+                continue
+            downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
+            lines = ["<b>Downloading YouTube...</b>", "", f"<code>{downloaded_text} downloaded</code>"]
             if speed_text:
                 lines.append(f"<code>Speed: {speed_text}</code>")
-            if eta_text:
-                lines.append(f"<code>ETA: {eta_text}</code>")
-            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
-        except Exception:
-            pass
-        last = now
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        err = stderr.decode(errors="ignore").strip() if stderr else ""
-        raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
+            if cn_text:
+                lines.append(f"<code>Connections: {cn_text}</code>")
+            try:
+                await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
+            except Exception:
+                pass
+            last = now
+        await reader_task
+        if os.path.exists(out_path):
+            try:
+                downloaded = os.path.getsize(out_path)
+                if downloaded > 0:
+                    downloaded_text = f"{downloaded / (1024 * 1024):.1f} MB"
+                    lines = ["<b>Downloading YouTube media...</b>", "", f"<code>{downloaded_text} downloaded</code>"]
+                    if speed_text:
+                        lines.append(f"<code>Speed: {speed_text}</code>")
+                    if cn_text:
+                        lines.append(f"<code>Connections: {cn_text}</code>")
+                    try:
+                        await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode(errors="ignore").strip() if stderr else ""
+            raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
+    finally:
+        if not reader_task.done():
+            reader_task.cancel()
 
 async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id):
     async with session.get(media_url, timeout=aiohttp.ClientTimeout(total=600)) as media_resp:
