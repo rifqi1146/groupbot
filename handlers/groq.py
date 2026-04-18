@@ -9,7 +9,7 @@ from typing import Optional
 import aiohttp
 from telegram import Update
 from telegram.ext import ContextTypes
-
+from handlers.join import require_join_or_block
 from rag.retriever import retrieve_context
 from rag.loader import load_local_contexts
 
@@ -164,6 +164,8 @@ async def _typing_loop(bot, chat_id, stop_event: asyncio.Event):
 
 
 async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update, context):
+        return
     msg = update.message
     if not msg or not msg.from_user:
         return
