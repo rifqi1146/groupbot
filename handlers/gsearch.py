@@ -8,7 +8,7 @@ from telegram import (
     Update,
 )
 from telegram.ext import ContextTypes
-
+from handlers.join import require_join_or_block
 from utils.http import get_http_session
 from utils.config import GOOGLE_CSE_ID, GOOGLE_API_KEY
 
