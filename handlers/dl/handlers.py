@@ -131,8 +131,12 @@ async def _process_choice(context, message, dl_id: str, data: dict, choice: str,
     url = data["url"]
     if choice == "video" and supports_resolution_picker(url):
         DL_CACHE[dl_id]["fmt_key"] = "video"
+        settings = get_user_settings(user_id)
+        default_engine = str(settings.get("youtube_download_engine") or "sonzai").lower()
         if supports_both_resolution_engines(url):
-            return await message.edit_text("<b>Select download engine</b>", reply_markup=yt_engine_keyboard(dl_id), parse_mode="HTML")
+            picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "sonzai"
+            await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
+            return await _show_resolution_picker(context, message, dl_id, data, engine=picked_engine)
         if supports_sonzai_resolution(url):
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine="sonzai")
@@ -140,7 +144,14 @@ async def _process_choice(context, message, dl_id: str, data: dict, choice: str,
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine="ytdlp")
     DL_CACHE.pop(dl_id, None)
-    return await _start_dl_task(context=context, message=message, data=data, fmt_key=choice, format_id=None, has_audio=False)
+    return await _start_dl_task(
+        context=context,
+        message=message,
+        data=data,
+        fmt_key=choice,
+        format_id=None,
+        has_audio=False,
+    )
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
