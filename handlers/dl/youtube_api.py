@@ -13,6 +13,12 @@ from .utils import sanitize_filename, progress_bar
 
 SONZAI_YOUTUBE_API = "https://rynekoo-api.hf.space/downloader/youtube/v2"
 
+DOWNLOAD_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
 def is_youtube_url(url: str) -> bool:
     try:
         host = (urlparse((url or "").strip()).hostname or "").lower()
@@ -86,7 +92,7 @@ def _pick_best_media(medias: list[dict], preferred: str | None = None) -> dict |
 
 async def _fetch_sonzai_payload(raw_url: str) -> dict:
     session = await get_http_session()
-    async with session.get(SONZAI_YOUTUBE_API, params={"url": raw_url}, timeout=aiohttp.ClientTimeout(total=25)) as resp:
+    async with session.get(SONZAI_YOUTUBE_API, params={"url": raw_url}, headers=DOWNLOAD_HEADERS, timeout=aiohttp.ClientTimeout(total=25)) as resp:
         if resp.status >= 400:
             raise RuntimeError(f"YouTube API HTTP {resp.status}")
         data = await resp.json(content_type=None)
@@ -142,6 +148,7 @@ async def sonzai_get_resolutions(raw_url: str) -> list[dict]:
         out.append(item)
     return out
 
+
 async def _aria2c_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id):
     aria2 = shutil.which("aria2c")
     if not aria2:
@@ -162,6 +169,9 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         "--summary-interval=0",
         "--download-result=hide",
         "--console-log-level=warn",
+        "--header", f"User-Agent: {DOWNLOAD_HEADERS['User-Agent']}",
+        "--header", f"Accept: {DOWNLOAD_HEADERS['Accept']}",
+        "--header", f"Accept-Language: {DOWNLOAD_HEADERS['Accept-Language']}",
         media_url,
     ]
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
@@ -203,7 +213,7 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
 
 async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id):
-    async with session.get(media_url, timeout=aiohttp.ClientTimeout(total=600)) as media_resp:
+    async with session.get(media_url, headers=DOWNLOAD_HEADERS, timeout=aiohttp.ClientTimeout(total=600)) as media_resp:
         if media_resp.status >= 400:
             raise RuntimeError(f"Failed to download YouTube media: HTTP {media_resp.status}")
         total = int(media_resp.headers.get("Content-Length", 0) or 0)
