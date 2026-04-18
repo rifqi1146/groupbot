@@ -113,10 +113,11 @@ def _extract_media_candidates(data: dict) -> list[tuple[str, str]]:
             media_type = str(item.get("type") or item.get("media_type") or item.get("kind") or "").lower()
             media_url = item.get("url") or item.get("download_url") or item.get("media_url") or item.get("video_url") or item.get("image_url") or item.get("src")
             thumb_url = item.get("thumbnail") or item.get("thumb")
+            filename = str(item.get("filename") or "").lower()
             if media_url:
-                if item.get("thumbnail") and item.get("url") and not media_type:
+                if "video" in media_type or media_type in ("2", "clip", "reel"):
                     add_candidate("video", media_url)
-                elif "video" in media_type or media_type in ("2", "clip", "reel"):
+                elif filename.endswith((".mp4", ".mov", ".m4v", ".webm")):
                     add_candidate("video", media_url)
                 else:
                     guessed_ext = _guess_ext_from_url(media_url)
