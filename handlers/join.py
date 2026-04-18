@@ -61,7 +61,7 @@ async def require_join_or_block(
         return True
 
     text = (
-        "<b>To use the download feature</b>\n"
+        "<b>To use the feature</b>\n"
         "you must join the support channel first."
     )
 
