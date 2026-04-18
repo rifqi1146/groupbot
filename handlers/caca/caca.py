@@ -5,17 +5,15 @@ import random
 import html
 import logging
 from typing import List, Optional
-
 import aiohttp
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ContextTypes
-
+from handlers.join import require_join_or_block
 from handlers.gsearch import google_search
 from utils.text import split_message, sanitize_ai_output
 from .caca_prompt import PERSONAS
 from utils.http import get_http_session
-
 from database import caca_db
 from utils import caca_memory
 from utils.config import (
@@ -31,19 +29,15 @@ CLOUDFLARE_TIMEOUT = int(os.getenv("CLOUDFLARE_TIMEOUT", "60"))
 _EMOS = ["🌸", "💖", "🧸", "🎀", "🌟", "💫"]
 _URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
 
-
 def _emo():
     return random.choice(_EMOS)
-
 
 def _parse_html(html_text: str) -> Optional[str]:
     soup = BeautifulSoup(html_text, "html.parser")
     for t in soup(["script", "style", "iframe", "noscript"]):
         t.decompose()
-
     ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
     return ("\n\n".join(ps))[:12000] or None
-
 
 def _cleanup_memory():
     try:
@@ -51,7 +45,6 @@ def _cleanup_memory():
         loop.create_task(caca_memory.cleanup())
     except Exception:
         pass
-
 
 async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     try:
@@ -87,6 +80,8 @@ def _normalize_caca_output(text: str) -> str:
     return text.strip()
 
 async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update, context):
+        return
     _cleanup_memory()
     msg = update.message
     if not msg or not msg.from_user:
@@ -182,7 +177,6 @@ async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=aiohttp.ClientTimeout(total=CLOUDFLARE_TIMEOUT),
         ) as r:
             data = await r.json(content_type=None)
-
             if r.status >= 400:
                 raise RuntimeError(
                     data.get("errors", [{}])[0].get("message")
