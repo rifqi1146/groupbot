@@ -13,7 +13,7 @@ async def mode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not user:
         return
     user_id = user.id
-    if not premium_service.check(user_id):
+    if not premium.check(user_id):
         return await msg.reply_text(
             "❌ Persona mode is available for premium users only.\n"
             "Non-premium users are not allowed to change it 😤"
