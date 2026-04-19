@@ -4,6 +4,7 @@ import asyncio
 import random
 import html
 import logging
+from dotenv import load_dotenv
 from typing import Optional
 import aiohttp
 from bs4 import BeautifulSoup
@@ -18,6 +19,7 @@ from database import caca_db
 from utils import caca_memory
 from utils.config import CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_AUTH_TOKEN, CLOUDFLARE_MODEL
 
+load_dotenv()
 logger = logging.getLogger(__name__)
 CLOUDFLARE_TIMEOUT = int(os.getenv("CLOUDFLARE_TIMEOUT", "60"))
 _EMOS = ["🌸", "💖", "🧸", "🎀", "🌟", "💫"]
