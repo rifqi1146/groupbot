@@ -41,6 +41,8 @@ WEB_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+_LAST_IG_STATUS_TEXT = {}
+
 def is_instagram_url(url: str) -> bool:
     try:
         host = (urlparse((url or "").strip()).hostname or "").lower()
@@ -167,20 +169,15 @@ def _guess_ext(content_type: str, media_type: str, media_url: str) -> str:
         return guessed
     return ".mp4" if media_type == "video" else ".jpg"
 
-def _truncate(text: str, n: int) -> str:
-    text = (text or "").strip()
-    return text if len(text) <= n else text[:n].rstrip() + "..."
-
 def _normalize_caption_text(text: str) -> str:
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text
-    
+
 def _build_title(meta: dict, media_type: str) -> str:
     nickname = (meta.get("nickname") or "").strip()
     username = (meta.get("username") or "").strip()
     caption = _normalize_caption_text(meta.get("caption") or "")
-
     if nickname and username:
         base = f"{nickname} (@{username})"
     elif username:
@@ -189,12 +186,10 @@ def _build_title(meta: dict, media_type: str) -> str:
         base = nickname
     else:
         base = "Instagram Media"
-
     if caption:
         full = f"{base} - {caption}".strip()
     else:
         full = f"{base} - Instagram {'Video' if media_type == 'video' else 'Image'}"
-
     return full[:1024].rstrip()
 
 def _caption_from_media(media: dict) -> str:
@@ -434,21 +429,41 @@ async def _fetch_instagram_metadata(raw_url: str) -> dict:
             errors.append(repr(e))
     raise RuntimeError(" ; ".join(errors) if errors else "Instagram metadata not found")
 
-def _pick_media_for_format(items: list[dict], fmt_key: str) -> list[dict]:
+def _pick_direct_items(items: list[dict], fmt_key: str) -> list[dict]:
     if not items:
         return []
     if fmt_key == "mp3":
         for item in items:
-            if item.get("type") == "video":
+            if item.get("type") == "video" and item.get("url"):
                 return [item]
         return []
-    return items
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        media_type = str(item.get("type") or "").strip().lower()
+        media_url = str(item.get("url") or "").strip()
+        if media_type in ("photo", "video") and media_url:
+            out.append({
+                "type": media_type,
+                "url": media_url,
+                "thumbnail": str(item.get("thumbnail") or "").strip(),
+            })
+    return out
 
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
+    key = (int(chat_id), int(message_id))
+    text = str(text or "")
+    if _LAST_IG_STATUS_TEXT.get(key) == text:
+        return
     try:
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
+        _LAST_IG_STATUS_TEXT[key] = text
+        log.info("Instagram status updated | chat_id=%s message_id=%s text=%r", chat_id, message_id, text)
     except Exception as e:
-        if "Message is not modified" in str(e):
+        err = str(e or "")
+        if "Message is not modified" in err or "message is not modified" in err:
+            _LAST_IG_STATUS_TEXT[key] = text
             return
         log.warning("Failed to edit Instagram status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
 
@@ -456,27 +471,186 @@ async def _download_media_with_progress(session, media_url: str, out_path: str, 
     async with session.get(media_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=180), allow_redirects=True) as media_resp:
         if media_resp.status >= 400:
             raise RuntimeError(f"Failed to download media: HTTP {media_resp.status}")
-        total = int(media_resp.headers.get("Content-Length", 0))
+        total = int(media_resp.headers.get("Content-Length", 0) or 0)
         downloaded = 0
         last = 0.0
         async with aiofiles.open(out_path, "wb") as f:
             async for chunk in media_resp.content.iter_chunked(64 * 1024):
+                if not chunk:
+                    continue
                 await f.write(chunk)
                 downloaded += len(chunk)
-                if total and time.time() - last >= 1.0:
+                now = time.time()
+                if total and now - last >= 1.0:
                     pct = downloaded / total * 100
-                    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=f"<b>{title_text}</b>\n\n<code>{progress_bar(pct)}</code>")
-                    last = time.time()
+                    await _safe_edit_status(
+                        bot=bot,
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                        text=f"<b>{title_text}</b>\n\n<code>{progress_bar(pct)}</code>",
+                    )
+                    last = now
+
+async def _download_direct_instagram_items(meta: dict, fmt_key: str, bot, chat_id, status_msg_id) -> dict:
+    session = await get_http_session()
+    picked_items = _pick_direct_items(meta.get("items") or [], fmt_key)
+    if not picked_items:
+        if fmt_key == "mp3":
+            raise RuntimeError("Instagram image post does not contain audio")
+        raise RuntimeError("No direct Instagram media found")
+
+    title = _build_title(meta, picked_items[0].get("type") or "photo")
+    created_paths = []
+
+    try:
+        if len(picked_items) == 1:
+            item = picked_items[0]
+            media_type = item.get("type") or "photo"
+            media_url = item.get("url") or ""
+
+            async with session.get(media_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+                if resp.status >= 400:
+                    raise RuntimeError(f"Failed to probe media: HTTP {resp.status}")
+                content_type = resp.headers.get("Content-Type", "")
+
+            ext = _guess_ext(content_type, media_type, media_url)
+            safe_title = sanitize_filename(title)
+            out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{safe_title}{ext}")
+
+            await _download_media_with_progress(
+                session=session,
+                media_url=media_url,
+                out_path=out_path,
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                title_text="Downloading Instagram media (direct)...",
+            )
+
+            created_paths.append(out_path)
+            log.info("Instagram direct download success | file=%s", out_path)
+            return {"path": out_path, "title": title}
+
+        total_items = len(picked_items)
+        result_items = []
+
+        for idx, item in enumerate(picked_items, start=1):
+            media_type = item.get("type") or "photo"
+            media_url = item.get("url") or ""
+
+            async with session.get(media_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+                if resp.status >= 400:
+                    raise RuntimeError(f"Failed to probe media: HTTP {resp.status}")
+                content_type = resp.headers.get("Content-Type", "")
+
+            item_title = title if idx == 1 else f"{title} {idx}"
+            ext = _guess_ext(content_type, media_type, media_url)
+            safe_title = sanitize_filename(item_title)
+            out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{safe_title}{ext}")
+
+            await _download_media_with_progress(
+                session=session,
+                media_url=media_url,
+                out_path=out_path,
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                title_text=f"Downloading Instagram media {idx}/{total_items} (direct)...",
+            )
+
+            created_paths.append(out_path)
+            result_items.append({"path": out_path, "type": media_type})
+            log.info("Instagram direct item success | index=%s/%s file=%s", idx, total_items, out_path)
+
+        if not result_items:
+            raise RuntimeError("No Instagram media downloaded")
+
+        return {"items": result_items, "title": title, "source": "instagram_direct"}
+
+    except Exception as e:
+        log.warning("Instagram direct media download failed | err=%r", e)
+        for path in created_paths:
+            try:
+                if path and os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        raise
 
 async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id):
-    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>Fetching Instagram metadata...</b>")
+    meta = {"caption": "", "username": "", "nickname": "", "items": []}
+
+    await _safe_edit_status(
+        bot=bot,
+        chat_id=chat_id,
+        message_id=status_msg_id,
+        text="<b>Fetching Instagram metadata...</b>",
+    )
+
     try:
         meta = await _fetch_instagram_metadata(raw_url)
+        log.info(
+            "Instagram primary metadata success | url=%s caption_len=%s username=%r nickname=%r items=%s",
+            raw_url,
+            len(meta.get("caption") or ""),
+            meta.get("username"),
+            meta.get("nickname"),
+            len(meta.get("items") or []),
+        )
     except Exception as e:
         log.warning("Primary Instagram metadata extractor failed | url=%s err=%r", raw_url, e)
         meta = await _fetch_instagram_caption_meta(raw_url)
-    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>Downloading Instagram media...</b>")
-    result = await igdl_download_for_fallback(bot=bot, chat_id=chat_id, reply_to=None, status_msg_id=status_msg_id, url=raw_url)
+        log.info(
+            "Instagram fallback metadata success | url=%s caption_len=%s username=%r nickname=%r",
+            raw_url,
+            len(meta.get("caption") or ""),
+            meta.get("username"),
+            meta.get("nickname"),
+        )
+
+    log.info(
+        "Instagram metadata result | url=%s caption=%r username=%r nickname=%r items=%r",
+        raw_url,
+        meta.get("caption"),
+        meta.get("username"),
+        meta.get("nickname"),
+        len(meta.get("items") or []),
+    )
+
+    try:
+        await _safe_edit_status(
+            bot=bot,
+            chat_id=chat_id,
+            message_id=status_msg_id,
+            text="<b>Downloading Instagram media (direct)...</b>",
+        )
+        result = await _download_direct_instagram_items(
+            meta=meta,
+            fmt_key=fmt_key,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+        )
+        _LAST_IG_STATUS_TEXT.pop((int(chat_id), int(status_msg_id)), None)
+        return result
+    except Exception as e:
+        log.warning("Instagram direct media failed, falling back | url=%s err=%r", raw_url, e)
+
+    await _safe_edit_status(
+        bot=bot,
+        chat_id=chat_id,
+        message_id=status_msg_id,
+        text="<b>Direct download failed, fallback to scraper...</b>",
+    )
+
+    result = await igdl_download_for_fallback(
+        bot=bot,
+        chat_id=chat_id,
+        reply_to=None,
+        status_msg_id=status_msg_id,
+        url=raw_url,
+    )
+
     if isinstance(result, dict):
         media_type = "photo"
         if result.get("path"):
@@ -486,14 +660,7 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
         elif result.get("items"):
             first = (result.get("items") or [{}])[0]
             media_type = first.get("type") or "photo"
-        log.warning(
-            "Instagram metadata result | url=%s caption=%r username=%r nickname=%r items=%r",
-            raw_url,
-            meta.get("caption"),
-            meta.get("username"),
-            meta.get("nickname"),
-            len(meta.get("items") or []),
-        )
+
         if (meta.get("caption") or "").strip() or (meta.get("username") or "").strip() or (meta.get("nickname") or "").strip():
             result["title"] = _build_title(
                 {
@@ -503,21 +670,43 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
                 },
                 media_type,
             )
+
+    log.info("Instagram fallback download success | url=%s", raw_url)
+    _LAST_IG_STATUS_TEXT.pop((int(chat_id), int(status_msg_id)), None)
     return result
 
 async def send_instagram_result(bot, chat_id: int, reply_to: int, result: dict):
     if result.get("items"):
-        await send_instagram_fallback_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=result)
+        await send_instagram_fallback_result(
+            bot=bot,
+            chat_id=chat_id,
+            reply_to=reply_to,
+            result=result,
+        )
         return
+
     path = result.get("path")
     title = result.get("title") or "Instagram Media"
+
     if not path or not os.path.exists(path):
         raise RuntimeError("Instagram media file not found")
+
     with open(path, "rb") as f:
         if path.lower().endswith((".mp4", ".mov", ".m4v", ".webm")):
-            await bot.send_video(chat_id=chat_id, video=f, caption=title, reply_to_message_id=reply_to, supports_streaming=True)
+            await bot.send_video(
+                chat_id=chat_id,
+                video=f,
+                caption=title,
+                reply_to_message_id=reply_to,
+                supports_streaming=True,
+            )
         else:
-            await bot.send_photo(chat_id=chat_id, photo=f, caption=title, reply_to_message_id=reply_to)
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=f,
+                caption=title,
+                reply_to_message_id=reply_to,
+            )
 
 async def cleanup_instagram_result(result: dict):
     await cleanup_instagram_fallback_result(result)
