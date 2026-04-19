@@ -11,13 +11,7 @@ from utils.http import get_http_session
 from .constants import TMP_DIR
 from .utils import sanitize_filename, progress_bar
 
-SONZAI_YOUTUBE_API = "https://rynekoo-api.hf.space/downloader/youtube/v2"
-
-DOWNLOAD_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-}
+SONZAI_YOUTUBE_API = "https://api.sonzaix.indevs.in/youtube/video"
 
 def is_youtube_url(url: str) -> bool:
     try:
@@ -41,6 +35,28 @@ def _normalize_title(filename: str) -> str:
     name = re.sub(r"\s*\(\d+p.*?\)\s*$", "", name, flags=re.I)
     return name.strip() or "YouTube Video"
 
+def _pick_best_resolution(links: dict, preferred: str | None = None) -> tuple[str, str] | None:
+    if not isinstance(links, dict) or not links:
+        return None
+    clean = []
+    for key, value in links.items():
+        if not value:
+            continue
+        label = str(key).strip()
+        url = str(value).strip()
+        if not url:
+            continue
+        clean.append((label, url))
+    if not clean:
+        return None
+    if preferred:
+        preferred = str(preferred).strip()
+        for label, url in clean:
+            if label == preferred:
+                return label, url
+    clean.sort(key=lambda item: _resolution_value(item[0]), reverse=True)
+    return clean[0]
+
 def _guess_ext(filename: str, media_url: str) -> str:
     ext = os.path.splitext((filename or "").strip())[1].lower()
     if ext:
@@ -54,100 +70,39 @@ def _guess_ext(filename: str, media_url: str) -> str:
         pass
     return ".mp4"
 
-def _pick_best_media(medias: list[dict], preferred: str | None = None) -> dict | None:
-    if not isinstance(medias, list) or not medias:
-        return None
-    cleaned = []
-    for item in medias:
-        if not isinstance(item, dict):
-            continue
-        media_url = str(item.get("url") or "").strip()
-        if not media_url:
-            continue
-        label = str(item.get("label") or item.get("quality") or "").strip()
-        ext = str(item.get("ext") or item.get("extension") or "").strip().lower()
-        height = int(item.get("height") or _resolution_value(label) or 0)
-        has_audio = bool(item.get("is_audio"))
-        media_type = str(item.get("type") or "").strip().lower()
-        cleaned.append({
-            "raw": item,
-            "url": media_url,
-            "label": label,
-            "ext": ext or "mp4",
-            "height": height,
-            "has_audio": has_audio,
-            "type": media_type,
-        })
-    if not cleaned:
-        return None
-    if preferred:
-        preferred = str(preferred).strip().lower()
-        for item in cleaned:
-            if str(item["height"]) == preferred.replace("p", ""):
-                return item["raw"]
-            if item["label"].lower() == preferred:
-                return item["raw"]
-    cleaned.sort(key=lambda x: (0 if x["has_audio"] else 1, -(x["height"] or 0), 0 if x["ext"] == "mp4" else 1))
-    return cleaned[0]["raw"]
-
 async def _fetch_sonzai_payload(raw_url: str) -> dict:
     session = await get_http_session()
-    async with session.get(SONZAI_YOUTUBE_API, params={"url": raw_url}, headers=DOWNLOAD_HEADERS, timeout=aiohttp.ClientTimeout(total=25)) as resp:
+    async with session.get(SONZAI_YOUTUBE_API, params={"url": raw_url}, timeout=aiohttp.ClientTimeout(total=25)) as resp:
         if resp.status >= 400:
-            raise RuntimeError(f"YouTube API HTTP {resp.status}")
+            raise RuntimeError(f"Sonzai API HTTP {resp.status}")
         data = await resp.json(content_type=None)
     if not isinstance(data, dict):
-        raise RuntimeError("Invalid YouTube API response")
-    if not bool(data.get("success")):
-        raise RuntimeError(data.get("message") or "YouTube API request failed")
-    result = data.get("result") or {}
-    medias = result.get("medias")
-    if not isinstance(medias, list) or not medias:
-        raise RuntimeError("No downloadable links returned by YouTube API")
-    return result
+        raise RuntimeError("Invalid Sonzai API response")
+    links = data.get("download_link")
+    if not isinstance(links, dict) or not links:
+        raise RuntimeError("No downloadable links returned by Sonzai API")
+    return data
 
 async def sonzai_get_resolutions(raw_url: str) -> list[dict]:
     data = await _fetch_sonzai_payload(raw_url)
-    medias = data.get("medias") or []
-    grouped = {}
-    for item in medias:
-        if not isinstance(item, dict):
-            continue
-        media_url = str(item.get("url") or "").strip()
+    links = data.get("download_link") or {}
+    out = []
+    for label, media_url in links.items():
         if not media_url:
             continue
-        media_type = str(item.get("type") or "").strip().lower()
-        if media_type != "video":
-            continue
-        label = str(item.get("label") or item.get("quality") or "").strip()
-        height = int(item.get("height") or _resolution_value(label) or 0)
+        height = _resolution_value(label)
         if not height:
             continue
-        current = grouped.get(height)
-        candidate = {
+        out.append({
             "height": height,
-            "format_id": str(height),
-            "ext": str(item.get("ext") or item.get("extension") or "mp4"),
-            "has_audio": bool(item.get("is_audio")),
-            "filesize": int(item.get("clen") or 0) if str(item.get("clen") or "").isdigit() else 0,
-            "total_size": int(item.get("clen") or 0) if str(item.get("clen") or "").isdigit() else 0,
-            "_raw": item,
-        }
-        if not current:
-            grouped[height] = candidate
-            continue
-        if candidate["has_audio"] and not current["has_audio"]:
-            grouped[height] = candidate
-            continue
-        if candidate["ext"] == "mp4" and current["ext"] != "mp4":
-            grouped[height] = candidate
-    out = []
-    for height in sorted(grouped.keys(), reverse=True):
-        item = grouped[height]
-        item.pop("_raw", None)
-        out.append(item)
+            "format_id": str(label).strip(),
+            "ext": "mp4",
+            "has_audio": True,
+            "filesize": 0,
+            "total_size": 0,
+        })
+    out.sort(key=lambda x: int(x.get("height") or 0), reverse=True)
     return out
-
 
 async def _aria2c_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id):
     aria2 = shutil.which("aria2c")
@@ -169,9 +124,6 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         "--summary-interval=0",
         "--download-result=hide",
         "--console-log-level=warn",
-        "--header", f"User-Agent: {DOWNLOAD_HEADERS['User-Agent']}",
-        "--header", f"Accept: {DOWNLOAD_HEADERS['Accept']}",
-        "--header", f"Accept-Language: {DOWNLOAD_HEADERS['Accept-Language']}",
         media_url,
     ]
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
@@ -213,9 +165,9 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
 
 async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id):
-    async with session.get(media_url, headers=DOWNLOAD_HEADERS, timeout=aiohttp.ClientTimeout(total=600)) as media_resp:
+    async with session.get(media_url, timeout=aiohttp.ClientTimeout(total=600)) as media_resp:
         if media_resp.status >= 400:
-            raise RuntimeError(f"Failed to download YouTube media: HTTP {media_resp.status}")
+            raise RuntimeError(f"Failed to download Sonzai media: HTTP {media_resp.status}")
         total = int(media_resp.headers.get("Content-Length", 0) or 0)
         downloaded = 0
         last = 0.0
@@ -244,16 +196,14 @@ async def sonzai_youtube_download(raw_url: str, fmt_key: str, bot, chat_id, stat
     except Exception:
         pass
     data = await _fetch_sonzai_payload(raw_url)
-    medias = data.get("medias") or []
-    picked = _pick_best_media(medias, preferred=format_id if fmt_key == "video" else None)
+    filename = str(data.get("filename") or "").strip()
+    links = data.get("download_link") or {}
+    picked = _pick_best_resolution(links, preferred=format_id if fmt_key == "video" else None)
     if not picked:
-        raise RuntimeError("No suitable YouTube download link found")
-    media_url = str(picked.get("url") or "").strip()
-    if not media_url:
-        raise RuntimeError("YouTube media URL is empty")
-    label = str(picked.get("label") or picked.get("quality") or "").strip()
-    title = _normalize_title(str(data.get("title") or "").strip() or f"YouTube Video {label}")
-    ext = _guess_ext(str(data.get("title") or "").strip(), media_url)
+        raise RuntimeError("No suitable Sonzai download link found")
+    picked_label, media_url = picked
+    title = _normalize_title(filename or f"YouTube Video {picked_label}")
+    ext = _guess_ext(filename, media_url)
     safe_title = sanitize_filename(title)
     out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{safe_title}{ext}")
     try:
