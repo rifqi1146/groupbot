@@ -13,7 +13,7 @@ def _db():
     con.execute("PRAGMA synchronous=NORMAL;")
     return con
 
-def init():
+def init_premium_db():
     global _PREMIUM_USERS
     con = _db()
     try:
@@ -30,12 +30,6 @@ def init():
     finally:
         con.close()
 
-def init_if_needed():
-    if not _PREMIUM_USERS and not _table_exists():
-        init()
-    elif not _PREMIUM_USERS:
-        init()
-
 def _table_exists() -> bool:
     con = _db()
     try:
@@ -44,9 +38,15 @@ def _table_exists() -> bool:
     finally:
         con.close()
 
-def add(uid: int):
+def init_if_needed():
+    if not _PREMIUM_USERS and not _table_exists():
+        init_premium_db()
+    elif not _PREMIUM_USERS:
+        init_premium_db()
+
+def premium_add(user_id: int):
     global _PREMIUM_USERS
-    uid = int(uid)
+    uid = int(user_id)
     init_if_needed()
     if uid in OWNER_ID:
         return
@@ -61,9 +61,9 @@ def add(uid: int):
     finally:
         con.close()
 
-def remove(uid: int):
+def premium_del(user_id: int):
     global _PREMIUM_USERS
-    uid = int(uid)
+    uid = int(user_id)
     init_if_needed()
     if uid in OWNER_ID:
         return
@@ -75,28 +75,18 @@ def remove(uid: int):
     finally:
         con.close()
 
-def list_users() -> list[int]:
+def premium_list() -> list[int]:
     init_if_needed()
-    db_ids = []
     con = _db()
     try:
         cur = con.execute("SELECT user_id FROM premium_users ORDER BY added_at DESC")
         rows = cur.fetchall()
         db_ids = [int(r[0]) for r in rows if r and r[0] is not None and int(r[0]) not in OWNER_ID]
+        return list(dict.fromkeys([*OWNER_ID, *db_ids]))
     finally:
         con.close()
-    return list(dict.fromkeys([*OWNER_ID, *db_ids]))
 
-def check(uid: int) -> bool:
-    init_if_needed()
-    uid = int(uid)
-    return uid in OWNER_ID or uid in _PREMIUM_USERS
-
-def cache_set() -> set[int]:
-    init_if_needed()
-    return set(_PREMIUM_USERS) | {int(x) for x in OWNER_ID}
-
-def load_set() -> set[int]:
+def premium_load_set() -> set[int]:
     init_if_needed()
     con = _db()
     try:
@@ -106,3 +96,34 @@ def load_set() -> set[int]:
         return db_ids | {int(x) for x in OWNER_ID}
     finally:
         con.close()
+
+def is_premium(user_id: int, cache: set[int] | None = None) -> bool:
+    uid = int(user_id)
+    if uid in OWNER_ID:
+        return True
+    if cache is not None:
+        return uid in cache
+    init_if_needed()
+    return uid in _PREMIUM_USERS
+
+def init():
+    init_premium_db()
+
+def add(uid: int):
+    premium_add(uid)
+
+def remove(uid: int):
+    premium_del(uid)
+
+def list_users() -> list[int]:
+    return premium_list()
+
+def check(uid: int) -> bool:
+    return is_premium(uid, _PREMIUM_USERS)
+
+def cache_set() -> set[int]:
+    init_if_needed()
+    return set(_PREMIUM_USERS) | {int(x) for x in OWNER_ID}
+
+def load_set() -> set[int]:
+    return premium_load_set()
