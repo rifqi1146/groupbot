@@ -88,13 +88,13 @@ async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         if cmd == "add":
-            premium_service.add(uid)
+            premium.add(uid)
             return await msg.reply_text(
                 f"<b>Premium added</b>: <code>{uid}</code>",
                 parse_mode="HTML"
             )
 
-        premium_service.remove(uid)
+        premium.remove(uid)
         caca_db.remove_mode(uid)
         await caca_memory.clear(uid)
         await caca_memory.clear_last_message_id(uid)
@@ -104,7 +104,7 @@ async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     if cmd == "list":
-        ids = premium_service.list_users()
+        ids = premium.list_users()
         if not ids:
             return await msg.reply_text("No premium users yet.", parse_mode="HTML")
 
