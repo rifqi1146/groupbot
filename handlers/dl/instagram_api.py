@@ -405,7 +405,11 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
         text="<b>Fetching Instagram metadata...</b>",
     )
 
-    meta = await _fetch_instagram_caption_meta(raw_url)
+    try:
+        meta = await _fetch_instagram_metadata(raw_url)
+    except Exception as e:
+        log.warning("Primary Instagram metadata extractor failed | url=%s err=%r", raw_url, e)
+        meta = await _fetch_instagram_caption_meta(raw_url)
 
     await _safe_edit_status(
         bot=bot,
@@ -432,7 +436,7 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
             first = (result.get("items") or [{}])[0]
             media_type = first.get("type") or "photo"
 
-        title = _build_title(
+        result["title"] = _build_title(
             {
                 "caption": meta.get("caption") or "",
                 "username": meta.get("username") or "",
@@ -440,8 +444,6 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
             },
             media_type,
         )
-
-        result["title"] = title
 
     return result
 
