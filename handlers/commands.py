@@ -32,7 +32,6 @@ from handlers.donate import donate_cmd
 from handlers.quotly import q_cmd
 from handlers.kang import kang_cmd
 from handlers.setting import setting_cmd
-from handlers.dl.instagram_scrape import ig_cmd
 from handlers.backup import backup_cmd, restore_cmd, autobackup_cmd
 from handlers.manga import manga_cmd
 
@@ -67,7 +66,6 @@ COMMAND_HANDLERS = [
     ("autobackup", autobackup_cmd, True),
     ("restore", restore_cmd, True),
     ("q", q_cmd, False),
-    ("ig", ig_cmd, False),
     ("kang", kang_cmd, False),
     ("cookies", cookies_cmd, False),
     ("moderation", moderation_cmd, False),
