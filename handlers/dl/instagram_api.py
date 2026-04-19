@@ -413,14 +413,28 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
             raise RuntimeError("No Instagram media downloaded")
         return {"items": items, "title": title, "source": "Instagram"}
     except Exception as e:
+        err_text = str(e) or repr(e)
         log.warning("Instagram direct extractor failed, falling back to Indown | url=%s fmt=%s err=%r", raw_url, fmt_key, e)
+        try:
+            await _safe_edit_status(
+                bot=bot,
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=(
+                    "<b>Instagram direct extractor failed</b>\n\n"
+                    f"<code>{html.escape(err_text[:800])}</code>\n\n"
+                    "<i>Falling back to Indown...</i>"
+                ),
+            )
+        except Exception:
+            pass
         for path in created_paths:
             try:
                 if path and os.path.exists(path):
                     os.remove(path)
             except Exception as cleanup_err:
                 log.warning("Failed to remove partial Instagram file | path=%s err=%s", path, cleanup_err)
-    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>Instagram extractor failed, fallback to Indown...</b>")
+        await asyncio.sleep(1.2)
     return await igdl_download_for_fallback(
         bot=bot,
         chat_id=chat_id,
