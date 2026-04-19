@@ -87,6 +87,26 @@ def _truncate(text: str, n: int) -> str:
         return text
     return text[:n].rstrip() + "..."
 
+def _caption_from_media(media: dict) -> str:
+    if not isinstance(media, dict):
+        return ""
+    edges = (((media.get("edge_media_to_caption") or {}).get("edges")) or [])
+    if isinstance(edges, list) and edges:
+        node = (edges[0] or {}).get("node") or {}
+        text = (node.get("text") or "").strip()
+        if text:
+            return text
+    caption_obj = media.get("caption") or {}
+    if isinstance(caption_obj, dict):
+        text = (caption_obj.get("text") or "").strip()
+        if text:
+            return text
+    for key in ("accessibility_caption", "title"):
+        text = str(media.get(key) or "").strip()
+        if text:
+            return text
+    return ""
+
 def _build_title(meta: dict, media_type: str) -> str:
     nickname = (meta.get("nickname") or "").strip()
     username = (meta.get("username") or "").strip()
@@ -135,12 +155,6 @@ def _best_video_version(versions: list[dict]) -> str:
             best = u
     return best or ""
 
-def _caption_from_edges(edges) -> str:
-    if not isinstance(edges, list) or not edges:
-        return ""
-    node = (edges[0] or {}).get("node") or {}
-    return (node.get("text") or "").strip()
-
 def _parse_gql_media(media: dict) -> dict:
     if not isinstance(media, dict):
         return {"caption": "", "username": "", "nickname": "", "items": []}
@@ -148,7 +162,7 @@ def _parse_gql_media(media: dict) -> dict:
     owner = media.get("owner") or {}
     username = (owner.get("username") or "").strip()
     nickname = (owner.get("full_name") or owner.get("fullName") or "").strip()
-    caption = _caption_from_edges(((media.get("edge_media_to_caption") or {}).get("edges")) or [])
+    caption = _caption_from_media(media)
     items = []
     if typename in ("GraphVideo", "XDTGraphVideo"):
         video_url = str(media.get("video_url") or "").strip()
@@ -182,7 +196,11 @@ def _parse_v1_item(item: dict) -> dict:
     username = (user.get("username") or "").strip()
     nickname = (user.get("full_name") or "").strip()
     caption_obj = item.get("caption") or {}
-    caption = (caption_obj.get("text") or "").strip()
+    caption = ""
+    if isinstance(caption_obj, dict):
+        caption = (caption_obj.get("text") or "").strip()
+    if not caption:
+        caption = str(item.get("accessibility_caption") or "").strip()
     items = []
     media_type = int(item.get("media_type") or 0)
     if media_type == 2:
@@ -228,10 +246,14 @@ def _extract_shortcode_media_from_html(html_text: str):
 async def _fetch_instagram_metadata(raw_url: str) -> dict:
     session = await get_http_session()
     url = _normalize_instagram_url(raw_url)
-    attempts = [
-        ("json", url.rstrip("/") + "/?__a=1&__d=dis"),
-        ("html", url),
-    ]
+    html_text = ""
+    try:
+        async with session.get(url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+            if resp.status < 400:
+                html_text = await resp.text()
+    except Exception:
+        html_text = ""
+    attempts = [("json", url.rstrip("/") + "/?__a=1&__d=dis"), ("html", url)]
     last_err = None
     for mode, target in attempts:
         try:
@@ -244,25 +266,34 @@ async def _fetch_instagram_metadata(raw_url: str) -> dict:
                     if isinstance((data.get("graphql") or {}).get("shortcode_media"), dict):
                         parsed = _parse_gql_media((data.get("graphql") or {}).get("shortcode_media"))
                         if parsed["items"]:
+                            if not parsed.get("caption"):
+                                parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
                             return parsed
-                    if isinstance((((data.get("data") or {}).get("xdt_shortcode_media"))), dict):
-                        parsed = _parse_gql_media(((data.get("data") or {}).get("xdt_shortcode_media")))
+                    if isinstance(((data.get("data") or {}).get("xdt_shortcode_media")), dict):
+                        parsed = _parse_gql_media((data.get("data") or {}).get("xdt_shortcode_media"))
                         if parsed["items"]:
+                            if not parsed.get("caption"):
+                                parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
                             return parsed
                     items = data.get("items") or []
                     if isinstance(items, list) and items:
                         parsed = _parse_v1_item(items[0])
                         if parsed["items"]:
+                            if not parsed.get("caption"):
+                                parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
                             return parsed
                 raise RuntimeError("Instagram JSON metadata not found")
-            async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
-                if resp.status >= 400:
-                    raise RuntimeError(f"Instagram HTML HTTP {resp.status}")
-                html_text = await resp.text()
+            if not html_text:
+                async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+                    if resp.status >= 400:
+                        raise RuntimeError(f"Instagram HTML HTTP {resp.status}")
+                    html_text = await resp.text()
             media = _extract_shortcode_media_from_html(html_text)
             if isinstance(media, dict):
                 parsed = _parse_gql_media(media)
                 if parsed["items"]:
+                    if not parsed.get("caption"):
+                        parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
                     return parsed
             og_video = _extract_meta(html_text, "og:video") or _extract_meta(html_text, "og:video:secure_url")
             og_image = _extract_meta(html_text, "og:image")
@@ -287,9 +318,6 @@ def _pick_media_for_format(items: list[dict], fmt_key: str) -> list[dict]:
         return []
     if len(items) == 1:
         return items
-    has_video = any(item.get("type") == "video" for item in items)
-    if has_video:
-        return items
     return items
 
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
@@ -298,7 +326,7 @@ async def _safe_edit_status(bot, chat_id, message_id, text: str):
     except Exception as e:
         log.warning("Failed to edit Instagram status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
 
-async def _download_media_with_progress(session, media_url: str, media_type: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
+async def _download_media_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
     async with session.get(media_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=180), allow_redirects=True) as media_resp:
         if media_resp.status >= 400:
             raise RuntimeError(f"Failed to download media: HTTP {media_resp.status}")
@@ -347,12 +375,11 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
             await _download_media_with_progress(
                 session=session,
                 media_url=media_url,
-                media_type=media_type,
                 out_path=out_path,
                 bot=bot,
                 chat_id=chat_id,
                 status_msg_id=status_msg_id,
-                title_text="<b>Downloading Instagram media...</b>",
+                title_text="Downloading Instagram media...",
             )
             created_paths.append(out_path)
             return {"path": out_path, "title": title}
@@ -374,12 +401,11 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
             await _download_media_with_progress(
                 session=session,
                 media_url=media_url,
-                media_type=media_type,
                 out_path=out_path,
                 bot=bot,
                 chat_id=chat_id,
                 status_msg_id=status_msg_id,
-                title_text=f"<b>Downloading Instagram media {idx}/{total_items}...</b>",
+                title_text=f"Downloading Instagram media {idx}/{total_items}...",
             )
             created_paths.append(out_path)
             items.append({"path": out_path, "type": media_type})
