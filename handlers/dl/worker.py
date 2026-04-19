@@ -16,24 +16,7 @@ log = logging.getLogger(__name__)
 
 def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            src_path,
-            "-vn",
-            "-acodec",
-            "libmp3lame",
-            "-ab",
-            "192k",
-            "-ar",
-            "44100",
-            fixed_path,
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    result = subprocess.run(["ffmpeg","-y","-i",src_path,"-vn","-acodec","libmp3lame","-ab","192k","-ar","44100",fixed_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
     if not os.path.exists(fixed_path):
@@ -81,29 +64,40 @@ def _build_safe_photo_caption(title: str, bot_name: str, max_len: int = 1024) ->
 
 def _is_reply_not_found_error(exc: Exception) -> bool:
     text = (str(exc) or "").lower()
-    keys = (
-        "replied message not found",
-        "message to be replied not found",
-        "reply message not found",
-        "reply_to_message_id",
-    )
+    keys = ("replied message not found","message to be replied not found","reply message not found","reply_to_message_id")
     return any(k in text for k in keys)
 
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
     try:
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
     except Exception as e:
+        if "message is not modified" in (str(e) or "").lower():
+            return
         log.warning("Failed to edit status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
+
+async def _set_uploading_status(bot, chat_id, status_msg_id, kind: str):
+    label = {
+        "audio": "🎵 <b>Uploading audio...</b>",
+        "video": "🎬 <b>Uploading video...</b>",
+        "photo": "🖼️ <b>Uploading photo...</b>",
+        "album": "🖼️ <b>Uploading album...</b>",
+    }.get(kind, "<b>Uploading...</b>")
+    action = {
+        "audio": "upload_audio",
+        "video": "upload_video",
+        "photo": "upload_photo",
+        "album": "upload_photo",
+    }.get(kind, "typing")
+    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=label)
+    try:
+        await bot.send_chat_action(chat_id=chat_id, action=action)
+    except Exception as e:
+        log.warning("Failed to send chat action | chat_id=%s action=%s err=%s", chat_id, action, e)
 
 async def _send_media_group_with_fallback(bot, chat_id, media, reply_to=None, message_thread_id=None):
     while True:
         try:
-            return await bot.send_media_group(
-                chat_id=chat_id,
-                media=media,
-                reply_to_message_id=reply_to,
-                message_thread_id=message_thread_id,
-            )
+            return await bot.send_media_group(chat_id=chat_id, media=media, reply_to_message_id=reply_to, message_thread_id=message_thread_id)
         except RetryAfter as e:
             wait_time = int(getattr(e, "retry_after", 3)) + 1
             log.warning("RetryAfter while sending media group | chat_id=%s wait=%s", chat_id, wait_time)
@@ -116,75 +110,26 @@ async def _send_media_group_with_fallback(bot, chat_id, media, reply_to=None, me
 
 async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None, message_thread_id=None):
     try:
-        return await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo,
-            caption=caption,
-            parse_mode="HTML",
-            reply_to_message_id=reply_to,
-            message_thread_id=message_thread_id,
-            disable_notification=True,
-        )
+        return await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo,
-                caption=caption,
-                parse_mode="HTML",
-                message_thread_id=message_thread_id,
-                disable_notification=True,
-            )
+            return await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", message_thread_id=message_thread_id, disable_notification=True)
         raise
 
 async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=False):
     try:
-        return await bot.send_video(
-            chat_id=chat_id,
-            video=video,
-            caption=caption,
-            parse_mode="HTML",
-            supports_streaming=supports_streaming,
-            reply_to_message_id=reply_to,
-            message_thread_id=message_thread_id,
-            disable_notification=True,
-        )
+        return await bot.send_video(chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await bot.send_video(
-                chat_id=chat_id,
-                video=video,
-                caption=caption,
-                parse_mode="HTML",
-                supports_streaming=supports_streaming,
-                message_thread_id=message_thread_id,
-                disable_notification=True,
-            )
+            return await bot.send_video(chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, message_thread_id=message_thread_id, disable_notification=True)
         raise
 
 async def _send_audio_with_fallback(bot, chat_id, audio, title, performer, filename, reply_to=None, message_thread_id=None):
     try:
-        return await bot.send_audio(
-            chat_id=chat_id,
-            audio=audio,
-            title=title,
-            performer=performer,
-            filename=filename,
-            reply_to_message_id=reply_to,
-            message_thread_id=message_thread_id,
-            disable_notification=True,
-        )
+        return await bot.send_audio(chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await bot.send_audio(
-                chat_id=chat_id,
-                audio=audio,
-                title=title,
-                performer=performer,
-                filename=filename,
-                message_thread_id=message_thread_id,
-                disable_notification=True,
-            )
+            return await bot.send_audio(chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, message_thread_id=message_thread_id, disable_notification=True)
         raise
 
 async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message_thread_id=None):
@@ -219,13 +164,7 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
             if not media:
                 log.warning("No valid media items to send in chunk | chat_id=%s chunk_index=%s", chat_id, idx)
                 continue
-            await _send_media_group_with_fallback(
-                bot=bot,
-                chat_id=chat_id,
-                media=media,
-                reply_to=reply_to if idx == 0 else None,
-                message_thread_id=message_thread_id,
-            )
+            await _send_media_group_with_fallback(bot=bot, chat_id=chat_id, media=media, reply_to=reply_to if idx == 0 else None, message_thread_id=message_thread_id)
             if idx < len(chunks) - 1:
                 await asyncio.sleep(cooldown)
         finally:
@@ -237,7 +176,10 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
 
 async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt_key, message_thread_id=None):
     if isinstance(path, dict) and path.get("items"):
-        await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>Uploading...</b>")
+        items = path.get("items") or []
+        first_path = items[0].get("path") if items else None
+        first_type = detect_media_type(first_path) if first_path and os.path.exists(first_path) else "photo"
+        await _set_uploading_status(bot, chat_id, status_msg_id, "album" if len(items) > 1 else ("video" if first_type == "video" else "photo"))
         await _send_media_group_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=path, message_thread_id=message_thread_id)
         return
     meta = path if isinstance(path, dict) else {"path": path, "title": None}
@@ -245,26 +187,17 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
     original_title = (meta.get("title") or "").strip()
     if not file_path or not os.path.exists(file_path):
         raise RuntimeError("Download gagal")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > MAX_TG_SIZE:
+    if os.path.getsize(file_path) > MAX_TG_SIZE:
         raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
-    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>Uploading...</b>")
     bot_name = (await bot.get_me()).first_name or "Bot"
     caption_text = original_title or _clean_caption_from_path(file_path)
     media_type = detect_media_type(file_path)
     if fmt_key == "mp3":
         fixed_audio = None
         try:
+            await _set_uploading_status(bot, chat_id, status_msg_id, "audio")
             fixed_audio = reencode_mp3(file_path)
-            await _send_audio_with_fallback(
-                bot=bot,
-                chat_id=chat_id,
-                audio=fixed_audio,
-                title=caption_text[:64],
-                performer=bot_name,
-                filename=f"{caption_text[:50]}.mp3",
-                reply_to=reply_to,
-                message_thread_id=message_thread_id,
-            )
+            await _send_audio_with_fallback(bot=bot, chat_id=chat_id, audio=fixed_audio, title=caption_text[:64], performer=bot_name, filename=f"{caption_text[:50]}.mp3", reply_to=reply_to, message_thread_id=message_thread_id)
             return
         finally:
             if fixed_audio and os.path.exists(fixed_audio):
@@ -273,25 +206,12 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
                 except Exception as e:
                     log.warning("Failed to remove temporary re-encoded mp3 | path=%s err=%s", fixed_audio, e)
     if media_type == "photo":
-        await _send_photo_with_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            photo=file_path,
-            caption=_build_safe_photo_caption(caption_text, bot_name),
-            reply_to=reply_to,
-            message_thread_id=message_thread_id,
-        )
+        await _set_uploading_status(bot, chat_id, status_msg_id, "photo")
+        await _send_photo_with_fallback(bot=bot, chat_id=chat_id, photo=file_path, caption=_build_safe_photo_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id)
         return
     if media_type == "video":
-        await _send_video_with_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            video=file_path,
-            caption=_build_safe_caption(caption_text, bot_name),
-            reply_to=reply_to,
-            message_thread_id=message_thread_id,
-            supports_streaming=False,
-        )
+        await _set_uploading_status(bot, chat_id, status_msg_id, "video")
+        await _send_video_with_fallback(bot=bot, chat_id=chat_id, video=file_path, caption=_build_safe_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id, supports_streaming=False)
         return
     raise RuntimeError("Media tidak didukung")
 
@@ -318,12 +238,7 @@ async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, for
         except Exception as e:
             yt_error = str(e) or repr(e)
             log.warning("yt-dlp YouTube download failed, falling back to Sonzai | url=%s err=%r", raw_url, e)
-            await _safe_edit_status(
-                bot=bot,
-                chat_id=chat_id,
-                message_id=status_msg_id,
-                text=("<b>yt-dlp failed</b>\n\n<i>Fallback to Sonzai API...</i>"),
-            )
+            await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>yt-dlp failed</b>\n\n<i>Fallback to Sonzai API...</i>")
             try:
                 result = await sonzai_youtube_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id)
                 file_path = result.get("path") if isinstance(result, dict) else result
