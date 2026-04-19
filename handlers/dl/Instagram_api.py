@@ -90,21 +90,25 @@ def _truncate(text: str, n: int) -> str:
 def _caption_from_media(media: dict) -> str:
     if not isinstance(media, dict):
         return ""
+
     edges = (((media.get("edge_media_to_caption") or {}).get("edges")) or [])
     if isinstance(edges, list) and edges:
         node = (edges[0] or {}).get("node") or {}
         text = (node.get("text") or "").strip()
         if text:
             return text
+
     caption_obj = media.get("caption") or {}
     if isinstance(caption_obj, dict):
         text = (caption_obj.get("text") or "").strip()
         if text:
             return text
+
     for key in ("accessibility_caption", "title"):
         text = str(media.get(key) or "").strip()
         if text:
             return text
+
     return ""
 
 async def _fetch_instagram_caption_meta(raw_url: str) -> dict:
@@ -277,34 +281,85 @@ def _parse_v1_item(item: dict) -> dict:
     return {"caption": caption, "username": username, "nickname": nickname, "items": items}
 
 def _extract_shortcode_media_from_html(html_text: str):
-    pats = [
-        r'"shortcode_media":(\{.*?\})\s*,\s*"show_suggested_profiles"',
-        r'"xdt_shortcode_media":(\{.*?\})\s*,\s*"viewer"',
-        r'"shortcode_media":(\{.*?\})\s*\}\s*\]\s*\}',
+    text = html_text or ""
+
+    patterns = [
+        r'"shortcode_media"\s*:\s*(\{.*?"is_video"\s*:\s*(?:true|false).*?\})\s*,\s*"viewer"',
+        r'"xdt_shortcode_media"\s*:\s*(\{.*?"is_video"\s*:\s*(?:true|false).*?\})\s*,\s*"viewer"',
+        r'"shortcode_media"\s*:\s*(\{.*?\})\s*,\s*"show_suggested_profiles"',
+        r'"xdt_shortcode_media"\s*:\s*(\{.*?\})\s*,\s*"viewer"',
     ]
-    for pat in pats:
-        m = re.search(pat, html_text or "", flags=re.S)
+
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.S)
         if not m:
             continue
         raw = m.group(1)
         try:
             return json.loads(raw)
         except Exception:
+            pass
+
+    keys = ['"shortcode_media":', '"xdt_shortcode_media":']
+    for key in keys:
+        pos = text.find(key)
+        if pos == -1:
             continue
+        start = text.find("{", pos)
+        if start == -1:
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    raw = text[start:i + 1]
+                    try:
+                        return json.loads(raw)
+                    except Exception:
+                        break
     return None
 
 async def _fetch_instagram_metadata(raw_url: str) -> dict:
     session = await get_http_session()
     url = _normalize_instagram_url(raw_url)
+    embed_url = url.rstrip("/") + "/embed/captioned/"
     html_text = ""
+    embed_html = ""
+
+    try:
+        async with session.get(embed_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+            if resp.status < 400:
+                embed_html = await resp.text()
+    except Exception:
+        embed_html = ""
+
     try:
         async with session.get(url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
             if resp.status < 400:
                 html_text = await resp.text()
     except Exception:
         html_text = ""
-    attempts = [("json", url.rstrip("/") + "/?__a=1&__d=dis"), ("html", url)]
+
+    attempts = [("json", url.rstrip("/") + "/?__a=1&__d=dis"), ("embed", embed_url), ("html", url)]
     last_err = None
+
     for mode, target in attempts:
         try:
             if mode == "json":
@@ -312,50 +367,59 @@ async def _fetch_instagram_metadata(raw_url: str) -> dict:
                     if resp.status >= 400:
                         raise RuntimeError(f"Instagram JSON HTTP {resp.status}")
                     data = await resp.json(content_type=None)
+
                 if isinstance(data, dict):
                     if isinstance((data.get("graphql") or {}).get("shortcode_media"), dict):
                         parsed = _parse_gql_media((data.get("graphql") or {}).get("shortcode_media"))
                         if parsed["items"]:
                             if not parsed.get("caption"):
-                                parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
+                                parsed["caption"] = _extract_meta(embed_html, "og:description") or _extract_meta(html_text, "og:description") or _extract_meta(embed_html, "description") or _extract_meta(html_text, "description") or _extract_meta(embed_html, "og:title") or _extract_meta(html_text, "og:title")
                             return parsed
                     if isinstance(((data.get("data") or {}).get("xdt_shortcode_media")), dict):
                         parsed = _parse_gql_media((data.get("data") or {}).get("xdt_shortcode_media"))
                         if parsed["items"]:
                             if not parsed.get("caption"):
-                                parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
+                                parsed["caption"] = _extract_meta(embed_html, "og:description") or _extract_meta(html_text, "og:description") or _extract_meta(embed_html, "description") or _extract_meta(html_text, "description") or _extract_meta(embed_html, "og:title") or _extract_meta(html_text, "og:title")
                             return parsed
                     items = data.get("items") or []
                     if isinstance(items, list) and items:
                         parsed = _parse_v1_item(items[0])
                         if parsed["items"]:
                             if not parsed.get("caption"):
-                                parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
+                                parsed["caption"] = _extract_meta(embed_html, "og:description") or _extract_meta(html_text, "og:description") or _extract_meta(embed_html, "description") or _extract_meta(html_text, "description") or _extract_meta(embed_html, "og:title") or _extract_meta(html_text, "og:title")
                             return parsed
+
                 raise RuntimeError("Instagram JSON metadata not found")
-            if not html_text:
+
+            source_html = embed_html if mode == "embed" else html_text
+            if not source_html:
                 async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
                     if resp.status >= 400:
-                        raise RuntimeError(f"Instagram HTML HTTP {resp.status}")
-                    html_text = await resp.text()
-            media = _extract_shortcode_media_from_html(html_text)
+                        raise RuntimeError(f"Instagram {mode.upper()} HTTP {resp.status}")
+                    source_html = await resp.text()
+
+            media = _extract_shortcode_media_from_html(source_html)
             if isinstance(media, dict):
                 parsed = _parse_gql_media(media)
                 if parsed["items"]:
                     if not parsed.get("caption"):
-                        parsed["caption"] = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
+                        parsed["caption"] = _extract_meta(embed_html, "og:description") or _extract_meta(source_html, "og:description") or _extract_meta(embed_html, "description") or _extract_meta(source_html, "description") or _extract_meta(embed_html, "og:title") or _extract_meta(source_html, "og:title")
                     return parsed
-            og_video = _extract_meta(html_text, "og:video") or _extract_meta(html_text, "og:video:secure_url")
-            og_image = _extract_meta(html_text, "og:image")
-            caption = _extract_meta(html_text, "og:title") or _extract_meta(html_text, "og:description")
+
+            og_video = _extract_meta(source_html, "og:video") or _extract_meta(source_html, "og:video:secure_url")
+            og_image = _extract_meta(source_html, "og:image")
+            caption = _extract_meta(embed_html, "og:description") or _extract_meta(source_html, "og:description") or _extract_meta(embed_html, "description") or _extract_meta(source_html, "description") or _extract_meta(embed_html, "og:title") or _extract_meta(source_html, "og:title")
+
             if og_video:
                 return {"caption": caption, "username": "", "nickname": "", "items": [{"type": "video", "url": og_video, "thumbnail": og_image}]}
             if og_image:
                 return {"caption": caption, "username": "", "nickname": "", "items": [{"type": "photo", "url": og_image}]}
-            raise RuntimeError("Instagram HTML metadata not found")
+
+            raise RuntimeError(f"Instagram {mode.upper()} metadata not found")
         except Exception as e:
             last_err = e
             continue
+
     raise last_err or RuntimeError("Failed to fetch Instagram metadata")
 
 def _pick_media_for_format(items: list[dict], fmt_key: str) -> list[dict]:
