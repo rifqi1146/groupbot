@@ -14,8 +14,8 @@ import aiofiles
 from urllib.parse import urlparse, unquote
 from utils.http import get_http_session
 from .constants import TMP_DIR
-from .utils import sanitize_filename, progress_bar
-from .instagram_scrape import igdl_download_for_fallback, send_instagram_fallback_result, cleanup_instagram_fallback_result
+from .utils import progress_bar
+from .instagram_scrape import igdl_download_for_fallback, cleanup_instagram_fallback_result
 
 log = logging.getLogger(__name__)
 GRAPHQL_ENDPOINT = "https://www.instagram.com/graphql/query/"
@@ -158,6 +158,13 @@ def _guess_ext(content_type: str, media_type: str, media_url: str) -> str:
     if guessed:
         return guessed
     return ".mp4" if media_type == "video" else ".jpg"
+
+def _safe_name(text: str, fallback: str = "instagram_media", limit: int = 120) -> str:
+    text = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", (text or "").strip())
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    if not text:
+        text = fallback
+    return text[:limit].rstrip(" .")
 
 def _normalize_caption_text(text: str) -> str:
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -408,18 +415,6 @@ async def _safe_edit_status(bot, chat_id, message_id, text: str):
             return
         log.warning("Failed to edit Instagram status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
 
-async def _set_uploading(bot, chat_id, status_msg_id, kind: str):
-    label = {"video": "🎬 <b>Uploading Instagram video...</b>", "photo": "🖼️ <b>Uploading Instagram photo...</b>", "album": "🖼️ <b>Uploading Instagram album...</b>"}.get(kind, "<b>Uploading Instagram media...</b>")
-    action = {"video": "upload_video", "photo": "upload_photo", "album": "upload_photo"}.get(kind, "typing")
-    try:
-        await _safe_edit_status(bot, chat_id, status_msg_id, label)
-    except Exception:
-        pass
-    try:
-        await bot.send_chat_action(chat_id=chat_id, action=action)
-    except Exception:
-        pass
-
 async def _download_media_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
     async with session.get(media_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=180), allow_redirects=True) as media_resp:
         if media_resp.status >= 400:
@@ -447,6 +442,7 @@ async def _download_direct_instagram_items(meta: dict, fmt_key: str, bot, chat_i
             raise RuntimeError("Instagram image post does not contain audio")
         raise RuntimeError("No direct Instagram media found")
     title = _build_title(meta, picked_items[0].get("type") or "photo")
+    file_stub = _safe_name(title)
     created_paths = []
     try:
         if len(picked_items) == 1:
@@ -457,7 +453,7 @@ async def _download_direct_instagram_items(meta: dict, fmt_key: str, bot, chat_i
                 if resp.status >= 400:
                     raise RuntimeError(f"Failed to probe media: HTTP {resp.status}")
                 content_type = resp.headers.get("Content-Type", "")
-            out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{sanitize_filename(title)}{_guess_ext(content_type, media_type, media_url)}")
+            out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{file_stub}{_guess_ext(content_type, media_type, media_url)}")
             await _download_media_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, "Downloading Instagram media (direct)...")
             created_paths.append(out_path)
             log.info("Instagram direct download success | file=%s", out_path)
@@ -471,8 +467,7 @@ async def _download_direct_instagram_items(meta: dict, fmt_key: str, bot, chat_i
                 if resp.status >= 400:
                     raise RuntimeError(f"Failed to probe media: HTTP {resp.status}")
                 content_type = resp.headers.get("Content-Type", "")
-            item_title = title if idx == 1 else f"{title} {idx}"
-            out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{sanitize_filename(item_title)}{_guess_ext(content_type, media_type, media_url)}")
+            out_path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}_{file_stub}_{idx}{_guess_ext(content_type, media_type, media_url)}")
             await _download_media_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, f"Downloading Instagram media {idx}/{total_items} (direct)...")
             created_paths.append(out_path)
             result_items.append({"path": out_path, "type": media_type})
@@ -522,26 +517,6 @@ async def instagram_api_download(raw_url: str, fmt_key: str, bot, chat_id, statu
     log.info("Instagram fallback download success | url=%s", raw_url)
     _LAST_IG_STATUS_TEXT.pop((int(chat_id), int(status_msg_id)), None)
     return result
-
-async def send_instagram_result(bot, chat_id: int, reply_to: int, result: dict, status_msg_id: int | None = None):
-    if result.get("items"):
-        items = result.get("items") or []
-        has_many = len(items) > 1
-        first_type = str((items[0] if items else {}).get("type") or "").lower()
-        await _set_uploading(bot, chat_id, status_msg_id, "album" if has_many else ("video" if first_type == "video" else "photo"))
-        await send_instagram_fallback_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=result)
-        return
-    path = result.get("path")
-    title = result.get("title") or "Instagram Media"
-    if not path or not os.path.exists(path):
-        raise RuntimeError("Instagram media file not found")
-    is_video = path.lower().endswith((".mp4", ".mov", ".m4v", ".webm"))
-    await _set_uploading(bot, chat_id, status_msg_id, "video" if is_video else "photo")
-    with open(path, "rb") as f:
-        if is_video:
-            await bot.send_video(chat_id=chat_id, video=f, caption=title, reply_to_message_id=reply_to, supports_streaming=True)
-        else:
-            await bot.send_photo(chat_id=chat_id, photo=f, caption=title, reply_to_message_id=reply_to)
 
 async def cleanup_instagram_result(result: dict):
     await cleanup_instagram_fallback_result(result)
