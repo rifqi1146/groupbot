@@ -171,10 +171,16 @@ def _truncate(text: str, n: int) -> str:
     text = (text or "").strip()
     return text if len(text) <= n else text[:n].rstrip() + "..."
 
+def _normalize_caption_text(text: str) -> str:
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text
+    
 def _build_title(meta: dict, media_type: str) -> str:
     nickname = (meta.get("nickname") or "").strip()
     username = (meta.get("username") or "").strip()
-    caption = (meta.get("caption") or "").strip()
+    caption = _normalize_caption_text(meta.get("caption") or "")
+
     if nickname and username:
         base = f"{nickname} (@{username})"
     elif username:
@@ -183,9 +189,13 @@ def _build_title(meta: dict, media_type: str) -> str:
         base = nickname
     else:
         base = "Instagram Media"
+
     if caption:
-        return f"{base} - {_truncate(caption, 80)}"
-    return f"{base} - Instagram {'Video' if media_type == 'video' else 'Image'}"
+        full = f"{base} - {caption}".strip()
+    else:
+        full = f"{base} - Instagram {'Video' if media_type == 'video' else 'Image'}"
+
+    return full[:1024].rstrip()
 
 def _caption_from_media(media: dict) -> str:
     if not isinstance(media, dict):
