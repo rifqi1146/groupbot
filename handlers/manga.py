@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
-from database import premium_service
+from database import premium
 from utils.http import get_http_session
 
 try:
