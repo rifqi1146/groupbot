@@ -70,7 +70,7 @@ async def startup_tasks(app):
         log.exception("Welcome verify restore failed")
 
     try:
-        premium_service.init()
+        premium.init()
         log.info("✓ Premium cache initialized")
     except Exception:
         log.exception("Premium init failed")
