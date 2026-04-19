@@ -17,7 +17,7 @@ from .utils import normalize_url, is_invalid_video
 from .keyboards import dl_keyboard, yt_engine_keyboard, res_keyboard, autodl_detect_keyboard
 from .probe import get_resolutions, supports_resolution_picker, supports_both_resolution_engines, supports_ytdlp_resolution, supports_sonzai_resolution
 from .tiktok.main import is_tiktok, douyin_download, tiktok_fallback_send
-from .worker import download_non_tiktok, send_downloaded_media
+from .service import download_non_tiktok, send_downloaded_media
 from database.user_settings_db import get_user_settings
 
 os.makedirs(TMP_DIR, exist_ok=True)
