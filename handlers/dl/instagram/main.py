@@ -15,7 +15,7 @@ from urllib.parse import urlparse, unquote
 from utils.http import get_http_session
 from handlers.dl.constants import TMP_DIR
 from handlers.dl.utils import progress_bar
-from handlers.dl.instagram.instagram_fallback import igdl_download_for_fallback, cleanup_instagram_fallback_result
+from handlers.dl.instagram.fallback import igdl_download_for_fallback, cleanup_instagram_fallback_result
 
 log = logging.getLogger(__name__)
 GRAPHQL_ENDPOINT = "https://www.instagram.com/graphql/query/"
