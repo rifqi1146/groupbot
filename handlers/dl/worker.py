@@ -9,8 +9,8 @@ from .utils import detect_media_type
 from .ytdlp import ytdlp_download
 from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.error import RetryAfter
-from .instagram_api import is_instagram_url, instagram_api_download
-from .youtube_api import is_youtube_url, sonzai_youtube_download
+from .instagram.main import is_instagram_url, instagram_api_download
+from .youtube.main import is_youtube_url, sonzai_youtube_download
 
 log = logging.getLogger(__name__)
 

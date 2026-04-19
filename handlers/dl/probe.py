@@ -4,7 +4,7 @@ import asyncio
 import json
 from urllib.parse import urlparse
 from .constants import COOKIES_PATH, MAX_TG_SIZE
-from .youtube_api import sonzai_get_resolutions
+from .youtube.main import sonzai_get_resolutions
 
 YTDLP_RESOLUTION_DOMAINS = (
     "youtube.com",
