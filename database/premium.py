@@ -1,6 +1,7 @@
 import os
 import time
 import sqlite3
+from utils.config import OWNER_ID
 
 CACA_DB_PATH = "data/caca.sqlite3"
 _PREMIUM_USERS = set()
@@ -12,7 +13,8 @@ def _db():
     con.execute("PRAGMA synchronous=NORMAL;")
     return con
 
-def init_premium_db():
+def init():
+    global _PREMIUM_USERS
     con = _db()
     try:
         con.execute("""
@@ -22,84 +24,85 @@ def init_premium_db():
             )
         """)
         con.commit()
-    finally:
-        con.close()
-
-def premium_add(user_id: int):
-    init_premium_db()
-    con = _db()
-    try:
-        con.execute(
-            "INSERT OR REPLACE INTO premium_users (user_id, added_at) VALUES (?, ?)",
-            (int(user_id), float(time.time())),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-def premium_del(user_id: int):
-    init_premium_db()
-    con = _db()
-    try:
-        con.execute("DELETE FROM premium_users WHERE user_id=?", (int(user_id),))
-        con.commit()
-    finally:
-        con.close()
-
-def premium_list() -> list[int]:
-    init_premium_db()
-    con = _db()
-    try:
-        cur = con.execute("SELECT user_id FROM premium_users ORDER BY added_at DESC")
-        rows = cur.fetchall()
-        return [int(r[0]) for r in rows if r and r[0] is not None]
-    finally:
-        con.close()
-
-def premium_load_set() -> set[int]:
-    init_premium_db()
-    con = _db()
-    try:
         cur = con.execute("SELECT user_id FROM premium_users")
         rows = cur.fetchall()
-        return {int(r[0]) for r in rows if r and r[0] is not None}
+        _PREMIUM_USERS = {int(r[0]) for r in rows if r and r[0] is not None}
     finally:
         con.close()
 
-def is_premium(user_id: int, cache: set[int] | None = None) -> bool:
-    uid = int(user_id)
-    if cache is not None:
-        return uid in cache
-    init_premium_db()
+def init_if_needed():
+    if not _PREMIUM_USERS and not _table_exists():
+        init()
+    elif not _PREMIUM_USERS:
+        init()
+
+def _table_exists() -> bool:
     con = _db()
     try:
-        cur = con.execute("SELECT 1 FROM premium_users WHERE user_id=? LIMIT 1", (uid,))
+        cur = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='premium_users' LIMIT 1")
         return cur.fetchone() is not None
     finally:
         con.close()
 
-def init():
-    global _PREMIUM_USERS
-    init_premium_db()
-    _PREMIUM_USERS = premium_load_set()
-
 def add(uid: int):
     global _PREMIUM_USERS
     uid = int(uid)
-    premium_add(uid)
-    _PREMIUM_USERS.add(uid)
+    init_if_needed()
+    if uid in OWNER_ID:
+        return
+    con = _db()
+    try:
+        con.execute(
+            "INSERT OR REPLACE INTO premium_users (user_id, added_at) VALUES (?, ?)",
+            (uid, float(time.time())),
+        )
+        con.commit()
+        _PREMIUM_USERS.add(uid)
+    finally:
+        con.close()
 
 def remove(uid: int):
     global _PREMIUM_USERS
     uid = int(uid)
-    premium_del(uid)
-    _PREMIUM_USERS.discard(uid)
+    init_if_needed()
+    if uid in OWNER_ID:
+        return
+    con = _db()
+    try:
+        con.execute("DELETE FROM premium_users WHERE user_id=?", (uid,))
+        con.commit()
+        _PREMIUM_USERS.discard(uid)
+    finally:
+        con.close()
 
-def list_users():
-    return premium_list()
+def list_users() -> list[int]:
+    init_if_needed()
+    db_ids = []
+    con = _db()
+    try:
+        cur = con.execute("SELECT user_id FROM premium_users ORDER BY added_at DESC")
+        rows = cur.fetchall()
+        db_ids = [int(r[0]) for r in rows if r and r[0] is not None and int(r[0]) not in OWNER_ID]
+    finally:
+        con.close()
+    return list(dict.fromkeys([*OWNER_ID, *db_ids]))
 
 def check(uid: int) -> bool:
-    return is_premium(int(uid), _PREMIUM_USERS)
+    init_if_needed()
+    uid = int(uid)
+    return uid in OWNER_ID or uid in _PREMIUM_USERS
 
-def cache_set():
-    return set(_PREMIUM_USERS)
+def cache_set() -> set[int]:
+    init_if_needed()
+    return set(_PREMIUM_USERS) | {int(x) for x in OWNER_ID}
+
+def load_set() -> set[int]:
+    init_if_needed()
+    con = _db()
+    try:
+        cur = con.execute("SELECT user_id FROM premium_users")
+        rows = cur.fetchall()
+        db_ids = {int(r[0]) for r in rows if r and r[0] is not None}
+        return db_ids | {int(x) for x in OWNER_ID}
+    finally:
+        con.close()

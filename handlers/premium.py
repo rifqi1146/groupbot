@@ -8,17 +8,14 @@ from database import premium
 from database import caca_db
 from utils import caca_memory
 
-
 def extract_user_id_from_args(args: list[str]) -> int | None:
     if not args:
         return None
     raw = (args[0] or "").strip()
     if not raw:
         return None
-
     if raw.startswith("@"):
         return None
-
     digits = "".join(ch for ch in raw if ch.isdigit())
     if digits:
         try:
@@ -27,21 +24,17 @@ def extract_user_id_from_args(args: list[str]) -> int | None:
             return None
     return None
 
-
 async def resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
     msg = update.message
     if not msg:
         return None
-
     if msg.reply_to_message and msg.reply_to_message.from_user:
         try:
             return int(msg.reply_to_message.from_user.id)
         except Exception:
             pass
-
     if len(context.args) >= 2:
         target = (context.args[1] or "").strip()
-
         if target.startswith("@"):
             uname = target[1:]
             try:
@@ -50,13 +43,10 @@ async def resolve_target_user_id(update: Update, context: ContextTypes.DEFAULT_T
                     return int(chat.id)
             except Exception:
                 return None
-
         uid = extract_user_id_from_args([target])
         if uid:
             return uid
-
     return None
-
 
 async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -88,9 +78,20 @@ async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         if cmd == "add":
+            if uid in OWNER_ID:
+                return await msg.reply_text(
+                    f"<b>User is owner.</b>\n<code>{uid}</code> is always premium automatically.",
+                    parse_mode="HTML"
+                )
             premium.add(uid)
             return await msg.reply_text(
                 f"<b>Premium added</b>: <code>{uid}</code>",
+                parse_mode="HTML"
+            )
+
+        if uid in OWNER_ID:
+            return await msg.reply_text(
+                f"<b>Cannot remove owner premium.</b>\n<code>{uid}</code> is always premium automatically.",
                 parse_mode="HTML"
             )
 
@@ -108,17 +109,32 @@ async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not ids:
             return await msg.reply_text("No premium users yet.", parse_mode="HTML")
 
-        lines = []
+        owner_lines = []
+        premium_lines = []
+
         for uid in ids[:200]:
             try:
                 u = await context.bot.get_chat(uid)
-                name = html.escape(u.full_name)
+                name = html.escape(getattr(u, "full_name", None) or getattr(u, "first_name", None) or "Unknown User")
             except Exception:
                 name = "Unknown User"
-            lines.append(f"• <a href=\"tg://user?id={uid}\">{name}</a> <code>{uid}</code>")
+
+            line = f"• <a href=\"tg://user?id={uid}\">{name}</a> <code>{uid}</code>"
+            if uid in OWNER_ID:
+                owner_lines.append(f"{line} <b>[OWNER]</b>")
+            else:
+                premium_lines.append(line)
+
+        text = ["👑 <b>Premium Users</b>"]
+        if owner_lines:
+            text.append("\n<b>Owner</b>")
+            text.extend(owner_lines)
+        if premium_lines:
+            text.append("\n<b>Additional Premium</b>")
+            text.extend(premium_lines)
 
         return await msg.reply_text(
-            "👑 <b>Premium Users:</b>\n" + "\n".join(lines),
+            "\n".join(text),
             parse_mode="HTML",
             disable_web_page_preview=True
         )
