@@ -10,9 +10,9 @@ import aiofiles
 from telegram import InputMediaPhoto
 from telegram.error import RetryAfter
 from utils.http import get_http_session
-from .constants import TMP_DIR
-from .utils import sanitize_filename, is_invalid_video
-from .worker import reencode_mp3
+from handlers.dl.constants import TMP_DIR
+from handlers.dl.utils import sanitize_filename, is_invalid_video
+from handlers.dl.worker import reencode_mp3
 
 def is_tiktok(url: str) -> bool:
     return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))

@@ -13,7 +13,7 @@ from telegram.error import RetryAfter
 from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
 from utils.http import get_http_session
-from .constants import TMP_DIR
+from handlers.dl.constants import TMP_DIR
 
 log = logging.getLogger(__name__)
 

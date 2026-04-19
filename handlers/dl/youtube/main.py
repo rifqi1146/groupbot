@@ -8,8 +8,8 @@ import aiohttp
 import aiofiles
 from urllib.parse import urlparse, unquote
 from utils.http import get_http_session
-from .constants import TMP_DIR
-from .utils import sanitize_filename, progress_bar
+from handlers.dl.constants import TMP_DIR
+from handlers.dl.utils import sanitize_filename, progress_bar
 
 SONZAI_YOUTUBE_API = "https://api.sonzaix.indevs.in/youtube/video"
 
