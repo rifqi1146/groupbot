@@ -10,7 +10,7 @@ from utils.config import LOG_CHAT_ID
 from handlers import welcome
 from handlers.nsfw import nsfw_db_init
 from handlers.backup import start_auto_backup
-from database import premium_service
+from database import premium
 from handlers import caca
 
 log = logging.getLogger(__name__)
