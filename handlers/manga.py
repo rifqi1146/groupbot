@@ -375,7 +375,7 @@ async def manga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     source = context.args[0].lower()
     full_query = " ".join(context.args[1:])
     user = update.effective_user
-    if source in ["nh", "nhentai"] and (not user or not premium_service.check(user.id)):
+    if source in ["nh", "nhentai"] and (not user or not premium.check(user.id)):
         return await update.message.reply_text("❌ NH manga is only available for premium users.")
     status = await msg.reply_text(
         f"🔍 Processing <code>{_escape(full_query)}</code> in <b>{_escape(source.upper())}</b>...",
@@ -462,7 +462,7 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data.startswith(("nhsearch_", "nhdetail_", "nhread_", "nhnav_")):
         user = update.effective_user
-        if not user or not premium_service.check(user.id):
+        if not user or not premium.check(user.id):
             return await query.answer("❌ NH manga is only available for premium users.", show_alert=True)
     if data == "ignore":
         return await query.answer()
