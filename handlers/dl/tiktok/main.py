@@ -1,5 +1,5 @@
 import os,re,time,uuid,html,shutil,json,asyncio,aiohttp,aiofiles,logging
-from urllib.parse import urlparse,urljoin
+from urllib.parse import urlparse
 from telegram import InputMediaPhoto
 from telegram.error import RetryAfter
 from utils.http import get_http_session
@@ -16,9 +16,11 @@ WEB_HEADERS = {
     "Sec-Fetch-Mode": "navigate",
 }
 UNIVERSAL_RE = re.compile(r'<script[^>]+\bid="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', re.S | re.I)
+SIGI_RE = re.compile(r'<script[^>]+\bid="SIGI_STATE"[^>]*>(.*?)</script>', re.S | re.I)
+NEXT_RE = re.compile(r'<script[^>]+\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S | re.I)
 
 def is_tiktok(url: str) -> bool:
-    return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))
+    return any(x in (url or "") for x in ("tiktok.com","vt.tiktok.com","vm.tiktok.com"))
 
 def _truncate_text(text: str, limit: int) -> str:
     text = (text or "").strip()
@@ -39,7 +41,7 @@ def _build_safe_caption(title: str, desc: str, bot_name: str, max_len: int = 102
     footer_plain = f"🪄 Powered by {clean_bot}"
     def plain_len(t: str, d: str) -> int:
         return len(f"🎬 {t}\n\n{d}\n\n{footer_plain}") if d else len(f"🎬 {t}\n\n{footer_plain}")
-    short_title, short_desc = clean_title, clean_desc
+    short_title,short_desc = clean_title,clean_desc
     if short_desc:
         allowed_desc = max_len - len(f"🎬 {short_title}\n\n\n\n{footer_plain}")
         short_desc = _truncate_text(short_desc, allowed_desc)
@@ -69,7 +71,7 @@ def _format_size(num_bytes: int) -> str:
     if num_bytes <= 0:
         return "0 B"
     value = float(num_bytes)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
+    for unit in ("B","KB","MB","GB","TB"):
         if value < 1024 or unit == "TB":
             return f"{int(value)} {unit}" if unit == "B" else f"{value:.1f} {unit}"
         value /= 1024
@@ -79,7 +81,7 @@ def _format_speed(bytes_per_sec: float) -> str:
     if bytes_per_sec <= 0:
         return "0 B/s"
     value = float(bytes_per_sec)
-    for unit in ("B/s", "KB/s", "MB/s", "GB/s"):
+    for unit in ("B/s","KB/s","MB/s","GB/s"):
         if value < 1024 or unit == "GB/s":
             return f"{int(value)} {unit}" if unit == "B/s" else f"{value:.1f} {unit}"
         value /= 1024
@@ -97,7 +99,7 @@ def _format_eta(seconds: float) -> str:
     return f"{s}s"
 
 async def _safe_edit_progress(bot, chat_id, status_msg_id, title: str, downloaded: int, total: int = 0, speed_bps: float = 0.0, eta_seconds: float | None = None):
-    lines = [f"<b>{html.escape(title)}</b>", ""]
+    lines = [f"<b>{html.escape(title)}</b>",""]
     if total > 0:
         pct = min(downloaded * 100 / total, 100.0)
         lines.append(f"<code>{html.escape(_format_size(downloaded))}/{html.escape(_format_size(total))} downloaded</code>")
@@ -251,6 +253,41 @@ def _json_walk(obj, key: str):
                 return found
     return None
 
+def _pick_first_url(value) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, list):
+        for x in value:
+            if isinstance(x, str) and x.strip():
+                return x.strip()
+    return ""
+
+def _parse_direct_media(item: dict) -> dict:
+    desc = str(item.get("desc") or item.get("description") or "").strip()
+    title = desc or "TikTok Video"
+    image_post = item.get("imagePost") or item.get("image_post") or {}
+    if isinstance(image_post, dict) and isinstance(image_post.get("images"), list) and image_post.get("images"):
+        images = []
+        for img in image_post.get("images") or []:
+            image_url = _pick_first_url((((img or {}).get("imageURL") or {}).get("urlList")) or (((img or {}).get("displayImage") or {}).get("urlList")) or (((img or {}).get("ownerWatermarkImage") or {}).get("urlList")))
+            if image_url:
+                images.append(image_url)
+        if images:
+            return {"kind": "album","title": title,"desc": desc,"images": images}
+    video = item.get("video") or {}
+    for candidate in (
+        video.get("playAddr"),video.get("playAddrStruct"),video.get("downloadAddr"),video.get("downloadAddrStruct"),
+        ((video.get("bitrateInfo") or [{}])[0] if isinstance(video.get("bitrateInfo"), list) and video.get("bitrateInfo") else {}).get("PlayAddr"),
+        ((video.get("bitrateInfo") or [{}])[0] if isinstance(video.get("bitrateInfo"), list) and video.get("bitrateInfo") else {}).get("playAddr"),
+    ):
+        if isinstance(candidate, dict):
+            video_url = _pick_first_url(candidate.get("urlList") or candidate.get("UrlList"))
+            if video_url:
+                return {"kind": "video","title": title,"desc": desc,"video_url": video_url}
+        elif isinstance(candidate, str) and candidate.strip():
+            return {"kind": "video","title": title,"desc": desc,"video_url": candidate.strip()}
+    raise RuntimeError("TikTok direct media URL not found")
+
 def _parse_universal_data(html_text: str) -> dict:
     m = UNIVERSAL_RE.search(html_text or "")
     if not m:
@@ -267,66 +304,86 @@ def _parse_universal_data(html_text: str) -> dict:
         item_module = default_scope.get("webapp.video-detail")
         if isinstance(item_module, dict):
             item_info = item_module.get("itemInfo") or {}
-            item_struct = (item_info.get("itemStruct") if isinstance(item_info, dict) else None)
+            item_struct = item_info.get("itemStruct") if isinstance(item_info, dict) else None
     if not isinstance(item_struct, dict):
         item_struct = _json_walk(default_scope, "itemStruct")
     if not isinstance(item_struct, dict):
         raise RuntimeError("TikTok itemStruct not found")
     return item_struct
 
-def _pick_first_url(value) -> str:
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    if isinstance(value, list):
-        for x in value:
-            if isinstance(x, str) and x.strip():
-                return x.strip()
-    return ""
+def _parse_sigi_state(html_text: str) -> dict:
+    m = SIGI_RE.search(html_text or "")
+    if not m:
+        raise RuntimeError("TikTok SIGI_STATE not found")
+    try:
+        data = json.loads(m.group(1))
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse TikTok SIGI_STATE: {e}") from e
+    item_module = data.get("ItemModule")
+    if isinstance(item_module, dict) and item_module:
+        first = next(iter(item_module.values()), None)
+        if isinstance(first, dict):
+            return first
+    detail = data.get("VideoPage") or data.get("ItemPage") or {}
+    item_struct = detail.get("itemInfo", {}).get("itemStruct") if isinstance(detail, dict) else None
+    if isinstance(item_struct, dict):
+        return item_struct
+    item_struct = _json_walk(data, "itemStruct")
+    if isinstance(item_struct, dict):
+        return item_struct
+    raise RuntimeError("TikTok itemStruct not found in SIGI_STATE")
 
-def _parse_direct_media(item: dict) -> dict:
-    desc = str(item.get("desc") or "").strip()
-    title = desc or "TikTok Video"
-    image_post = item.get("imagePost")
-    if isinstance(image_post, dict) and isinstance(image_post.get("images"), list) and image_post.get("images"):
-        images = []
-        for img in image_post.get("images") or []:
-            image_url = _pick_first_url((((img or {}).get("imageURL") or {}).get("urlList")) or ((img or {}).get("displayImage") or {}).get("urlList"))
-            if image_url:
-                images.append(image_url)
-        if images:
-            return {"kind": "album", "title": title, "desc": desc, "images": images}
-    video = item.get("video") or {}
-    play = video.get("playAddr") or video.get("playAddrStruct") or {}
-    video_url = _pick_first_url(play.get("urlList") or play.get("UrlList"))
-    if video_url:
-        return {"kind": "video", "title": title, "desc": desc, "video_url": video_url}
-    raise RuntimeError("TikTok direct media URL not found")
+def _parse_next_data(html_text: str) -> dict:
+    m = NEXT_RE.search(html_text or "")
+    if not m:
+        raise RuntimeError("TikTok __NEXT_DATA__ not found")
+    try:
+        data = json.loads(m.group(1))
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse TikTok __NEXT_DATA__: {e}") from e
+    item_struct = _json_walk(data, "itemStruct")
+    if isinstance(item_struct, dict):
+        return item_struct
+    raise RuntimeError("TikTok itemStruct not found in __NEXT_DATA__")
+
+def _extract_item_struct(html_text: str) -> dict:
+    errors = []
+    for parser in (_parse_universal_data,_parse_sigi_state,_parse_next_data):
+        try:
+            item = parser(html_text)
+            if isinstance(item, dict) and item:
+                return item
+        except Exception as e:
+            errors.append(str(e))
+    raise RuntimeError(" ; ".join(errors) if errors else "TikTok itemStruct not found")
 
 async def _fetch_tiktok_direct(url: str) -> dict:
     resolved = await _resolve_tiktok_url(url)
     aweme_id = _extract_aweme_id(resolved)
     if not aweme_id:
         raise RuntimeError("TikTok aweme id not found")
-    target = f"https://www.tiktok.com/@_/video/{aweme_id}"
+    targets = [resolved,f"https://www.tiktok.com/@_/video/{aweme_id}",f"https://www.tiktok.com/embed/v3/{aweme_id}"]
     session = await get_http_session()
     last_err = None
-    for attempt in range(5):
-        try:
-            async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
-                final_url = str(resp.url)
-                if urlparse(final_url).path == "/login":
-                    raise RuntimeError("TikTok returned login page")
-                html_text = await resp.text()
-                cookies = [{"name": c.key, "value": c.value} for c in resp.cookies.values()]
-            item_struct = _parse_universal_data(html_text)
-            media = _parse_direct_media(item_struct)
-            media["cookies"] = cookies
-            media["resolved_url"] = resolved
-            media["aweme_id"] = aweme_id
-            return media
-        except Exception as e:
-            last_err = e
-            await asyncio.sleep(0.35 * (attempt + 1))
+    for target in targets:
+        for attempt in range(4):
+            try:
+                async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+                    final_url = str(resp.url)
+                    if "/login" in final_url:
+                        raise RuntimeError("TikTok returned login page")
+                    html_text = await resp.text()
+                    cookies = [{"name": c.key,"value": c.value} for c in resp.cookies.values()]
+                item_struct = _extract_item_struct(html_text)
+                media = _parse_direct_media(item_struct)
+                media["cookies"] = cookies
+                media["resolved_url"] = resolved
+                media["aweme_id"] = aweme_id
+                media["target_url"] = target
+                return media
+            except Exception as e:
+                last_err = e
+                await asyncio.sleep(0.35 * (attempt + 1))
     raise RuntimeError(f"TikTok scraping failed: {last_err}")
 
 async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> dict:
@@ -334,7 +391,7 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
     title = (media.get("title") or "TikTok Video").strip()
     video_url = media.get("video_url") or ""
     cookie_header = _cookie_header(media.get("cookies"))
-    headers = {"User-Agent": USER_AGENT, "Referer": "https://www.tiktok.com/"}
+    headers = {"User-Agent": USER_AGENT,"Referer": "https://www.tiktok.com/"}
     if cookie_header:
         headers["Cookie"] = cookie_header
     out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
@@ -346,21 +403,21 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
             pass
         raise RuntimeError("Invalid video file from TikTok scraping")
     log.info("TikTok direct scraping success | type=video file=%s", out_path)
-    return {"path": out_path, "title": title, "desc": media.get("desc") or "", "source": "scraping"}
+    return {"path": out_path,"title": title,"desc": media.get("desc") or "","source": "scraping"}
 
 async def _download_direct_album(media: dict) -> dict:
     title = (media.get("title") or "TikTok Slideshow").strip()
-    items = [{"type": "photo", "url": u} for u in (media.get("images") or []) if u]
+    items = [{"type": "photo","url": u} for u in (media.get("images") or []) if u]
     if not items:
         raise RuntimeError("TikTok slideshow images not found")
     log.info("TikTok direct scraping success | type=album items=%s", len(items))
-    return {"items": items, "title": title, "desc": media.get("desc") or "", "source": "scraping"}
+    return {"items": items,"title": title,"desc": media.get("desc") or "","source": "scraping"}
 
 async def tiktok_scrape_download(url, bot, chat_id, status_msg_id, fmt_key="mp4"):
     await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping TikTok metadata...</b>")
     media = await _fetch_tiktok_direct(url)
     kind = media.get("kind")
-    log.info("TikTok scraping metadata success | url=%s kind=%s title=%r", url, kind, media.get("title"))
+    log.info("TikTok scraping metadata success | url=%s kind=%s title=%r target=%s", url, kind, media.get("title"), media.get("target_url"))
     if fmt_key == "mp3":
         if kind != "video":
             raise RuntimeError("TikTok slideshow does not contain audio")
@@ -386,18 +443,30 @@ async def douyin_download(url, bot, chat_id, status_msg_id):
     if not video_url:
         raise RuntimeError("Video URL kosong")
     title = info.get("title") or info.get("desc") or "TikTok Video"
-    safe_title = sanitize_filename(title)
-    uid = uuid.uuid4().hex
-    out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
+    out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
     log.info("TikTok fallback start | source=tikwm url=%s", url)
     await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading TikTok video (tikwm)...")
     log.info("TikTok fallback success | source=tikwm file=%s", out_path)
-    return {"path": out_path, "title": title.strip() or "TikTok Video", "source": "tikwm"}
+    return {"path": out_path,"title": title.strip() or "TikTok Video","source": "tikwm"}
+
+async def tiktok_download(url, bot, chat_id, status_msg_id, fmt_key="mp4"):
+    try:
+        log.info("TikTok primary start | source=scraping url=%s fmt=%s", url, fmt_key)
+        result = await tiktok_scrape_download(url=url, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, fmt_key=fmt_key)
+        if isinstance(result, dict):
+            if result.get("path"):
+                log.info("TikTok primary success | source=scraping file=%s", result.get("path"))
+            elif result.get("items"):
+                log.info("TikTok primary success | source=scraping items=%s", len(result.get("items") or []))
+        return result
+    except Exception as e:
+        log.warning("TikTok primary failed | source=scraping url=%s err=%r", url, e)
+        raise
 
 async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_key):
     session = await get_http_session()
     async def _set_uploading(kind: str):
-        label = {"audio": "🎵 <b>Uploading audio...</b>", "video": "🎬 <b>Uploading video...</b>", "album": "🖼️ <b>Uploading slideshow...</b>"}.get(kind, "<b>Uploading...</b>")
+        label = {"audio": "🎵 <b>Uploading audio...</b>","video": "🎬 <b>Uploading video...</b>","album": "🖼️ <b>Uploading slideshow...</b>"}.get(kind, "<b>Uploading...</b>")
         try:
             await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=label, parse_mode="HTML")
         except Exception as e:
@@ -411,7 +480,6 @@ async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_k
             title = result.get("title") or "TikTok Audio"
             if not path or not os.path.exists(path):
                 raise RuntimeError("Scraping mp3 source file not found")
-            tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
             fixed_audio = None
             try:
                 fixed_audio = reencode_mp3(path)
@@ -423,7 +491,7 @@ async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_k
                 log.info("TikTok send success | source=scraping type=audio")
                 return True
             finally:
-                for p in (tmp_audio, fixed_audio, path):
+                for p in (fixed_audio,path):
                     try:
                         if p and os.path.exists(p):
                             os.remove(p)
@@ -524,13 +592,11 @@ async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_k
         log.info("TikTok send success | source=tikwm type=album")
         return True
 
-    video_url = info.get("play") or info.get("wmplay") or info.get("hdplay")
+    video_url = info.get("play") or info.get("wmplay") or info.get("hdplay") or info.get("play_url")
     if video_url:
         title = info.get("title") or info.get("desc") or "TikTok Video"
         desc = info.get("desc") or info.get("title") or ""
-        safe_title = sanitize_filename(title)
-        uid = uuid.uuid4().hex
-        out_path = f"{TMP_DIR}/{uid}_{safe_title}.mp4"
+        out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
         await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading TikTok video (tikwm)...")
         await _set_uploading("video")
         await bot.send_chat_action(chat_id=chat_id, action="upload_video")
