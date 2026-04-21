@@ -4,11 +4,11 @@ import html
 import logging
 import subprocess
 import asyncio
+from telegram import InputMediaPhoto, InputMediaVideo
+from telegram.error import RetryAfter
 from .constants import TMP_DIR, MAX_TG_SIZE
 from .utils import detect_media_type
 from .ytdlp import ytdlp_download
-from telegram import InputMediaPhoto, InputMediaVideo
-from telegram.error import RetryAfter
 from .instagram.main import is_instagram_url, instagram_api_download
 from .youtube.main import is_youtube_url, sonzai_youtube_download
 
@@ -16,7 +16,11 @@ log = logging.getLogger(__name__)
 
 def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
-    result = subprocess.run(["ffmpeg","-y","-i",src_path,"-vn","-acodec","libmp3lame","-ab","192k","-ar","44100",fixed_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", src_path, "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", fixed_path],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
     if not os.path.exists(fixed_path):
@@ -64,8 +68,17 @@ def _build_safe_photo_caption(title: str, bot_name: str, max_len: int = 1024) ->
 
 def _is_reply_not_found_error(exc: Exception) -> bool:
     text = (str(exc) or "").lower()
-    keys = ("replied message not found","message to be replied not found","reply message not found","reply_to_message_id")
+    keys = ("replied message not found", "message to be replied not found", "reply message not found", "reply_to_message_id")
     return any(k in text for k in keys)
+
+async def _get_bot_name(bot) -> str:
+    cached = getattr(bot, "_cached_first_name", None)
+    if cached:
+        return cached
+    me = await bot.get_me()
+    name = me.first_name or "Bot"
+    setattr(bot, "_cached_first_name", name)
+    return name
 
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
     try:
@@ -106,6 +119,7 @@ async def _send_media_group_with_fallback(bot, chat_id, media, reply_to=None, me
             if reply_to and _is_reply_not_found_error(e):
                 reply_to = None
                 continue
+            log.exception("Failed to send media group | chat_id=%s", chat_id)
             raise
 
 async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None, message_thread_id=None):
@@ -114,6 +128,7 @@ async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None,
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
             return await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", message_thread_id=message_thread_id, disable_notification=True)
+        log.exception("Failed to send photo | chat_id=%s", chat_id)
         raise
 
 async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=False):
@@ -122,6 +137,7 @@ async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None,
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
             return await bot.send_video(chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, message_thread_id=message_thread_id, disable_notification=True)
+        log.exception("Failed to send video | chat_id=%s", chat_id)
         raise
 
 async def _send_audio_with_fallback(bot, chat_id, audio, title, performer, filename, reply_to=None, message_thread_id=None):
@@ -130,17 +146,27 @@ async def _send_audio_with_fallback(bot, chat_id, audio, title, performer, filen
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
             return await bot.send_audio(chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, message_thread_id=message_thread_id, disable_notification=True)
+        log.exception("Failed to send audio | chat_id=%s", chat_id)
         raise
+
+async def _cleanup_album_files(items: list[dict]):
+    for item in items:
+        p = item.get("path")
+        try:
+            if p and os.path.exists(p):
+                os.remove(p)
+        except Exception as e:
+            log.warning("Failed to remove album temp file | path=%s err=%s", p, e)
 
 async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message_thread_id=None):
     items = result.get("items") or []
     if not items:
         raise RuntimeError("Album result kosong")
     title = (result.get("title") or "Media").strip() or "Media"
-    bot_name = (await bot.get_me()).first_name or "Bot"
+    bot_name = await _get_bot_name(bot)
     caption = _build_safe_photo_caption(title, bot_name)
     chunk_size = 10
-    cooldown = 3
+    cooldown = 0.5
     chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
     for idx, chunk in enumerate(chunks):
         media = []
@@ -172,8 +198,14 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
             if not media:
                 log.warning("No valid media items to send in chunk | chat_id=%s chunk_index=%s", chat_id, idx)
                 continue
-            await _send_media_group_with_fallback(bot=bot, chat_id=chat_id, media=media, reply_to=reply_to if idx == 0 else None, message_thread_id=message_thread_id)
-            if idx < len(chunks) - 1:
+            await _send_media_group_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                media=media,
+                reply_to=reply_to if idx == 0 else None,
+                message_thread_id=message_thread_id,
+            )
+            if idx < len(chunks) - 1 and cooldown > 0:
                 await asyncio.sleep(cooldown)
         finally:
             for fh in handles:
@@ -191,7 +223,10 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
         if first_path and os.path.exists(first_path):
             first_type = detect_media_type(first_path)
         await _set_uploading_status(bot, chat_id, status_msg_id, "album" if len(items) > 1 else ("video" if first_type == "video" else "photo"))
-        await _send_media_group_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=path, message_thread_id=message_thread_id)
+        try:
+            await _send_media_group_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=path, message_thread_id=message_thread_id)
+        finally:
+            await _cleanup_album_files(items)
         return
 
     meta = path if isinstance(path, dict) else {"path": path, "title": None}
@@ -201,8 +236,7 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
         raise RuntimeError("Download gagal")
     if os.path.getsize(file_path) > MAX_TG_SIZE:
         raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
-
-    bot_name = (await bot.get_me()).first_name or "Bot"
+    bot_name = await _get_bot_name(bot)
     caption_text = original_title or _clean_caption_from_path(file_path)
     media_type = detect_media_type(file_path)
 
@@ -211,7 +245,16 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
         try:
             await _set_uploading_status(bot, chat_id, status_msg_id, "audio")
             fixed_audio = reencode_mp3(file_path)
-            await _send_audio_with_fallback(bot=bot, chat_id=chat_id, audio=fixed_audio, title=caption_text[:64], performer=bot_name, filename=f"{caption_text[:50]}.mp3", reply_to=reply_to, message_thread_id=message_thread_id)
+            await _send_audio_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio=fixed_audio,
+                title=caption_text[:64],
+                performer=bot_name,
+                filename=f"{caption_text[:50]}.mp3",
+                reply_to=reply_to,
+                message_thread_id=message_thread_id,
+            )
             return
         finally:
             if fixed_audio and os.path.exists(fixed_audio):
@@ -222,12 +265,27 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
 
     if media_type == "photo":
         await _set_uploading_status(bot, chat_id, status_msg_id, "photo")
-        await _send_photo_with_fallback(bot=bot, chat_id=chat_id, photo=file_path, caption=_build_safe_photo_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id)
+        await _send_photo_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            photo=file_path,
+            caption=_build_safe_photo_caption(caption_text, bot_name),
+            reply_to=reply_to,
+            message_thread_id=message_thread_id,
+        )
         return
 
     if media_type == "video":
         await _set_uploading_status(bot, chat_id, status_msg_id, "video")
-        await _send_video_with_fallback(bot=bot, chat_id=chat_id, video=file_path, caption=_build_safe_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id, supports_streaming=False)
+        await _send_video_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            video=file_path,
+            caption=_build_safe_caption(caption_text, bot_name),
+            reply_to=reply_to,
+            message_thread_id=message_thread_id,
+            supports_streaming=False,
+        )
         return
 
     raise RuntimeError("Media tidak didukung")
