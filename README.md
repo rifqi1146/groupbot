@@ -86,15 +86,18 @@ pip install -r requirements.txt
 nano .env
 ```
 ```
+#required
 BOT_TOKEN=
+BOT_OWNER_ID=
+LOG_CHAT_ID=
+
+#optional
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_API_URL="https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}"
 GROQ_API_KEY=
 GOOGLE_API_KEY=
 GOOGLE_CSE_ID=
-BOT_OWNER_ID=
-LOG_CHAT_ID=
 API_ID=
 API_HASH=
 SUPPORT_CH_ID=
@@ -120,6 +123,7 @@ This project uses and depends on the following tools and services:
 - [Google Gemini](https://ai.google.dev/)
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [godv bot](https://github.com/govdbot/govd)
 - [gallery-dl](https://github.com/mikf/gallery-dl)
 - [Sonzai Api](http://api.sonzaix.indevs.in)
 - [TikWm](https://www.tikwm.com/)
