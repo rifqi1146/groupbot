@@ -153,7 +153,6 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
                 is_first = idx == 0 and i == 0
                 item_caption = caption if is_first else None
                 item_parse_mode = "HTML" if is_first else None
-
                 if file_path and os.path.exists(file_path):
                     detected = detect_media_type(file_path)
                     fh = open(file_path, "rb")
@@ -163,28 +162,17 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
                     else:
                         media.append(InputMediaPhoto(media=fh, caption=item_caption, parse_mode=item_parse_mode))
                     continue
-
                 if media_url:
                     if media_type == "video":
                         media.append(InputMediaVideo(media=media_url, caption=item_caption, parse_mode=item_parse_mode, supports_streaming=True))
                     else:
                         media.append(InputMediaPhoto(media=media_url, caption=item_caption, parse_mode=item_parse_mode))
                     continue
-
                 log.warning("Skipping media group item because file/url is missing | chat_id=%s item=%s", chat_id, item)
-
             if not media:
                 log.warning("No valid media items to send in chunk | chat_id=%s chunk_index=%s", chat_id, idx)
                 continue
-
-            await _send_media_group_with_fallback(
-                bot=bot,
-                chat_id=chat_id,
-                media=media,
-                reply_to=reply_to if idx == 0 else None,
-                message_thread_id=message_thread_id,
-            )
-
+            await _send_media_group_with_fallback(bot=bot, chat_id=chat_id, media=media, reply_to=reply_to if idx == 0 else None, message_thread_id=message_thread_id)
             if idx < len(chunks) - 1:
                 await asyncio.sleep(cooldown)
         finally:
@@ -205,6 +193,44 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
         await _set_uploading_status(bot, chat_id, status_msg_id, "album" if len(items) > 1 else ("video" if first_type == "video" else "photo"))
         await _send_media_group_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=path, message_thread_id=message_thread_id)
         return
+
+    meta = path if isinstance(path, dict) else {"path": path, "title": None}
+    file_path = meta.get("path")
+    original_title = (meta.get("title") or "").strip()
+    if not file_path or not os.path.exists(file_path):
+        raise RuntimeError("Download gagal")
+    if os.path.getsize(file_path) > MAX_TG_SIZE:
+        raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
+
+    bot_name = (await bot.get_me()).first_name or "Bot"
+    caption_text = original_title or _clean_caption_from_path(file_path)
+    media_type = detect_media_type(file_path)
+
+    if fmt_key == "mp3":
+        fixed_audio = None
+        try:
+            await _set_uploading_status(bot, chat_id, status_msg_id, "audio")
+            fixed_audio = reencode_mp3(file_path)
+            await _send_audio_with_fallback(bot=bot, chat_id=chat_id, audio=fixed_audio, title=caption_text[:64], performer=bot_name, filename=f"{caption_text[:50]}.mp3", reply_to=reply_to, message_thread_id=message_thread_id)
+            return
+        finally:
+            if fixed_audio and os.path.exists(fixed_audio):
+                try:
+                    os.remove(fixed_audio)
+                except Exception as e:
+                    log.warning("Failed to remove temporary re-encoded mp3 | path=%s err=%s", fixed_audio, e)
+
+    if media_type == "photo":
+        await _set_uploading_status(bot, chat_id, status_msg_id, "photo")
+        await _send_photo_with_fallback(bot=bot, chat_id=chat_id, photo=file_path, caption=_build_safe_photo_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id)
+        return
+
+    if media_type == "video":
+        await _set_uploading_status(bot, chat_id, status_msg_id, "video")
+        await _send_video_with_fallback(bot=bot, chat_id=chat_id, video=file_path, caption=_build_safe_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id, supports_streaming=False)
+        return
+
+    raise RuntimeError("Media tidak didukung")
 
 async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id: str | None, has_audio: bool, engine: str | None = None):
     if is_instagram_url(raw_url):
@@ -240,4 +266,5 @@ async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, for
                 log.warning("Sonzai YouTube fallback failed | url=%s err=%r", raw_url, fallback_error)
                 raise RuntimeError(f"yt-dlp: {yt_error}\nSonzai: {fallback_error}") from fallback_error
     return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+    
     
