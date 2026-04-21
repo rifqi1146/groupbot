@@ -48,6 +48,8 @@ TITLE_PATTERN = re.compile(
     re.S,
 )
 
+DEBUG_FACEBOOK = True
+
 def is_facebook_url(url: str) -> bool:
     text = (url or "").strip()
     if not text:
@@ -57,33 +59,64 @@ def is_facebook_url(url: str) -> bool:
         return True
     return "facebook.com/" in text.lower() or "fb.watch/" in text.lower()
 
+def _dbg(msg: str, *args):
+    if DEBUG_FACEBOOK:
+        log.warning("FBDBG | " + msg, *args)
+
+def _clip(text: str, limit: int = 400) -> str:
+    text = (text or "").replace("\n", "\\n").replace("\r", "\\r")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "...<cut>"
+
+def _write_debug_file(prefix: str, content: bytes | str) -> str:
+    try:
+        os.makedirs(TMP_DIR, exist_ok=True)
+        path = os.path.join(TMP_DIR, f"{prefix}_{uuid.uuid4().hex}.txt")
+        mode = "wb" if isinstance(content, (bytes, bytearray)) else "w"
+        with open(path, mode, encoding=None if "b" in mode else "utf-8") as f:
+            f.write(content)
+        _dbg("debug file written | path=%s", path)
+        return path
+    except Exception as e:
+        _dbg("failed writing debug file | err=%r", e)
+        return ""
+
 def _extract_content_id(url: str) -> str:
     text = (url or "").strip()
     if not text:
         return ""
     m = CONTENT_RE.search(text)
     if m:
-        return (m.group(1) or "").strip()
+        value = (m.group(1) or "").strip()
+        _dbg("content id from regex | url=%s id=%s", text, value)
+        return value
     parsed = urlparse(text)
     if "watch" in parsed.path:
         qs = parse_qs(parsed.query)
         val = (qs.get("v") or [""])[0].strip()
         if val:
+            _dbg("content id from watch query | url=%s id=%s", text, val)
             return val
+    _dbg("content id not found | url=%s", text)
     return ""
 
 def _normalize_content_url(content_url: str, content_id: str) -> str:
-    content_url = (content_url or "").strip()
-    content_url = content_url.replace("m.facebook.com", "www.facebook.com", 1)
+    original = (content_url or "").strip()
+    content_url = original.replace("m.facebook.com", "www.facebook.com", 1)
     content_url = content_url.replace("mbasic.facebook.com", "www.facebook.com", 1)
     if "/watch" in content_url and content_id:
         content_url = f"https://www.facebook.com/reel/{content_id}"
+    _dbg("normalize content url | before=%s after=%s content_id=%s", original, content_url, content_id)
     return content_url
 
 async def _follow_share_redirect(url: str) -> str:
     session = await get_http_session()
+    _dbg("follow share redirect start | url=%s", url)
     async with session.get(url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
-        return str(resp.url)
+        final_url = str(resp.url)
+        _dbg("follow share redirect done | status=%s final=%s", resp.status, final_url)
+        return final_url
 
 def _unescape_unicode(text: str) -> str:
     if not text:
@@ -110,18 +143,24 @@ def _unescape_facebook_url(text: str) -> str:
 
 def _find_video_section(body: bytes, video_id: str) -> bytes | None:
     if not video_id:
+        _dbg("find section skipped | no video_id")
         return None
     anchor = f"dash_mpd_debug.mpd?v={video_id}".encode()
     start = body.find(anchor)
     if start == -1:
+        _dbg("anchor not found | video_id=%s anchor=%s", video_id, anchor.decode(errors="ignore"))
         return None
     remaining = body[start:]
     end_marker = f'"id":"{video_id}"'.encode()
     end_idx = remaining.find(end_marker)
     if end_idx > 0:
-        return remaining[: end_idx + len(end_marker)]
+        section = remaining[: end_idx + len(end_marker)]
+        _dbg("section found with end marker | video_id=%s start=%s len=%s", video_id, start, len(section))
+        return section
     max_len = min(20000, len(remaining))
-    return remaining[:max_len]
+    section = remaining[:max_len]
+    _dbg("section fallback window | video_id=%s start=%s len=%s", video_id, start, len(section))
+    return section
 
 def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     data = {
@@ -131,25 +170,45 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
         "width": 0,
         "height": 0,
     }
+
+    _dbg("parse body start | video_id=%s body_len=%s", video_id, len(body))
+
     section = _find_video_section(body, video_id)
+    used_full_body = False
     if section is None:
         section = body
+        used_full_body = True
+        _dbg("section nil, fallback to full body | video_id=%s", video_id)
+
     section_text = section.decode("utf-8", errors="ignore")
     body_text = body.decode("utf-8", errors="ignore")
 
-    match = HD_URL_PATTERN.search(section_text)
-    if match:
-        data["hd_url"] = _unescape_facebook_url(match.group(1))
+    hd_match = HD_URL_PATTERN.search(section_text)
+    if hd_match:
+        data["hd_url"] = _unescape_facebook_url(hd_match.group(1))
+        _dbg("hd match found | url=%s", _clip(data["hd_url"], 200))
+    else:
+        _dbg("hd match not found | used_full_body=%s", used_full_body)
 
-    match = SD_URL_PATTERN.search(section_text)
-    if match:
-        data["sd_url"] = _unescape_facebook_url(match.group(1))
+    sd_match = SD_URL_PATTERN.search(section_text)
+    if sd_match:
+        data["sd_url"] = _unescape_facebook_url(sd_match.group(1))
+        _dbg("sd match found | url=%s", _clip(data["sd_url"], 200))
+    else:
+        _dbg("sd match not found | used_full_body=%s", used_full_body)
 
-    match = TITLE_PATTERN.search(body_text)
-    if match:
-        data["title"] = _unescape_unicode(match.group(1))
+    title_match = TITLE_PATTERN.search(body_text)
+    if title_match:
+        data["title"] = _unescape_unicode(title_match.group(1))
+        _dbg("title match found | title=%s", _clip(data["title"], 200))
+    else:
+        _dbg("title match not found")
 
     if not data["hd_url"] and not data["sd_url"]:
+        preview = _clip(section_text, 1500)
+        _dbg("no video urls found | section_preview=%s", preview)
+        _write_debug_file("facebook_body", body)
+        _write_debug_file("facebook_section", section)
         raise RuntimeError("no video URLs found in page")
 
     return data
@@ -261,6 +320,8 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
             cmd.extend(["--header", f"{k}: {v}"])
     cmd.append(media_url)
 
+    _dbg("aria2c start | out=%s url=%s", out_path, _clip(media_url, 200))
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
@@ -295,10 +356,15 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         err = stderr.decode(errors="ignore").strip() if stderr else ""
+        _dbg("aria2c failed | code=%s err=%s", proc.returncode, _clip(err, 500))
         raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
 
+    _dbg("aria2c success | out=%s", out_path)
+
 async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
+    _dbg("aiohttp download start | out=%s url=%s", out_path, _clip(media_url, 200))
     async with session.get(media_url, headers=headers, timeout=aiohttp.ClientTimeout(total=600), allow_redirects=True) as r:
+        _dbg("aiohttp download response | status=%s final=%s", r.status, str(r.url))
         if r.status >= 400:
             raise RuntimeError(f"Download failed: HTTP {r.status}")
         total = int(r.headers.get("Content-Length", 0) or 0)
@@ -323,6 +389,7 @@ async def _aiohttp_download_with_progress(session, media_url: str, out_path: str
                 last_edit = now
                 last_sample_size = downloaded
                 last_sample_ts = now
+    _dbg("aiohttp download success | out=%s", out_path)
 
 async def _download_with_best_engine(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
     try:
@@ -339,32 +406,49 @@ async def _download_with_best_engine(session, media_url: str, out_path: str, bot
 async def _get_video_data(content_url: str, content_id: str) -> dict:
     content_url = _normalize_content_url(content_url, content_id)
     session = await get_http_session()
+    _dbg("fetch video data start | url=%s content_id=%s", content_url, content_id)
     async with session.get(
         content_url,
         headers=WEB_HEADERS,
         timeout=aiohttp.ClientTimeout(total=25),
         allow_redirects=True,
     ) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"failed to get page: HTTP {resp.status}")
+        final_url = str(resp.url)
+        status = resp.status
         body = await resp.read()
+        _dbg("fetch video data response | status=%s final=%s body_len=%s", status, final_url, len(body))
+        if status != 200:
+            _write_debug_file("facebook_http_error", body)
+            raise RuntimeError(f"failed to get page: HTTP {status}")
     return _parse_video_from_body(body, content_id)
 
 async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping Facebook video...</b>")
+    _dbg("facebook scrape start | raw_url=%s fmt_key=%s", raw_url, fmt_key)
 
     content_url = (raw_url or "").strip()
-    if SHARE_RE.search(content_url):
+    is_share = bool(SHARE_RE.search(content_url))
+    _dbg("share url detected=%s | url=%s", is_share, content_url)
+
+    if is_share:
         content_url = await _follow_share_redirect(content_url)
 
     content_id = _extract_content_id(content_url)
     if not content_id:
+        _dbg("scrape failed before fetch | reason=no content id | content_url=%s", content_url)
         raise RuntimeError("failed to extract facebook content id")
 
     video_data = await _get_video_data(content_url, content_id)
+    _dbg(
+        "video data parsed | title=%s hd=%s sd=%s",
+        _clip(video_data.get("title", ""), 150),
+        bool(video_data.get("hd_url")),
+        bool(video_data.get("sd_url")),
+    )
 
     video_url = video_data.get("hd_url") or video_data.get("sd_url")
     if not video_url:
+        _dbg("video url empty after parse | content_url=%s content_id=%s", content_url, content_id)
         raise RuntimeError("no video formats found")
 
     title = (video_data.get("title") or "Facebook Video").strip() or "Facebook Video"
@@ -375,6 +459,8 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
         "User-Agent": WEB_HEADERS["User-Agent"],
         "Referer": _normalize_content_url(content_url, content_id),
     }
+
+    _dbg("download chosen url | url=%s out=%s", _clip(video_url, 200), out_path)
 
     await _download_with_best_engine(
         session,
@@ -406,7 +492,7 @@ async def facebook_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg
             has_audio=has_audio,
         )
     except Exception as e:
-        log.warning("Facebook scraping failed, fallback to yt-dlp | url=%s err=%r", raw_url, e)
+        log.exception("Facebook scraping failed, fallback to yt-dlp | url=%s err=%r", raw_url, e)
         await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Facebook scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")
         return await ytdlp_download(
             raw_url,
