@@ -166,7 +166,7 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
     bot_name = await _get_bot_name(bot)
     caption = _build_safe_photo_caption(title, bot_name)
     chunk_size = 10
-    cooldown = 0.5
+    cooldown = 3
     chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
     for idx, chunk in enumerate(chunks):
         media = []
