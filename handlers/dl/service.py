@@ -104,19 +104,19 @@ def _apply_retry_after(chat_id: int, retry_after: int):
     prev = _CHAT_SLOWMODE_UNTIL.get(chat_id, 0.0)
     _CHAT_SLOWMODE_UNTIL[chat_id] = max(prev, until)
 
-async def _guarded_api_call(chat_id: int, func, *args, **kwargs):
-    lock = _get_chat_lock(chat_id)
+async def _guarded_api_call(rate_key: int, func, *args, **kwargs):
+    lock = _get_chat_lock(rate_key)
     async with lock:
         while True:
-            await _wait_send_slot(chat_id)
+            await _wait_send_slot(rate_key)
             try:
                 result = await func(*args, **kwargs)
-                _mark_sent(chat_id)
+                _mark_sent(rate_key)
                 return result
             except RetryAfter as e:
                 retry_after = int(getattr(e, "retry_after", 3))
-                _apply_retry_after(chat_id, retry_after)
-                log.warning("RetryAfter | chat_id=%s wait=%s", chat_id, retry_after)
+                _apply_retry_after(rate_key, retry_after)
+                log.warning("RetryAfter | chat_id=%s wait=%s", rate_key, retry_after)
                 await asyncio.sleep(retry_after + 1)
 
 async def _get_bot_name(bot) -> str:
