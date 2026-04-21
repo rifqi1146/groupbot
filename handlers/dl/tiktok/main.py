@@ -125,13 +125,36 @@ async def _safe_edit_progress(bot, chat_id, status_msg_id, title: str, downloade
     except Exception:
         pass
 
-async def _safe_edit_status(bot, chat_id, status_msg_id, text: str):
-    try:
-        await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
-    except Exception as e:
-        if "Message is not modified" in str(e):
+async def _safe_edit_status(bot, chat_id, status_msg_id, text: str, min_interval: float = 1.2):
+    cache = getattr(bot, "_status_edit_cache", {})
+    key = (chat_id, status_msg_id)
+    now = time.monotonic()
+    prev = cache.get(key) or {}
+    if prev.get("text") == text:
+        return
+    if now - prev.get("ts", 0) < min_interval:
+        return
+    for _ in range(2):
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            cache[key] = {"text": text, "ts": time.monotonic()}
+            setattr(bot, "_status_edit_cache", cache)
             return
-        raise
+        except RetryAfter as e:
+            wait_time = max(int(getattr(e, "retry_after", 1)), 1)
+            await asyncio.sleep(wait_time)
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                return
+            log.warning("Failed to edit status | chat_id=%s message_id=%s err=%s", chat_id, status_msg_id, e)
+            return
+
 
 async def _probe_total_bytes(session, url: str, headers: dict | None = None) -> int:
     total = 0
@@ -425,13 +448,29 @@ async def _download_album_images(session, image_urls: list[str], title: str, bot
     total = len(image_urls)
     sem = asyncio.Semaphore(8)
     results = [None] * total
+    done_count = 0
+    done_lock = asyncio.Lock()
+
+    async def update_progress(current: int):
+        await _safe_edit_status(
+            bot,
+            chat_id,
+            status_msg_id,
+            f"<b>Downloading TikTok slideshow...</b>\n\n<code>{current}/{total} photos</code>",
+        )
 
     async def one(idx: int, image_url: str):
+        nonlocal done_count
         async with sem:
             safe_title = sanitize_filename(title or "TikTok Slideshow")
             out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{safe_title}_{idx + 1}.jpg"
             try:
-                async with session.get(image_url, headers=headers, timeout=aiohttp.ClientTimeout(total=120), allow_redirects=True) as r:
+                async with session.get(
+                    image_url,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120),
+                    allow_redirects=True,
+                ) as r:
                     if r.status >= 400:
                         raise RuntimeError(f"Image HTTP {r.status}")
                     async with aiofiles.open(out_path, "wb") as f:
@@ -439,9 +478,12 @@ async def _download_album_images(session, image_urls: list[str], title: str, bot
                             if chunk:
                                 await f.write(chunk)
                 results[idx] = {"type": "photo", "path": out_path}
-                await _safe_edit_status(bot, chat_id, status_msg_id, f"<b>Downloading TikTok slideshow...</b>\n\n<code>{idx + 1}/{total} photos</code>")
-            except Exception:
-                log.exception("Failed to download slideshow image | index=%s url=%s", idx, image_url)
+                async with done_lock:
+                    done_count += 1
+                    current = done_count
+                await update_progress(current)
+            except Exception as e:
+                log.exception("Failed to download slideshow image | index=%s url=%s err=%r", idx, image_url, e)
                 try:
                     if os.path.exists(out_path):
                         os.remove(out_path)
@@ -449,8 +491,10 @@ async def _download_album_images(session, image_urls: list[str], title: str, bot
                     pass
                 raise
 
+    await update_progress(0)
     await asyncio.gather(*(one(i, url) for i, url in enumerate(image_urls)))
     return [x for x in results if x]
+    
 
 async def _download_direct_album(media: dict, bot, chat_id, status_msg_id) -> dict:
     session = await get_http_session()
