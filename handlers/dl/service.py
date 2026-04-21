@@ -153,9 +153,15 @@ async def _set_uploading_status(bot, chat_id, status_msg_id, kind: str):
         "photo": "upload_photo",
         "album": "upload_photo",
     }.get(kind, "typing")
+
     await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=label)
+
     try:
-        await _guarded_api_call(chat_id, bot.send_chat_action, chat_id=chat_id, action=action)
+        await bot.send_chat_action(chat_id=chat_id, action=action)
+    except RetryAfter as e:
+        retry_after = int(getattr(e, "retry_after", 3))
+        _apply_retry_after(chat_id, retry_after)
+        log.warning("RetryAfter while sending chat action | chat_id=%s wait=%s", chat_id, retry_after)
     except Exception as e:
         log.warning("Failed to send chat action | chat_id=%s action=%s err=%s", chat_id, action, e)
 
@@ -207,9 +213,7 @@ async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None,
 
 async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=False):
     try:
-        return await _guarded_api_call(
-            chat_id,
-            bot.send_video,
+        return await bot.send_video(
             chat_id=chat_id,
             video=video,
             caption=caption,
@@ -219,11 +223,37 @@ async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None,
             message_thread_id=message_thread_id,
             disable_notification=True,
         )
+    except RetryAfter as e:
+        wait_time = int(getattr(e, "retry_after", 3)) + 1
+        log.warning("RetryAfter while sending video | chat_id=%s wait=%s", chat_id, wait_time)
+        await asyncio.sleep(wait_time)
+        try:
+            return await bot.send_video(
+                chat_id=chat_id,
+                video=video,
+                caption=caption,
+                parse_mode="HTML",
+                supports_streaming=supports_streaming,
+                reply_to_message_id=reply_to,
+                message_thread_id=message_thread_id,
+                disable_notification=True,
+            )
+        except Exception as e2:
+            if reply_to and _is_reply_not_found_error(e2):
+                return await bot.send_video(
+                    chat_id=chat_id,
+                    video=video,
+                    caption=caption,
+                    parse_mode="HTML",
+                    supports_streaming=supports_streaming,
+                    message_thread_id=message_thread_id,
+                    disable_notification=True,
+                )
+            log.exception("Failed to send video | chat_id=%s", chat_id)
+            raise
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await _guarded_api_call(
-                chat_id,
-                bot.send_video,
+            return await bot.send_video(
                 chat_id=chat_id,
                 video=video,
                 caption=caption,
@@ -440,3 +470,5 @@ async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, for
                 log.warning("Sonzai YouTube fallback failed | url=%s err=%r", raw_url, fallback_error)
                 raise RuntimeError(f"yt-dlp: {yt_error}\nSonzai: {fallback_error}") from fallback_error
     return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+    
+    
