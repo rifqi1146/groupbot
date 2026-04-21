@@ -225,11 +225,44 @@ def _find_video_section(body: bytes, video_id: str) -> bytes | None:
     _dbg("section fallback window | video_id=%s start=%s len=%s", video_id, start, len(section))
     return section
 
+def _extract_meta_content(html_text: str, prop: str) -> str:
+    patterns = [
+        rf'<meta[^>]+property=["\']{re.escape(prop)}["\'][^>]+content=["\'](.*?)["\']',
+        rf'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']{re.escape(prop)}["\']',
+        rf'<meta[^>]+name=["\']{re.escape(prop)}["\'][^>]+content=["\'](.*?)["\']',
+        rf'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']{re.escape(prop)}["\']',
+    ]
+    for p in patterns:
+        m = re.search(p, html_text or "", flags=re.I | re.S)
+        if m:
+            return html.unescape(m.group(1)).strip()
+    return ""
+
+def _extract_title_desc_from_html(body_text: str) -> tuple[str, str]:
+    title = (
+        _extract_meta_content(body_text, "og:title")
+        or _extract_meta_content(body_text, "twitter:title")
+        or ""
+    )
+    desc = (
+        _extract_meta_content(body_text, "og:description")
+        or _extract_meta_content(body_text, "twitter:description")
+        or ""
+    )
+
+    if not title:
+        m = re.search(r"<title[^>]*>(.*?)</title>", body_text or "", flags=re.I | re.S)
+        if m:
+            title = html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
+
+    return title, desc
+    
 def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     data = {
         "hd_url": "",
         "sd_url": "",
         "title": "",
+        "desc": "",
         "width": 0,
         "height": 0,
     }
@@ -279,9 +312,18 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     title_match = TITLE_PATTERN.search(body_text)
     if title_match:
         data["title"] = _unescape_unicode(title_match.group(1))
-        _dbg("title match found | title=%s", _clip(data["title"], 200))
+        _dbg("title json match found | title=%s", _clip(data["title"], 200))
     else:
-        _dbg("title match not found")
+        _dbg("title json match not found")
+
+    meta_title, meta_desc = _extract_title_desc_from_html(body_text)
+    if not data["title"] and meta_title:
+        data["title"] = meta_title
+        _dbg("title meta fallback used | title=%s", _clip(data["title"], 200))
+
+    if meta_desc:
+        data["desc"] = meta_desc
+        _dbg("desc meta found | desc=%s", _clip(data["desc"], 200))
 
     if not data["hd_url"] and not data["sd_url"]:
         preview = _clip(section_text, 1500)
@@ -554,7 +596,7 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
         "path": out_path,
         "title": title,
         "source": "facebook_scraping",
-        "desc": title,
+        "desc": (video_data.get("desc") or title).strip(),
     }
 
 async def facebook_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
