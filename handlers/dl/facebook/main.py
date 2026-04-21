@@ -2,7 +2,6 @@ import os
 import re
 import time
 import uuid
-import html
 import shutil
 import asyncio
 import aiohttp
@@ -59,10 +58,6 @@ BROWSER_NATIVE_HD_URL_PATTERN = re.compile(
 )
 BROWSER_NATIVE_SD_URL_PATTERN = re.compile(
     r'"browser_native_sd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
-    re.S,
-)
-TITLE_PATTERN = re.compile(
-    r'"title"\s*:\s*\{\s*"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
     re.S,
 )
 
@@ -229,75 +224,38 @@ def _find_video_section(body: bytes, video_id: str) -> bytes | None:
         _dbg("section found with end marker | video_id=%s start=%s len=%s", video_id, start, len(section))
         return section
     max_len = min(20000, len(remaining))
-    section = remaining[:maxLen] if False else remaining[:max_len]
+    section = remaining[:max_len]
     _dbg("section fallback window | video_id=%s start=%s len=%s", video_id, start, len(section))
     return section
-
-def _extract_meta_content(html_text: str, prop: str) -> str:
-    patterns = [
-        rf'<meta[^>]+property=["\']{re.escape(prop)}["\'][^>]+content=["\'](.*?)["\']',
-        rf'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']{re.escape(prop)}["\']',
-        rf'<meta[^>]+name=["\']{re.escape(prop)}["\'][^>]+content=["\'](.*?)["\']',
-        rf'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']{re.escape(prop)}["\']',
-    ]
-    for p in patterns:
-        m = re.search(p, html_text or "", flags=re.I | re.S)
-        if m:
-            return html.unescape(m.group(1)).strip()
-    return ""
-
-def _extract_title_desc_from_html(body_text: str) -> tuple[str, str]:
-    title = (
-        _extract_meta_content(body_text, "og:title")
-        or _extract_meta_content(body_text, "twitter:title")
-        or ""
-    )
-    desc = (
-        _extract_meta_content(body_text, "og:description")
-        or _extract_meta_content(body_text, "twitter:description")
-        or ""
-    )
-    if not title:
-        m = re.search(r"<title[^>]*>(.*?)</title>", body_text or "", flags=re.I | re.S)
-        if m:
-            title = html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
-    return title, desc
 
 def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     data = {
         "hd_url": "",
         "sd_url": "",
-        "title": "",
-        "desc": "",
-        "width": 0,
-        "height": 0,
     }
 
     _dbg("parse body start | video_id=%s body_len=%s", video_id, len(body))
 
     section = _find_video_section(body, video_id)
-    used_full_body = False
     if section is None:
         section = body
-        used_full_body = True
         _dbg("section nil, fallback to full body | video_id=%s", video_id)
 
     section_text = section.decode("utf-8", errors="ignore")
-    body_text = body.decode("utf-8", errors="ignore")
 
     hd_match = HD_URL_PATTERN.search(section_text)
     if hd_match:
         data["hd_url"] = _unescape_facebook_url(hd_match.group(1))
         _dbg("hd progressive match found | url=%s", _clip(data["hd_url"], 200))
     else:
-        _dbg("hd progressive match not found | used_full_body=%s", used_full_body)
+        _dbg("hd progressive match not found")
 
     sd_match = SD_URL_PATTERN.search(section_text)
     if sd_match:
         data["sd_url"] = _unescape_facebook_url(sd_match.group(1))
         _dbg("sd progressive match found | url=%s", _clip(data["sd_url"], 200))
     else:
-        _dbg("sd progressive match not found | used_full_body=%s", used_full_body)
+        _dbg("sd progressive match not found")
 
     if not data["hd_url"]:
         hd_native_match = BROWSER_NATIVE_HD_URL_PATTERN.search(section_text)
@@ -315,29 +273,11 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
         else:
             _dbg("sd native match not found")
 
-    title_match = TITLE_PATTERN.search(body_text)
-    if title_match:
-        data["title"] = _unescape_unicode(title_match.group(1))
-        _dbg("title json match found | title=%s", _clip(data["title"], 200))
-    else:
-        _dbg("title json match not found")
-
-    meta_title, meta_desc = _extract_title_desc_from_html(body_text)
-    if not data["title"] and meta_title:
-        data["title"] = meta_title
-        _dbg("title meta fallback used | title=%s", _clip(data["title"], 200))
-
-    if meta_desc:
-        data["desc"] = meta_desc
-        _dbg("desc meta found | desc=%s", _clip(data["desc"], 200))
-
     _dbg(
-        "parse body done | video_id=%s hd=%s sd=%s title=%s desc=%s",
+        "parse body done | video_id=%s hd=%s sd=%s",
         video_id,
         bool(data["hd_url"]),
         bool(data["sd_url"]),
-        bool(data["title"]),
-        bool(data["desc"]),
     )
 
     if not data["hd_url"] and not data["sd_url"]:
@@ -393,17 +333,17 @@ def _format_eta(seconds: float) -> str:
     return f"{s}s"
 
 async def _safe_edit_progress(bot, chat_id, status_msg_id, title: str, downloaded: int, total: int = 0, speed_bps: float = 0.0, eta_seconds: float | None = None):
-    lines = [f"<b>{html.escape(title)}</b>", ""]
+    lines = [f"<b>{title}</b>", ""]
     if total > 0:
         pct = min(downloaded * 100 / total, 100.0)
-        lines.append(f"<code>{html.escape(_format_size(downloaded))}/{html.escape(_format_size(total))} downloaded</code>")
+        lines.append(f"<code>{_format_size(downloaded)}/{_format_size(total)} downloaded</code>")
         lines.append(f"<code>{pct:.1f}%</code>")
     else:
-        lines.append(f"<code>{html.escape(_format_size(downloaded))} downloaded</code>")
+        lines.append(f"<code>{_format_size(downloaded)} downloaded</code>")
     if speed_bps > 0:
-        lines.append(f"<code>Speed: {html.escape(_format_speed(speed_bps))}</code>")
+        lines.append(f"<code>Speed: {_format_speed(speed_bps)}</code>")
     if eta_seconds is not None and eta_seconds >= 0 and total > 0 and speed_bps > 0:
-        lines.append(f"<code>ETA: {html.escape(_format_eta(eta_seconds))}</code>")
+        lines.append(f"<code>ETA: {_format_eta(eta_seconds)}</code>")
     try:
         await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text="\n".join(lines), parse_mode="HTML")
     except Exception:
@@ -583,8 +523,7 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
     _dbg("after _get_video_data | video_data=%r", video_data)
 
     _dbg(
-        "video data parsed | title=%s hd=%s sd=%s",
-        _clip(str(video_data.get("title", "")), 150),
+        "video data parsed | hd=%s sd=%s",
         bool(video_data.get("hd_url")),
         bool(video_data.get("sd_url")),
     )
@@ -595,16 +534,13 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
         _dbg("video url empty after parse | content_url=%s content_id=%s", content_url, content_id)
         raise RuntimeError("no video formats found")
 
-    title = (str(video_data.get("title") or "Facebook Video")).strip() or "Facebook Video"
-    _dbg("title final | title=%s", _clip(title, 150))
-
+    title = "Facebook Video"
     out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
     _dbg("output path ready | out=%s", out_path)
 
     session = await get_http_session()
     headers = _build_headers(_normalize_content_url(content_url, content_id))
     _dbg("headers ready | referer=%s cookie=%s", headers.get("Referer"), bool(headers.get("Cookie")))
-
     _dbg("download chosen url | url=%s out=%s", _clip(video_url, 200), out_path)
 
     await _download_with_best_engine(
@@ -623,8 +559,6 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
     return {
         "path": out_path,
         "title": title,
-        "source": "facebook_scraping",
-        "desc": (video_data.get("desc") or title).strip(),
     }
 
 async def facebook_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
