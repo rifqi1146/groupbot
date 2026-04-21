@@ -1,6 +1,7 @@
 import os
 import uuid
 import html
+import time
 import logging
 import subprocess
 import asyncio
@@ -13,6 +14,13 @@ from .instagram.main import is_instagram_url, instagram_api_download
 from .youtube.main import is_youtube_url, sonzai_youtube_download
 
 log = logging.getLogger(__name__)
+
+_SEND_LOCKS = {}
+_CHAT_SLOWMODE_UNTIL = {}
+_LAST_SEND_AT = {}
+_MIN_GAP_PER_CHAT = 3
+_ALBUM_CHUNK_SIZE = 10
+_ALBUM_CHUNK_COOLDOWN = 7
 
 def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
@@ -71,6 +79,46 @@ def _is_reply_not_found_error(exc: Exception) -> bool:
     keys = ("replied message not found", "message to be replied not found", "reply message not found", "reply_to_message_id")
     return any(k in text for k in keys)
 
+def _get_chat_lock(chat_id):
+    lock = _SEND_LOCKS.get(chat_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _SEND_LOCKS[chat_id] = lock
+    return lock
+
+async def _wait_send_slot(chat_id: int):
+    now = time.monotonic()
+    slow_until = _CHAT_SLOWMODE_UNTIL.get(chat_id, 0.0)
+    if slow_until > now:
+        await asyncio.sleep(slow_until - now)
+    last_at = _LAST_SEND_AT.get(chat_id, 0.0)
+    wait_gap = _MIN_GAP_PER_CHAT - (time.monotonic() - last_at)
+    if wait_gap > 0:
+        await asyncio.sleep(wait_gap)
+
+def _mark_sent(chat_id: int):
+    _LAST_SEND_AT[chat_id] = time.monotonic()
+
+def _apply_retry_after(chat_id: int, retry_after: int):
+    until = time.monotonic() + max(int(retry_after), 1) + 1
+    prev = _CHAT_SLOWMODE_UNTIL.get(chat_id, 0.0)
+    _CHAT_SLOWMODE_UNTIL[chat_id] = max(prev, until)
+
+async def _guarded_api_call(chat_id: int, func, *args, **kwargs):
+    lock = _get_chat_lock(chat_id)
+    async with lock:
+        while True:
+            await _wait_send_slot(chat_id)
+            try:
+                result = await func(*args, **kwargs)
+                _mark_sent(chat_id)
+                return result
+            except RetryAfter as e:
+                retry_after = int(getattr(e, "retry_after", 3))
+                _apply_retry_after(chat_id, retry_after)
+                log.warning("RetryAfter | chat_id=%s wait=%s", chat_id, retry_after)
+                await asyncio.sleep(retry_after + 1)
+
 async def _get_bot_name(bot) -> str:
     cached = getattr(bot, "_cached_first_name", None)
     if cached:
@@ -83,6 +131,10 @@ async def _get_bot_name(bot) -> str:
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
     try:
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
+    except RetryAfter as e:
+        retry_after = int(getattr(e, "retry_after", 3))
+        _apply_retry_after(chat_id, retry_after)
+        log.warning("RetryAfter while editing status | chat_id=%s wait=%s", chat_id, retry_after)
     except Exception as e:
         if "message is not modified" in (str(e) or "").lower():
             return
@@ -103,18 +155,21 @@ async def _set_uploading_status(bot, chat_id, status_msg_id, kind: str):
     }.get(kind, "typing")
     await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=label)
     try:
-        await bot.send_chat_action(chat_id=chat_id, action=action)
+        await _guarded_api_call(chat_id, bot.send_chat_action, chat_id=chat_id, action=action)
     except Exception as e:
         log.warning("Failed to send chat action | chat_id=%s action=%s err=%s", chat_id, action, e)
 
 async def _send_media_group_with_fallback(bot, chat_id, media, reply_to=None, message_thread_id=None):
     while True:
         try:
-            return await bot.send_media_group(chat_id=chat_id, media=media, reply_to_message_id=reply_to, message_thread_id=message_thread_id)
-        except RetryAfter as e:
-            wait_time = int(getattr(e, "retry_after", 3)) + 1
-            log.warning("RetryAfter while sending media group | chat_id=%s wait=%s", chat_id, wait_time)
-            await asyncio.sleep(wait_time)
+            return await _guarded_api_call(
+                chat_id,
+                bot.send_media_group,
+                chat_id=chat_id,
+                media=media,
+                reply_to_message_id=reply_to,
+                message_thread_id=message_thread_id,
+            )
         except Exception as e:
             if reply_to and _is_reply_not_found_error(e):
                 reply_to = None
@@ -124,28 +179,89 @@ async def _send_media_group_with_fallback(bot, chat_id, media, reply_to=None, me
 
 async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None, message_thread_id=None):
     try:
-        return await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
+        return await _guarded_api_call(
+            chat_id,
+            bot.send_photo,
+            chat_id=chat_id,
+            photo=photo,
+            caption=caption,
+            parse_mode="HTML",
+            reply_to_message_id=reply_to,
+            message_thread_id=message_thread_id,
+            disable_notification=True,
+        )
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", message_thread_id=message_thread_id, disable_notification=True)
+            return await _guarded_api_call(
+                chat_id,
+                bot.send_photo,
+                chat_id=chat_id,
+                photo=photo,
+                caption=caption,
+                parse_mode="HTML",
+                message_thread_id=message_thread_id,
+                disable_notification=True,
+            )
         log.exception("Failed to send photo | chat_id=%s", chat_id)
         raise
 
 async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=False):
     try:
-        return await bot.send_video(chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
+        return await _guarded_api_call(
+            chat_id,
+            bot.send_video,
+            chat_id=chat_id,
+            video=video,
+            caption=caption,
+            parse_mode="HTML",
+            supports_streaming=supports_streaming,
+            reply_to_message_id=reply_to,
+            message_thread_id=message_thread_id,
+            disable_notification=True,
+        )
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await bot.send_video(chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, message_thread_id=message_thread_id, disable_notification=True)
+            return await _guarded_api_call(
+                chat_id,
+                bot.send_video,
+                chat_id=chat_id,
+                video=video,
+                caption=caption,
+                parse_mode="HTML",
+                supports_streaming=supports_streaming,
+                message_thread_id=message_thread_id,
+                disable_notification=True,
+            )
         log.exception("Failed to send video | chat_id=%s", chat_id)
         raise
 
 async def _send_audio_with_fallback(bot, chat_id, audio, title, performer, filename, reply_to=None, message_thread_id=None):
     try:
-        return await bot.send_audio(chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
+        return await _guarded_api_call(
+            chat_id,
+            bot.send_audio,
+            chat_id=chat_id,
+            audio=audio,
+            title=title,
+            performer=performer,
+            filename=filename,
+            reply_to_message_id=reply_to,
+            message_thread_id=message_thread_id,
+            disable_notification=True,
+        )
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await bot.send_audio(chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, message_thread_id=message_thread_id, disable_notification=True)
+            return await _guarded_api_call(
+                chat_id,
+                bot.send_audio,
+                chat_id=chat_id,
+                audio=audio,
+                title=title,
+                performer=performer,
+                filename=filename,
+                message_thread_id=message_thread_id,
+                disable_notification=True,
+            )
         log.exception("Failed to send audio | chat_id=%s", chat_id)
         raise
 
@@ -165,8 +281,8 @@ async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message
     title = (result.get("title") or "Media").strip() or "Media"
     bot_name = await _get_bot_name(bot)
     caption = _build_safe_photo_caption(title, bot_name)
-    chunk_size = 10
-    cooldown = 3
+    chunk_size = _ALBUM_CHUNK_SIZE
+    cooldown = _ALBUM_CHUNK_COOLDOWN
     chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
     for idx, chunk in enumerate(chunks):
         media = []
@@ -324,5 +440,3 @@ async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, for
                 log.warning("Sonzai YouTube fallback failed | url=%s err=%r", raw_url, fallback_error)
                 raise RuntimeError(f"yt-dlp: {yt_error}\nSonzai: {fallback_error}") from fallback_error
     return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
-    
-    
