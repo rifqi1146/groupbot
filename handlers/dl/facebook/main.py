@@ -11,10 +11,19 @@ import logging
 from urllib.parse import urlparse, parse_qs
 from utils.http import get_http_session
 from handlers.dl.constants import TMP_DIR
+
+try:
+    from handlers.dl.constants import BASE_DIR
+except Exception:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from handlers.dl.utils import sanitize_filename
 from handlers.dl.ytdlp import ytdlp_download
 
 log = logging.getLogger(__name__)
+
+COOKIES_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data", "cookies.txt"))
+DEBUG_FACEBOOK = True
 
 WEB_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -43,12 +52,18 @@ SD_URL_PATTERN = re.compile(
     r'"progressive_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"failure_reason"\s*:\s*[^,]+\s*,\s*"metadata"\s*:\s*\{\s*"quality"\s*:\s*"SD"\s*\}',
     re.S,
 )
+BROWSER_NATIVE_HD_URL_PATTERN = re.compile(
+    r'"browser_native_hd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
+    re.S,
+)
+BROWSER_NATIVE_SD_URL_PATTERN = re.compile(
+    r'"browser_native_sd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
+    re.S,
+)
 TITLE_PATTERN = re.compile(
     r'"title"\s*:\s*\{\s*"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
     re.S,
 )
-
-DEBUG_FACEBOOK = True
 
 def is_facebook_url(url: str) -> bool:
     text = (url or "").strip()
@@ -73,14 +88,61 @@ def _write_debug_file(prefix: str, content: bytes | str) -> str:
     try:
         os.makedirs(TMP_DIR, exist_ok=True)
         path = os.path.join(TMP_DIR, f"{prefix}_{uuid.uuid4().hex}.txt")
-        mode = "wb" if isinstance(content, (bytes, bytearray)) else "w"
-        with open(path, mode, encoding=None if "b" in mode else "utf-8") as f:
-            f.write(content)
+        if isinstance(content, (bytes, bytearray)):
+            with open(path, "wb") as f:
+                f.write(content)
+        else:
+            with open(path, "w", encoding="utf-8", errors="ignore") as f:
+                f.write(content)
         _dbg("debug file written | path=%s", path)
         return path
     except Exception as e:
         _dbg("failed writing debug file | err=%r", e)
         return ""
+
+def _load_cookie_header(path: str) -> str:
+    if not path or not os.path.exists(path):
+        _dbg("cookie file not found | path=%s", path)
+        return ""
+
+    pairs = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                parts = line.split("\t")
+                if len(parts) >= 7:
+                    name = (parts[5] or "").strip()
+                    value = (parts[6] or "").strip()
+                    if name:
+                        pairs.append(f"{name}={value}")
+                    continue
+
+                if "=" in line and "\t" not in line and not line.lower().startswith(("http://", "https://")):
+                    name, value = line.split("=", 1)
+                    name = name.strip()
+                    value = value.strip()
+                    if name:
+                        pairs.append(f"{name}={value}")
+
+        header = "; ".join(pairs)
+        _dbg("cookie header loaded | path=%s pairs=%s", path, len(pairs))
+        return header
+    except Exception as e:
+        _dbg("failed to load cookie file | path=%s err=%r", path, e)
+        return ""
+
+def _build_headers(referer: str | None = None) -> dict:
+    headers = dict(WEB_HEADERS)
+    if referer:
+        headers["Referer"] = referer
+    cookie_header = _load_cookie_header(COOKIES_PATH)
+    if cookie_header:
+        headers["Cookie"] = cookie_header
+    return headers
 
 def _extract_content_id(url: str) -> str:
     text = (url or "").strip()
@@ -112,8 +174,9 @@ def _normalize_content_url(content_url: str, content_id: str) -> str:
 
 async def _follow_share_redirect(url: str) -> str:
     session = await get_http_session()
-    _dbg("follow share redirect start | url=%s", url)
-    async with session.get(url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+    headers = _build_headers()
+    _dbg("follow share redirect start | url=%s cookie=%s", url, bool(headers.get("Cookie")))
+    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
         final_url = str(resp.url)
         _dbg("follow share redirect done | status=%s final=%s", resp.status, final_url)
         return final_url
@@ -186,16 +249,32 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     hd_match = HD_URL_PATTERN.search(section_text)
     if hd_match:
         data["hd_url"] = _unescape_facebook_url(hd_match.group(1))
-        _dbg("hd match found | url=%s", _clip(data["hd_url"], 200))
+        _dbg("hd progressive match found | url=%s", _clip(data["hd_url"], 200))
     else:
-        _dbg("hd match not found | used_full_body=%s", used_full_body)
+        _dbg("hd progressive match not found | used_full_body=%s", used_full_body)
 
     sd_match = SD_URL_PATTERN.search(section_text)
     if sd_match:
         data["sd_url"] = _unescape_facebook_url(sd_match.group(1))
-        _dbg("sd match found | url=%s", _clip(data["sd_url"], 200))
+        _dbg("sd progressive match found | url=%s", _clip(data["sd_url"], 200))
     else:
-        _dbg("sd match not found | used_full_body=%s", used_full_body)
+        _dbg("sd progressive match not found | used_full_body=%s", used_full_body)
+
+    if not data["hd_url"]:
+        hd_native_match = BROWSER_NATIVE_HD_URL_PATTERN.search(section_text)
+        if hd_native_match:
+            data["hd_url"] = _unescape_facebook_url(hd_native_match.group(1))
+            _dbg("hd native match found | url=%s", _clip(data["hd_url"], 200))
+        else:
+            _dbg("hd native match not found")
+
+    if not data["sd_url"]:
+        sd_native_match = BROWSER_NATIVE_SD_URL_PATTERN.search(section_text)
+        if sd_native_match:
+            data["sd_url"] = _unescape_facebook_url(sd_native_match.group(1))
+            _dbg("sd native match found | url=%s", _clip(data["sd_url"], 200))
+        else:
+            _dbg("sd native match not found")
 
     title_match = TITLE_PATTERN.search(body_text)
     if title_match:
@@ -406,10 +485,11 @@ async def _download_with_best_engine(session, media_url: str, out_path: str, bot
 async def _get_video_data(content_url: str, content_id: str) -> dict:
     content_url = _normalize_content_url(content_url, content_id)
     session = await get_http_session()
-    _dbg("fetch video data start | url=%s content_id=%s", content_url, content_id)
+    headers = _build_headers(content_url)
+    _dbg("fetch video data start | url=%s content_id=%s cookie=%s", content_url, content_id, bool(headers.get("Cookie")))
     async with session.get(
         content_url,
-        headers=WEB_HEADERS,
+        headers=headers,
         timeout=aiohttp.ClientTimeout(total=25),
         allow_redirects=True,
     ) as resp:
@@ -455,10 +535,7 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
     out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
 
     session = await get_http_session()
-    headers = {
-        "User-Agent": WEB_HEADERS["User-Agent"],
-        "Referer": _normalize_content_url(content_url, content_id),
-    }
+    headers = _build_headers(_normalize_content_url(content_url, content_id))
 
     _dbg("download chosen url | url=%s out=%s", _clip(video_url, 200), out_path)
 
