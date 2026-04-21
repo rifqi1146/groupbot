@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 COOKIES_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data", "cookies.txt"))
 DEBUG_FACEBOOK = True
+_COOKIE_HEADER_CACHE = None
 
 WEB_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -79,7 +80,7 @@ def _dbg(msg: str, *args):
         log.warning("FBDBG | " + msg, *args)
 
 def _clip(text: str, limit: int = 400) -> str:
-    text = (text or "").replace("\n", "\\n").replace("\r", "\\r")
+    text = str(text or "").replace("\n", "\\n").replace("\r", "\\r")
     if len(text) <= limit:
         return text
     return text[:limit] + "...<cut>"
@@ -101,9 +102,14 @@ def _write_debug_file(prefix: str, content: bytes | str) -> str:
         return ""
 
 def _load_cookie_header(path: str) -> str:
+    global _COOKIE_HEADER_CACHE
+    if _COOKIE_HEADER_CACHE is not None:
+        return _COOKIE_HEADER_CACHE
+
     if not path or not os.path.exists(path):
         _dbg("cookie file not found | path=%s", path)
-        return ""
+        _COOKIE_HEADER_CACHE = ""
+        return _COOKIE_HEADER_CACHE
 
     pairs = []
     try:
@@ -130,10 +136,12 @@ def _load_cookie_header(path: str) -> str:
 
         header = "; ".join(pairs)
         _dbg("cookie header loaded | path=%s pairs=%s", path, len(pairs))
-        return header
+        _COOKIE_HEADER_CACHE = header
+        return _COOKIE_HEADER_CACHE
     except Exception as e:
         _dbg("failed to load cookie file | path=%s err=%r", path, e)
-        return ""
+        _COOKIE_HEADER_CACHE = ""
+        return _COOKIE_HEADER_CACHE
 
 def _build_headers(referer: str | None = None) -> dict:
     headers = dict(WEB_HEADERS)
@@ -221,7 +229,7 @@ def _find_video_section(body: bytes, video_id: str) -> bytes | None:
         _dbg("section found with end marker | video_id=%s start=%s len=%s", video_id, start, len(section))
         return section
     max_len = min(20000, len(remaining))
-    section = remaining[:max_len]
+    section = remaining[:maxLen] if False else remaining[:max_len]
     _dbg("section fallback window | video_id=%s start=%s len=%s", video_id, start, len(section))
     return section
 
@@ -249,14 +257,12 @@ def _extract_title_desc_from_html(body_text: str) -> tuple[str, str]:
         or _extract_meta_content(body_text, "twitter:description")
         or ""
     )
-
     if not title:
         m = re.search(r"<title[^>]*>(.*?)</title>", body_text or "", flags=re.I | re.S)
         if m:
             title = html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
-
     return title, desc
-    
+
 def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     data = {
         "hd_url": "",
@@ -324,6 +330,15 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
     if meta_desc:
         data["desc"] = meta_desc
         _dbg("desc meta found | desc=%s", _clip(data["desc"], 200))
+
+    _dbg(
+        "parse body done | video_id=%s hd=%s sd=%s title=%s desc=%s",
+        video_id,
+        bool(data["hd_url"]),
+        bool(data["sd_url"]),
+        bool(data["title"]),
+        bool(data["desc"]),
+    )
 
     if not data["hd_url"] and not data["sd_url"]:
         preview = _clip(section_text, 1500)
@@ -542,10 +557,13 @@ async def _get_video_data(content_url: str, content_id: str) -> dict:
         if status != 200:
             _write_debug_file("facebook_http_error", body)
             raise RuntimeError(f"failed to get page: HTTP {status}")
-    return _parse_video_from_body(body, content_id)
+    parsed = _parse_video_from_body(body, content_id)
+    _dbg("after _parse_video_from_body | parsed=%r", parsed)
+    return parsed
 
 async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping Facebook video...</b>")
+    _dbg("facebook init | BASE_DIR=%s COOKIES_PATH=%s exists=%s", BASE_DIR, COOKIES_PATH, os.path.exists(COOKIES_PATH))
     _dbg("facebook scrape start | raw_url=%s fmt_key=%s", raw_url, fmt_key)
 
     content_url = (raw_url or "").strip()
@@ -560,24 +578,32 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
         _dbg("scrape failed before fetch | reason=no content id | content_url=%s", content_url)
         raise RuntimeError("failed to extract facebook content id")
 
+    _dbg("before _get_video_data | content_url=%s content_id=%s", content_url, content_id)
     video_data = await _get_video_data(content_url, content_id)
+    _dbg("after _get_video_data | video_data=%r", video_data)
+
     _dbg(
         "video data parsed | title=%s hd=%s sd=%s",
-        _clip(video_data.get("title", ""), 150),
+        _clip(str(video_data.get("title", "")), 150),
         bool(video_data.get("hd_url")),
         bool(video_data.get("sd_url")),
     )
 
     video_url = video_data.get("hd_url") or video_data.get("sd_url")
+    _dbg("video url selected | exists=%s", bool(video_url))
     if not video_url:
         _dbg("video url empty after parse | content_url=%s content_id=%s", content_url, content_id)
         raise RuntimeError("no video formats found")
 
-    title = (video_data.get("title") or "Facebook Video").strip() or "Facebook Video"
+    title = (str(video_data.get("title") or "Facebook Video")).strip() or "Facebook Video"
+    _dbg("title final | title=%s", _clip(title, 150))
+
     out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
+    _dbg("output path ready | out=%s", out_path)
 
     session = await get_http_session()
     headers = _build_headers(_normalize_content_url(content_url, content_id))
+    _dbg("headers ready | referer=%s cookie=%s", headers.get("Referer"), bool(headers.get("Cookie")))
 
     _dbg("download chosen url | url=%s out=%s", _clip(video_url, 200), out_path)
 
@@ -591,6 +617,8 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
         "Downloading Facebook video...",
         headers=headers,
     )
+
+    _dbg("facebook scrape download done | out=%s", out_path)
 
     return {
         "path": out_path,
