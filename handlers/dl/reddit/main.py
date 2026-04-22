@@ -61,12 +61,15 @@ def _load_reddit_cookie_header(path:str)->str:
                     continue
                 parts=line.split("\t")
                 if len(parts)>=7:
-                    name=(parts[5] or "").strip(); value=(parts[6] or "").strip()
-                    if name: pairs.append(f"{name}={value}")
+                    domain=(parts[0] or "").strip().lower()
+                    name=(parts[5] or "").strip()
+                    value=(parts[6] or "").strip()
+                    if not name:
+                        continue
+                    if "reddit.com" not in domain:
+                        continue
+                    pairs.append(f"{name}={value}")
                     continue
-                if "=" in line and "\t" not in line and not line.lower().startswith(("http://","https://")):
-                    name,value=line.split("=",1); name=name.strip(); value=value.strip()
-                    if name: pairs.append(f"{name}={value}")
         _REDDIT_COOKIE_HEADER_CACHE="; ".join(pairs)
         _dbg("reddit cookie loaded | path=%s pairs=%s",path,len(pairs))
         return _REDDIT_COOKIE_HEADER_CACHE
