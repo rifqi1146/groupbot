@@ -155,7 +155,7 @@ def _pick_media_entities(tweet:dict)->list:
     return []
 
 def _clean_tweet_caption(text:str)->str:
-    text=(text or "").strip()
+    text=html.unescape((text or "").strip())
     if not text:
         return ""
     text=re.sub(r"https?://t\.co/\w+","",text,flags=re.I)
