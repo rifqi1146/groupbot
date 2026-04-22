@@ -154,6 +154,19 @@ def _pick_media_entities(tweet:dict)->list:
     if extended.get("media"): return extended["media"]
     return []
 
+def _clean_tweet_caption(text:str)->str:
+    text=(text or "").strip()
+    if not text:
+        return ""
+    text=re.sub(r"https?://t\.co/\w+","",text,flags=re.I)
+    text=re.sub(r"\s+"," ",text).strip()
+    return text
+
+def _fallback_title(items:list)->str:
+    if len(items)==1 and str(items[0].get("type") or "").strip().lower()=="video":
+        return "X Video"
+    return "X Media"
+    
 def _resolution_from_url(url:str)->tuple[int,int]:
     m=RES_RE.search(url or "")
     if not m: return 0,0
@@ -184,8 +197,11 @@ def _parse_tweet_media(tweet:dict)->dict:
                 w,h=_resolution_from_url(best["url"])
                 items.append({"type":"video","url":best["url"],"bitrate":int(best.get("bitrate") or 0),"width":w,"height":h})
     if not items: raise RuntimeError("tweet has no downloadable media")
-    _dbg("tweet media parsed | count=%s types=%s",len(items),[x.get("type") for x in items])
-    return {"items":items}
+    caption=_clean_tweet_caption(tweet.get("full_text") or "")
+    fallback=_fallback_title(items)
+    title=caption or fallback
+    _dbg("tweet media parsed | count=%s types=%s caption=%s title=%s",len(items),[x.get("type") for x in items],bool(caption),title)
+    return {"items":items,"caption":caption,"title":title}
 
 def _format_size(num_bytes:int)->str:
     if num_bytes<=0: return "0 B"
@@ -308,15 +324,15 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
 
 async def _download_x_items(parsed:dict,bot,chat_id,status_msg_id)->dict:
     items=parsed.get("items") or []
+    title=(parsed.get("title") or "").strip() or _fallback_title(items)
     session=await get_http_session()
     downloaded_items=[]; total=len(items)
     for idx,item in enumerate(items,start=1):
         downloaded=await _download_one_media(session,item,bot,chat_id,status_msg_id,idx,total)
         downloaded_items.append(downloaded)
     if len(downloaded_items)==1:
-        only=downloaded_items[0]
-        return {"path":only["path"],"title":"X Video" if only.get("type")=="video" else "X Media"}
-    return {"items":downloaded_items,"title":"X Media"}
+        return {"path":downloaded_items[0]["path"],"title":title}
+    return {"items":downloaded_items,"title":title}
 
 async def twitter_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
     del fmt_key,format_id,has_audio
