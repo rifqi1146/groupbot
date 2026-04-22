@@ -13,6 +13,7 @@ from .ytdlp import ytdlp_download
 from .instagram.main import is_instagram_url, instagram_api_download
 from .youtube.main import is_youtube_url, sonzai_youtube_download
 from .facebook.main import is_facebook_url, facebook_download
+from .threads.main import is_threads_url, threads_download
 
 log = logging.getLogger(__name__)
 
@@ -445,6 +446,16 @@ async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, for
             log.warning("Instagram API download failed, falling back to yt-dlp | url=%s err=%r", raw_url, e)
     if is_facebook_url(raw_url):
         return await facebook_download(
+            raw_url=raw_url,
+            fmt_key=fmt_key,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            format_id=format_id,
+            has_audio=has_audio,
+        )
+    if is_threads_url(raw_url):
+        return await threads_download(
             raw_url=raw_url,
             fmt_key=fmt_key,
             bot=bot,
