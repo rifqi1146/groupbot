@@ -134,6 +134,13 @@ async def _safe_edit_progress(bot,chat_id,status_msg_id,title:str,downloaded:int
     except Exception:
         pass
 
+def _inspect_image_dims(path:str):
+    try:
+        with Image.open(path) as img:
+            _dbg("image dims | path=%s width=%s height=%s mode=%s format=%s",path,img.size[0],img.size[1],img.mode,img.format)
+    except Exception as e:
+        _dbg("image dims inspect failed | path=%s err=%r",path,e)
+        
 def _extract_post_id(url:str)->str:
     text=(url or "").strip()
     m=COMMENTS_RE.search(text)
