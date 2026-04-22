@@ -9,6 +9,7 @@ except Exception:
 from handlers.dl.utils import sanitize_filename,progress_bar
 from handlers.dl.ytdlp import ytdlp_download
 from PIL import Image
+import subprocess
 
 log=logging.getLogger(__name__)
 
@@ -39,6 +40,13 @@ def is_reddit_url(url:str)->bool:
     host=(urlparse(text).hostname or "").lower()
     return host in REDDIT_HOSTS or "reddit.com" in host or "redd.it" in host
 
+def _build_reddit_media_headers()->dict:
+    return {
+        "User-Agent": REDDIT_HEADERS["User-Agent"],
+        "Referer": "https://www.reddit.com/",
+        "Accept": "image/jpeg,image/png,image/*;q=0.9,*/*;q=0.8",
+    }
+    
 async def _safe_edit_status(bot,chat_id,status_msg_id,text:str):
     try:
         await bot.edit_message_text(chat_id=chat_id,message_id=status_msg_id,text=text,parse_mode="HTML",disable_web_page_preview=True)
@@ -194,6 +202,19 @@ def _pick_post_data(payload:list)->dict:
     except Exception as e:
         raise RuntimeError(f"failed parsing reddit post: {e}") from e
 
+def _inspect_downloaded_file(path:str):
+    try:
+        size=os.path.getsize(path)
+    except Exception as e:
+        _dbg("file inspect size failed | path=%s err=%r",path,e)
+        return
+    try:
+        with open(path,"rb") as f:
+            sig=f.read(32)
+        _dbg("file inspect | path=%s size=%s sig_hex=%s sig_text=%s",path,size,sig.hex(),repr(sig[:16]))
+    except Exception as e:
+        _dbg("file inspect read failed | path=%s err=%r",path,e)
+        
 def _safe_title(post:dict,items:list)->str:
     title=(post.get("title") or "").strip()
     if title: return title
@@ -371,10 +392,20 @@ def _guess_ext(media_type:str,url:str)->str:
 
 def _fix_photo_for_telegram(path:str)->str:
     fixed_path=os.path.splitext(path)[0]+"_tg.jpg"
-    with Image.open(path) as img:
-        img=img.convert("RGB")
-        img.save(fixed_path,format="JPEG",quality=95,optimize=True)
-    return fixed_path
+    try:
+        with Image.open(path) as img:
+            img=img.convert("RGB")
+            img.save(fixed_path,format="JPEG",quality=95,optimize=True)
+        return fixed_path
+    except Exception:
+        result=subprocess.run(
+            ["ffmpeg","-y","-i",path,"-frames:v","1","-q:v","2",fixed_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode!=0 or not os.path.exists(fixed_path):
+            raise RuntimeError("failed to convert reddit image for telegram")
+        return fixed_path
 
 async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:int,total:int)->dict:
     media_type=str(item.get("type") or "").strip().lower()
@@ -383,7 +414,7 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
     ext=_guess_ext(media_type,media_url)
     title="Reddit Video" if media_type=="video" else "Reddit Media"
     out_path=os.path.join(TMP_DIR,f"{uuid.uuid4().hex}_{sanitize_filename(title)}{ext}")
-    headers=_build_reddit_headers("https://www.reddit.com/")
+    headers=_build_reddit_media_headers()
     title_text=f"Downloading {'Reddit Video' if media_type=='video' else 'Reddit Media'}... ({idx}/{total})"
     try:
         await _aria2c_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
@@ -394,10 +425,19 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
             except Exception: pass
         await _aiohttp_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
     if media_type=="photo":
+        _inspect_downloaded_file(out_path)
         try:
             out_path=_fix_photo_for_telegram(out_path)
         except Exception as e:
-            log.warning("Reddit image normalize failed | path=%s err=%r",out_path,e)
+            log.warning("Reddit image normalize failed, redownload with aiohttp | path=%s err=%r",out_path,e)
+            try:
+                if os.path.exists(out_path):
+                    os.remove(out_path)
+            except Exception:
+                pass
+            await _aiohttp_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
+            _inspect_downloaded_file(out_path)
+            out_path=_fix_photo_for_telegram(out_path)
     return {"type":media_type if media_type in {"video","photo"} else "photo","path":out_path,"url":media_url}
 
 async def _download_reddit_items(parsed:dict,bot,chat_id,status_msg_id)->dict:
