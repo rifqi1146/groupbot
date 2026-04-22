@@ -8,6 +8,7 @@ except Exception:
     BASE_DIR=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from handlers.dl.utils import sanitize_filename,progress_bar
 from handlers.dl.ytdlp import ytdlp_download
+from PIL import Image
 
 log=logging.getLogger(__name__)
 
@@ -368,6 +369,13 @@ def _guess_ext(media_type:str,url:str)->str:
     if ".jpeg" in low: return ".jpeg"
     return ".jpg"
 
+def _fix_photo_for_telegram(path:str)->str:
+    fixed_path=os.path.splitext(path)[0]+"_tg.jpg"
+    with Image.open(path) as img:
+        img=img.convert("RGB")
+        img.save(fixed_path,format="JPEG",quality=95,optimize=True)
+    return fixed_path
+
 async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:int,total:int)->dict:
     media_type=str(item.get("type") or "").strip().lower()
     media_url=str(item.get("url") or "").strip()
@@ -385,6 +393,11 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
             try: os.remove(out_path)
             except Exception: pass
         await _aiohttp_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
+    if media_type=="photo":
+        try:
+            out_path=_fix_photo_for_telegram(out_path)
+        except Exception as e:
+            log.warning("Reddit image normalize failed | path=%s err=%r",out_path,e)
     return {"type":media_type if media_type in {"video","photo"} else "photo","path":out_path,"url":media_url}
 
 async def _download_reddit_items(parsed:dict,bot,chat_id,status_msg_id)->dict:
