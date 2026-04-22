@@ -169,12 +169,10 @@ def _parse_threads_embed_media(body: bytes) -> dict:
         "caption": "",
         "items": [],
     }
-
     caption_el = soup.select_one(".BodyTextContainer")
     if caption_el:
         caption = caption_el.get_text(" ", strip=True)
         result["caption"] = html.unescape(caption or "").strip()
-
     seen = set()
     for container in soup.select(".MediaContainer, .SoloMediaContainer"):
         for vid in container.select("video"):
@@ -189,7 +187,6 @@ def _parse_threads_embed_media(body: bytes) -> dict:
                 "type": "video",
                 "url": src,
             })
-
         for img in container.select("img"):
             src = _normalize_media_url(img.get("src", ""))
             if not src or src in seen:
@@ -199,12 +196,9 @@ def _parse_threads_embed_media(body: bytes) -> dict:
                 "type": "photo",
                 "url": src,
             })
-
     _dbg("parse embed done | caption=%s items=%s", bool(result["caption"]), len(result["items"]))
-
     if not result["items"]:
         raise RuntimeError("no media found in threads embed")
-
     return result
 
 async def _probe_total_bytes(session, url: str, headers: dict | None = None) -> int:
@@ -232,11 +226,9 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
     aria2 = shutil.which("aria2c")
     if not aria2:
         raise RuntimeError("aria2c not found in PATH")
-
     total = await _probe_total_bytes(session, media_url, headers=headers)
     out_dir = os.path.dirname(out_path) or "."
     out_name = os.path.basename(out_path)
-
     cmd = [
         aria2,
         "--dir", out_dir,
@@ -256,21 +248,17 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         if v:
             cmd.extend(["--header", f"{k}: {v}"])
     cmd.append(media_url)
-
     log.info("Threads aria2c start | url=%s out=%s", media_url, out_path)
     log.debug("Threads aria2c cmd | %s", " ".join(cmd))
     _dbg("aria2c start | out=%s url=%s", out_path, _clip(media_url, 200))
-
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-
     last_edit = -10.0
     last_sample_size = 0
     last_sample_ts = time.time()
-
     while proc.returncode is None:
         await asyncio.sleep(0.7)
         if not os.path.exists(out_path):
@@ -285,22 +273,19 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         elapsed = max(now - last_sample_ts, 0.001)
         speed_bps = max(downloaded - last_sample_size, 0) / elapsed
         eta_seconds = ((total - downloaded) / speed_bps) if total > 0 and speed_bps > 0 and downloaded <= total else None
-        if now - last_edit < 3 and last_edit >= 0:
+        if now - last_edit < 2 and last_edit >= 0:
             continue
         await _safe_edit_progress(bot, chat_id, status_msg_id, title_text, downloaded, total, speed_bps, eta_seconds)
         last_edit = now
         last_sample_size = downloaded
         last_sample_ts = now
-
     _, stderr = await proc.communicate()
     stderr_text = stderr.decode(errors="ignore").strip() if stderr else ""
     if stderr_text:
         log.debug("Threads aria2c stderr | %s", stderr_text)
-
     if proc.returncode != 0:
         _dbg("aria2c failed | code=%s err=%s", proc.returncode, _clip(stderr_text, 500))
         raise RuntimeError(stderr_text or f"aria2c exited with code {proc.returncode}")
-
     log.info("Threads aria2c success | out=%s", out_path)
     _dbg("aria2c success | out=%s", out_path)
 
@@ -315,7 +300,6 @@ async def _aiohttp_download_with_progress(session, media_url: str, out_path: str
         last_edit = -10.0
         last_sample_size = 0
         last_sample_ts = time.time()
-
         async with aiofiles.open(out_path, "wb") as f:
             async for chunk in r.content.iter_chunked(64 * 1024):
                 if not chunk:
@@ -326,7 +310,7 @@ async def _aiohttp_download_with_progress(session, media_url: str, out_path: str
                 elapsed = max(now - last_sample_ts, 0.001)
                 speed_bps = max(downloaded - last_sample_size, 0) / elapsed
                 eta_seconds = ((total - downloaded) / speed_bps) if total > 0 and speed_bps > 0 and downloaded <= total else None
-                if now - last_edit < 3 and last_edit >= 0:
+                if now - last_edit < 2 and last_edit >= 0:
                     continue
                 await _safe_edit_progress(bot, chat_id, status_msg_id, title_text, downloaded, total, speed_bps, eta_seconds)
                 last_edit = now
@@ -339,18 +323,14 @@ async def _download_one_media(session, item: dict, bot, chat_id, status_msg_id, 
     media_url = str(item.get("url") or "").strip()
     if not media_url:
         raise RuntimeError("media url kosong")
-
     ext = ".mp4" if media_type == "video" else ".jpg"
     filename = f"{uuid.uuid4().hex}_{sanitize_filename(media_type or 'media')}{ext}"
     out_path = os.path.join(TMP_DIR, filename)
-
     headers = {
         "User-Agent": THREADS_HEADERS["User-Agent"],
         "Referer": "https://www.threads.net/",
     }
-
     title_text = f"Downloading Threads {'video' if media_type == 'video' else 'image'}... ({idx}/{total})"
-
     try:
         await _aria2c_download_with_progress(
             session=session,
@@ -379,7 +359,6 @@ async def _download_one_media(session, item: dict, bot, chat_id, status_msg_id, 
             title_text=title_text,
             headers=headers,
         )
-
     return {
         "type": media_type if media_type in {"video", "photo"} else "photo",
         "path": out_path,
@@ -390,11 +369,9 @@ async def _download_threads_items(parsed: dict, bot, chat_id, status_msg_id) -> 
     items = parsed.get("items") or []
     caption = (parsed.get("caption") or "").strip()
     title = caption or "Threads Post"
-
     session = await get_http_session()
     downloaded_items = []
     total = len(items)
-
     for idx, item in enumerate(items, start=1):
         label = "video" if item.get("type") == "video" else "image"
         await _safe_edit_status(
@@ -413,14 +390,12 @@ async def _download_threads_items(parsed: dict, bot, chat_id, status_msg_id) -> 
             total=total,
         )
         downloaded_items.append(downloaded)
-
     if len(downloaded_items) == 1:
         only = downloaded_items[0]
         return {
             "path": only["path"],
             "title": title,
         }
-
     return {
         "items": downloaded_items,
         "title": title,
@@ -437,18 +412,14 @@ async def threads_scrape_download(
     has_audio: bool = False,
 ):
     del fmt_key, format_id, has_audio
-
     await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping Threads post...</b>")
-
     post_id = _extract_threads_post_id(raw_url)
     _dbg("threads scrape start | url=%s post_id=%s", raw_url, post_id)
     if not post_id:
         raise RuntimeError("failed to extract threads post id")
-
     body = await _fetch_threads_embed_html(post_id)
     parsed = _parse_threads_embed_media(body)
     _dbg("threads parsed | items=%s caption=%s", len(parsed.get("items") or []), bool(parsed.get("caption")))
-
     result = await _download_threads_items(parsed, bot, chat_id, status_msg_id)
     _dbg("threads scrape success | result_type=%s", "album" if isinstance(result, dict) and result.get("items") else "single")
     return result
