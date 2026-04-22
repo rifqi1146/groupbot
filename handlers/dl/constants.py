@@ -31,6 +31,8 @@ AUTO_DOWNLOAD_DOMAINS = {
     "pornhub.com",
     "xnxx.com",
     "xhamster.com",
+    "threads.net",
+    "threads.com",
     "redtube.com",
     "xvideos.com",
     "vjav.com",
