@@ -2,12 +2,18 @@ import os,re,time,uuid,html,shutil,asyncio,aiohttp,aiofiles,logging
 from urllib.parse import urlparse,urlunparse
 from utils.http import get_http_session
 from handlers.dl.constants import TMP_DIR
+try:
+    from handlers.dl.constants import BASE_DIR
+except Exception:
+    BASE_DIR=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from handlers.dl.utils import sanitize_filename,progress_bar
 from handlers.dl.ytdlp import ytdlp_download
 
 log=logging.getLogger(__name__)
 
 DEBUG_REDDIT=True
+REDDIT_COOKIES_PATH=os.path.abspath(os.path.join(BASE_DIR,"..","..","data","cookies.txt"))
+_REDDIT_COOKIE_HEADER_CACHE=None
 REDDIT_HOSTS={"reddit.com","www.reddit.com","old.reddit.com","new.reddit.com","redd.it"}
 SHORT_RE=re.compile(r"https?://(?:(?:www|old|new)\.)?reddit\.com/r/[^/]+/s/[A-Za-z0-9]+/?",re.I)
 COMMENTS_RE=re.compile(r"https?://(?:(?:www|old|new)\.)?reddit\.com/r/[^/]+/comments/([a-z0-9]+)/[^/?#]*/?",re.I)
@@ -38,6 +44,46 @@ async def _safe_edit_status(bot,chat_id,status_msg_id,text:str):
     except Exception:
         pass
 
+def _load_reddit_cookie_header(path:str)->str:
+    global _REDDIT_COOKIE_HEADER_CACHE
+    if _REDDIT_COOKIE_HEADER_CACHE is not None:
+        return _REDDIT_COOKIE_HEADER_CACHE
+    if not path or not os.path.exists(path):
+        _dbg("reddit cookie file not found | path=%s",path)
+        _REDDIT_COOKIE_HEADER_CACHE=""
+        return _REDDIT_COOKIE_HEADER_CACHE
+    pairs=[]
+    try:
+        with open(path,"r",encoding="utf-8",errors="ignore") as f:
+            for raw in f:
+                line=raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts=line.split("\t")
+                if len(parts)>=7:
+                    name=(parts[5] or "").strip(); value=(parts[6] or "").strip()
+                    if name: pairs.append(f"{name}={value}")
+                    continue
+                if "=" in line and "\t" not in line and not line.lower().startswith(("http://","https://")):
+                    name,value=line.split("=",1); name=name.strip(); value=value.strip()
+                    if name: pairs.append(f"{name}={value}")
+        _REDDIT_COOKIE_HEADER_CACHE="; ".join(pairs)
+        _dbg("reddit cookie loaded | path=%s pairs=%s",path,len(pairs))
+        return _REDDIT_COOKIE_HEADER_CACHE
+    except Exception as e:
+        _dbg("reddit cookie load failed | path=%s err=%r",path,e)
+        _REDDIT_COOKIE_HEADER_CACHE=""
+        return _REDDIT_COOKIE_HEADER_CACHE
+
+def _build_reddit_headers(referer:str|None=None)->dict:
+    headers=dict(REDDIT_HEADERS)
+    if referer:
+        headers["Referer"]=referer
+    cookie=_load_reddit_cookie_header(REDDIT_COOKIES_PATH)
+    if cookie:
+        headers["Cookie"]=cookie
+    return headers
+    
 def _format_size(num_bytes:int)->str:
     if num_bytes<=0: return "0 B"
     value=float(num_bytes)
@@ -86,8 +132,9 @@ def _extract_post_id(url:str)->str:
 
 async def _resolve_short_url(url:str)->str:
     session=await get_http_session()
-    _dbg("short resolve start | url=%s",url)
-    async with session.get(url,headers=REDDIT_HEADERS,timeout=aiohttp.ClientTimeout(total=20),allow_redirects=True) as resp:
+    headers=_build_reddit_headers("https://www.reddit.com/")
+    _dbg("short resolve start | url=%s cookie=%s",url,bool(headers.get("Cookie")))
+    async with session.get(url,headers=headers,timeout=aiohttp.ClientTimeout(total=20),allow_redirects=True) as resp:
         final=str(resp.url)
         _dbg("short resolve done | status=%s final=%s",resp.status,final)
         return final
@@ -107,11 +154,12 @@ def _normalize_comments_url(url:str)->str:
 
 async def _fetch_json_from_candidates(urls:list[str])->dict:
     session=await get_http_session()
+    headers=_build_reddit_headers("https://www.reddit.com/")
     last_err=None
     for url in urls:
         try:
-            _dbg("json fetch start | url=%s",url)
-            async with session.get(url,headers=REDDIT_HEADERS,timeout=aiohttp.ClientTimeout(total=30),allow_redirects=True) as resp:
+            _dbg("json fetch start | url=%s cookie=%s",url,bool(headers.get("Cookie")))
+            async with session.get(url,headers=headers,timeout=aiohttp.ClientTimeout(total=30),allow_redirects=True) as resp:
                 text=await resp.text()
                 _dbg("json fetch done | status=%s url=%s body_len=%s",resp.status,url,len(text))
                 if resp.status!=200:
@@ -324,7 +372,7 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
     ext=_guess_ext(media_type,media_url)
     title="Reddit Video" if media_type=="video" else "Reddit Media"
     out_path=os.path.join(TMP_DIR,f"{uuid.uuid4().hex}_{sanitize_filename(title)}{ext}")
-    headers={"User-Agent":REDDIT_HEADERS["User-Agent"],"Referer":"https://www.reddit.com/"}
+    headers=_build_reddit_headers("https://www.reddit.com/")
     title_text=f"Downloading {'Reddit Video' if media_type=='video' else 'Reddit Media'}... ({idx}/{total})"
     try:
         await _aria2c_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
@@ -353,7 +401,10 @@ async def reddit_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_
     await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Reddit media...</b>")
     text=(raw_url or "").strip()
     if SHORT_RE.match(text):
-        text=await _resolve_short_url(text)
+        resolved=await _resolve_short_url(text)
+        if resolved==text or not _extract_post_id(resolved):
+            raise RuntimeError("failed to resolve reddit short url")
+        text=resolved
     comments_url=_normalize_comments_url(text)
     if not comments_url: raise RuntimeError("failed to normalize reddit url")
     urls=[comments_url,comments_url.replace("www.reddit.com","old.reddit.com"),comments_url.replace("www.reddit.com","new.reddit.com")]
