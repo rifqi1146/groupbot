@@ -392,14 +392,44 @@ def _guess_ext(media_type:str,url:str)->str:
 
 def _fix_photo_for_telegram(path:str)->str:
     fixed_path=os.path.splitext(path)[0]+"_tg.jpg"
+    max_side=1280
+    min_side=32
+    max_ratio=20
     try:
         with Image.open(path) as img:
             img=img.convert("RGB")
-            img.save(fixed_path,format="JPEG",quality=95,optimize=True)
+            w,h=img.size
+            if w<=0 or h<=0:
+                raise RuntimeError("invalid image size")
+            ratio=max(w,h)/max(1,min(w,h))
+            if ratio>max_ratio:
+                if w>h:
+                    h=max(min_side,int(w/max_ratio))
+                else:
+                    w=max(min_side,int(h/max_ratio))
+                img=img.resize((w,h),Image.LANCZOS)
+            if max(w,h)>max_side:
+                if w>=h:
+                    nh=max(min_side,int(h*max_side/w))
+                    nw=max_side
+                else:
+                    nw=max(min_side,int(w*max_side/h))
+                    nh=max_side
+                img=img.resize((nw,nh),Image.LANCZOS)
+            if min(img.size)<min_side:
+                w,h=img.size
+                if w<h:
+                    nw=min_side
+                    nh=max(min_side,int(h*(min_side/w)))
+                else:
+                    nh=min_side
+                    nw=max(min_side,int(w*(min_side/h)))
+                img=img.resize((nw,nh),Image.LANCZOS)
+            img.save(fixed_path,format="JPEG",quality=92,optimize=True)
         return fixed_path
     except Exception:
         result=subprocess.run(
-            ["ffmpeg","-y","-i",path,"-frames:v","1","-q:v","2",fixed_path],
+            ["ffmpeg","-y","-i",path,"-vf","scale='min(1280,iw)':-2","-frames:v","1","-q:v","2",fixed_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -426,8 +456,10 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
         await _aiohttp_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
     if media_type=="photo":
         _inspect_downloaded_file(out_path)
+        _inspect_image_dims(out_path)
         try:
             out_path=_fix_photo_for_telegram(out_path)
+            _inspect_image_dims(out_path)
         except Exception as e:
             log.warning("Reddit image normalize failed, redownload with aiohttp | path=%s err=%r",out_path,e)
             try:
@@ -437,7 +469,9 @@ async def _download_one_media(session,item:dict,bot,chat_id,status_msg_id,idx:in
                 pass
             await _aiohttp_download_with_progress(session,media_url,out_path,bot,chat_id,status_msg_id,title_text,headers=headers)
             _inspect_downloaded_file(out_path)
+            _inspect_image_dims(out_path)
             out_path=_fix_photo_for_telegram(out_path)
+            _inspect_image_dims(out_path)
     return {"type":media_type if media_type in {"video","photo"} else "photo","path":out_path,"url":media_url}
 
 async def _download_reddit_items(parsed:dict,bot,chat_id,status_msg_id)->dict:
