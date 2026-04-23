@@ -191,12 +191,44 @@ def _clean_fb_title(text: str, fallback: str = "Facebook Video") -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text or fallback
 
+def _is_bad_fb_title(text: str) -> bool:
+    text = re.sub(r"\s+", " ", (text or "").strip()).lower()
+    return text in {"", "facebook", "reel", "watch", "facebook reel", "facebook watch"}
+
+def _clean_fb_title(text: str, fallback: str = "Facebook Video") -> str:
+    text = (text or "").strip()
+    text = re.sub(r"\s*\|\s*facebook\s*$", "", text, flags=re.I).strip()
+    text = re.sub(r"\s*-\s*facebook\s*$", "", text, flags=re.I).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    if _is_bad_fb_title(text):
+        return fallback
+    return text or fallback
+
 def _extract_title_from_html(body: bytes, fallback: str = "Facebook Video") -> str:
     text = body.decode("utf-8", errors="ignore")
-    for rx in (OG_TITLE_RE, TWITTER_TITLE_RE, TITLE_TAG_RE):
-        m = rx.search(text)
-        if m:
-            return _clean_fb_title(m.group(1), fallback)
+
+    patterns = [
+        r'"message"\s*:\s*\{"text"\s*:\s*"([^"]+)"',
+        r'"title"\s*:\s*\{"text"\s*:\s*"([^"]+)"',
+        r'"creation_story".{0,4000}?"message".{0,1000}?"text"\s*:\s*"([^"]+)"',
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r"<title[^>]*>(.*?)</title>",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text, re.I | re.S)
+        if not m:
+            continue
+        val = m.group(1)
+        val = val.replace(r"\/", "/")
+        val = re.sub(r'\\u([0-9a-fA-F]{4})', lambda x: chr(int(x.group(1), 16)), val)
+        val = _clean_fb_title(val, "")
+        if val and not _is_bad_fb_title(val):
+            return val
+
     return fallback
 
 def _find_video_section(body: bytes, video_id: str) -> bytes | None:
