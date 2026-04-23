@@ -1,7 +1,5 @@
 import os
 import re
-import json
-import subprocess
 import time
 import uuid
 import shutil
@@ -12,12 +10,10 @@ import logging
 from urllib.parse import urlparse, parse_qs
 from utils.http import get_http_session
 from handlers.dl.constants import TMP_DIR
-
 try:
     from handlers.dl.constants import BASE_DIR
 except Exception:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from handlers.dl.utils import sanitize_filename
 from handlers.dl.ytdlp import ytdlp_download
 
@@ -39,65 +35,15 @@ WEB_HEADERS = {
 }
 
 SHARE_RE = re.compile(r"https?://(?:(?:www|m)\.)?facebook\.com/share/(?:r|v|p)/([a-zA-Z0-9]+)", re.I)
-CONTENT_RE = re.compile(
-    r"https?://(?:(?:www|m|mbasic)\.)?facebook\.com/"
-    r"(?:watch/?\?(?:[^&]*&)*v=|(?:reel|videos?|posts?)/|[^/]+/(?:videos|posts|reels?)/)"
-    r"([a-zA-Z0-9]+)",
-    re.I,
-)
+CONTENT_RE = re.compile(r"https?://(?:(?:www|m|mbasic)\.)?facebook\.com/" r"(?:watch/?\?(?:[^&]*&)*v=|(?:reel|videos?|posts?)/|[^/]+/(?:videos|posts|reels?)/)" r"([a-zA-Z0-9]+)", re.I)
+HD_URL_PATTERN = re.compile(r'"progressive_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"failure_reason"\s*:\s*[^,]+\s*,\s*"metadata"\s*:\s*\{\s*"quality"\s*:\s*"HD"\s*\}', re.S)
+SD_URL_PATTERN = re.compile(r'"progressive_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"failure_reason"\s*:\s*[^,]+\s*,\s*"metadata"\s*:\s*\{\s*"quality"\s*:\s*"SD"\s*\}', re.S)
+BROWSER_NATIVE_HD_URL_PATTERN = re.compile(r'"browser_native_hd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', re.S)
+BROWSER_NATIVE_SD_URL_PATTERN = re.compile(r'"browser_native_sd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', re.S)
+OG_TITLE_RE = re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', re.I)
+TWITTER_TITLE_RE = re.compile(r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']', re.I)
+TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
 
-HD_URL_PATTERN = re.compile(
-    r'"progressive_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"failure_reason"\s*:\s*[^,]+\s*,\s*"metadata"\s*:\s*\{\s*"quality"\s*:\s*"HD"\s*\}',
-    re.S,
-)
-SD_URL_PATTERN = re.compile(
-    r'"progressive_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"failure_reason"\s*:\s*[^,]+\s*,\s*"metadata"\s*:\s*\{\s*"quality"\s*:\s*"SD"\s*\}',
-    re.S,
-)
-BROWSER_NATIVE_HD_URL_PATTERN = re.compile(
-    r'"browser_native_hd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
-    re.S,
-)
-BROWSER_NATIVE_SD_URL_PATTERN = re.compile(
-    r'"browser_native_sd_url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"',
-    re.S,
-)
-
-def _extract_fb_title_from_info(info: dict, fallback: str = "Facebook Video") -> str:
-    candidates = [
-        (info.get("title") or "").strip(),
-        (info.get("description") or "").strip(),
-        (info.get("uploader") or "").strip(),
-    ]
-    for text in candidates:
-        if text and not re.fullmatch(r"Facebook video #\d+", text, re.I):
-            return text
-    return fallback
-
-def _probe_facebook_info_sync(url: str) -> dict:
-    ytdlp = shutil.which("yt-dlp")
-    if not ytdlp:
-        raise RuntimeError("yt-dlp not found in PATH")
-    cmd = [ytdlp]
-    cookie_header = _load_cookie_header(COOKIES_PATH)
-    if os.path.exists(COOKIES_PATH):
-        cmd += ["--cookies", COOKIES_PATH]
-    cmd += [
-        "--skip-download",
-        "--no-playlist",
-        "--dump-single-json",
-        url,
-    ]
-    _dbg("fb probe start | url=%s", url)
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        err = (result.stderr or "").strip()
-        _dbg("fb probe failed | code=%s err=%s", result.returncode, _clip(err, 400))
-        raise RuntimeError(err or f"yt-dlp probe failed with code {result.returncode}")
-    data = json.loads(result.stdout or "{}")
-    _dbg("fb probe success | keys=%s", list(data.keys())[:12])
-    return data if isinstance(data, dict) else {}
-    
 def is_facebook_url(url: str) -> bool:
     text = (url or "").strip()
     if not text:
@@ -113,9 +59,7 @@ def _dbg(msg: str, *args):
 
 def _clip(text: str, limit: int = 400) -> str:
     text = str(text or "").replace("\n", "\\n").replace("\r", "\\r")
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "...<cut>"
+    return text if len(text) <= limit else text[:limit] + "...<cut>"
 
 def _write_debug_file(prefix: str, content: bytes | str) -> str:
     try:
@@ -137,12 +81,10 @@ def _load_cookie_header(path: str) -> str:
     global _COOKIE_HEADER_CACHE
     if _COOKIE_HEADER_CACHE is not None:
         return _COOKIE_HEADER_CACHE
-
     if not path or not os.path.exists(path):
         _dbg("cookie file not found | path=%s", path)
         _COOKIE_HEADER_CACHE = ""
         return _COOKIE_HEADER_CACHE
-
     pairs = []
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -150,7 +92,6 @@ def _load_cookie_header(path: str) -> str:
                 line = raw.strip()
                 if not line or line.startswith("#"):
                     continue
-
                 parts = line.split("\t")
                 if len(parts) >= 7:
                     name = (parts[5] or "").strip()
@@ -158,14 +99,12 @@ def _load_cookie_header(path: str) -> str:
                     if name:
                         pairs.append(f"{name}={value}")
                     continue
-
                 if "=" in line and "\t" not in line and not line.lower().startswith(("http://", "https://")):
                     name, value = line.split("=", 1)
                     name = name.strip()
                     value = value.strip()
                     if name:
                         pairs.append(f"{name}={value}")
-
         header = "; ".join(pairs)
         _dbg("cookie header loaded | path=%s pairs=%s", path, len(pairs))
         _COOKIE_HEADER_CACHE = header
@@ -241,8 +180,24 @@ def _unescape_unicode(text: str) -> str:
     return "".join(out)
 
 def _unescape_facebook_url(text: str) -> str:
-    text = (text or "").replace(r"\/", "/")
-    return _unescape_unicode(text)
+    return _unescape_unicode((text or "").replace(r"\/", "/"))
+
+def _clean_fb_title(text: str, fallback: str = "Facebook Video") -> str:
+    text = (text or "").strip()
+    if not text:
+        return fallback
+    text = re.sub(r"\s*\|\s*Facebook\s*$", "", text, flags=re.I).strip()
+    text = re.sub(r"\s*-\s*Facebook\s*$", "", text, flags=re.I).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or fallback
+
+def _extract_title_from_html(body: bytes, fallback: str = "Facebook Video") -> str:
+    text = body.decode("utf-8", errors="ignore")
+    for rx in (OG_TITLE_RE, TWITTER_TITLE_RE, TITLE_TAG_RE):
+        m = rx.search(text)
+        if m:
+            return _clean_fb_title(m.group(1), fallback)
+    return fallback
 
 def _find_video_section(body: bytes, video_id: str) -> bytes | None:
     if not video_id:
@@ -257,7 +212,7 @@ def _find_video_section(body: bytes, video_id: str) -> bytes | None:
     end_marker = f'"id":"{video_id}"'.encode()
     end_idx = remaining.find(end_marker)
     if end_idx > 0:
-        section = remaining[: end_idx + len(end_marker)]
+        section = remaining[:end_idx + len(end_marker)]
         _dbg("section found with end marker | video_id=%s start=%s len=%s", video_id, start, len(section))
         return section
     max_len = min(20000, len(remaining))
@@ -266,34 +221,25 @@ def _find_video_section(body: bytes, video_id: str) -> bytes | None:
     return section
 
 def _parse_video_from_body(body: bytes, video_id: str) -> dict:
-    data = {
-        "hd_url": "",
-        "sd_url": "",
-    }
-
+    data = {"hd_url": "", "sd_url": "", "title": _extract_title_from_html(body, "Facebook Video")}
     _dbg("parse body start | video_id=%s body_len=%s", video_id, len(body))
-
     section = _find_video_section(body, video_id)
     if section is None:
         section = body
         _dbg("section nil, fallback to full body | video_id=%s", video_id)
-
     section_text = section.decode("utf-8", errors="ignore")
-
     hd_match = HD_URL_PATTERN.search(section_text)
     if hd_match:
         data["hd_url"] = _unescape_facebook_url(hd_match.group(1))
         _dbg("hd progressive match found | url=%s", _clip(data["hd_url"], 200))
     else:
         _dbg("hd progressive match not found")
-
     sd_match = SD_URL_PATTERN.search(section_text)
     if sd_match:
         data["sd_url"] = _unescape_facebook_url(sd_match.group(1))
         _dbg("sd progressive match found | url=%s", _clip(data["sd_url"], 200))
     else:
         _dbg("sd progressive match not found")
-
     if not data["hd_url"]:
         hd_native_match = BROWSER_NATIVE_HD_URL_PATTERN.search(section_text)
         if hd_native_match:
@@ -301,7 +247,6 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
             _dbg("hd native match found | url=%s", _clip(data["hd_url"], 200))
         else:
             _dbg("hd native match not found")
-
     if not data["sd_url"]:
         sd_native_match = BROWSER_NATIVE_SD_URL_PATTERN.search(section_text)
         if sd_native_match:
@@ -309,32 +254,18 @@ def _parse_video_from_body(body: bytes, video_id: str) -> dict:
             _dbg("sd native match found | url=%s", _clip(data["sd_url"], 200))
         else:
             _dbg("sd native match not found")
-
-    _dbg(
-        "parse body done | video_id=%s hd=%s sd=%s",
-        video_id,
-        bool(data["hd_url"]),
-        bool(data["sd_url"]),
-    )
-
+    _dbg("parse body done | video_id=%s hd=%s sd=%s title=%s", video_id, bool(data["hd_url"]), bool(data["sd_url"]), _clip(data["title"], 160))
     if not data["hd_url"] and not data["sd_url"]:
         preview = _clip(section_text, 1500)
         _dbg("no video urls found | section_preview=%s", preview)
         _write_debug_file("facebook_body", body)
         _write_debug_file("facebook_section", section)
         raise RuntimeError("no video URLs found in page")
-
     return data
 
 async def _safe_edit_status(bot, chat_id, status_msg_id, text: str):
     try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text=text,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
+        await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
     except Exception:
         pass
 
@@ -399,8 +330,7 @@ async def _probe_total_bytes(session, url: str, headers: dict | None = None) -> 
         h = dict(headers or {})
         h["Range"] = "bytes=0-0"
         async with session.get(url, headers=h, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
-            content_range = resp.headers.get("Content-Range", "")
-            m = re.search(r"/(\d+)$", content_range)
+            m = re.search(r"/(\d+)$", resp.headers.get("Content-Range", ""))
             if m:
                 return int(m.group(1))
     except Exception:
@@ -413,38 +343,16 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         raise RuntimeError("aria2c not found in PATH")
     total = await _probe_total_bytes(session, media_url, headers=headers)
     out_dir, out_name = os.path.dirname(out_path) or ".", os.path.basename(out_path)
-    cmd = [
-        aria2,
-        "--dir", out_dir,
-        "--out", out_name,
-        "--file-allocation=none",
-        "--allow-overwrite=true",
-        "--auto-file-renaming=false",
-        "--continue=true",
-        "--max-connection-per-server=8",
-        "--split=8",
-        "--min-split-size=1M",
-        "--summary-interval=0",
-        "--download-result=hide",
-        "--console-log-level=warn",
-    ]
+    cmd = [aria2, "--dir", out_dir, "--out", out_name, "--file-allocation=none", "--allow-overwrite=true", "--auto-file-renaming=false", "--continue=true", "--max-connection-per-server=8", "--split=8", "--min-split-size=1M", "--summary-interval=0", "--download-result=hide", "--console-log-level=warn"]
     for k, v in (headers or {}).items():
         if v:
             cmd.extend(["--header", f"{k}: {v}"])
     cmd.append(media_url)
-
     _dbg("aria2c start | out=%s url=%s", out_path, _clip(media_url, 200))
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
     last_edit = -10.0
     last_sample_size = 0
     last_sample_ts = time.time()
-
     while proc.returncode is None:
         await asyncio.sleep(0.7)
         if not os.path.exists(out_path):
@@ -465,13 +373,11 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         last_edit = now
         last_sample_size = downloaded
         last_sample_ts = now
-
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         err = stderr.decode(errors="ignore").strip() if stderr else ""
         _dbg("aria2c failed | code=%s err=%s", proc.returncode, _clip(err, 500))
         raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
-
     _dbg("aria2c success | out=%s", out_path)
 
 async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
@@ -485,7 +391,6 @@ async def _aiohttp_download_with_progress(session, media_url: str, out_path: str
         last_edit = -10.0
         last_sample_size = 0
         last_sample_ts = time.time()
-
         async with aiofiles.open(out_path, "wb") as f:
             async for chunk in r.content.iter_chunked(64 * 1024):
                 if not chunk:
@@ -521,12 +426,7 @@ async def _get_video_data(content_url: str, content_id: str) -> dict:
     session = await get_http_session()
     headers = _build_headers(content_url)
     _dbg("fetch video data start | url=%s content_id=%s cookie=%s", content_url, content_id, bool(headers.get("Cookie")))
-    async with session.get(
-        content_url,
-        headers=headers,
-        timeout=aiohttp.ClientTimeout(total=25),
-        allow_redirects=True,
-    ) as resp:
+    async with session.get(content_url, headers=headers, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
         final_url = str(resp.url)
         status = resp.status
         body = await resp.read()
@@ -560,13 +460,8 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
     if not video_url:
         _dbg("video url empty after parse | content_url=%s content_id=%s", content_url, content_id)
         raise RuntimeError("no video formats found")
-    title = "Facebook Video"
-    try:
-        info = await asyncio.to_thread(_probe_facebook_info_sync, content_url)
-        title = _extract_fb_title_from_info(info, "Facebook Video")
-        _dbg("fb title selected | title=%s", _clip(title, 200))
-    except Exception as e:
-        _dbg("fb probe title failed | err=%r", e)
+    title = (video_data.get("title") or "Facebook Video").strip() or "Facebook Video"
+    _dbg("fb title selected | title=%s", _clip(title, 200))
     out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
     _dbg("output path ready | out=%s", out_path)
     session = await get_http_session()
@@ -579,24 +474,8 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
 
 async def facebook_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     try:
-        return await facebook_scrape_download(
-            raw_url=raw_url,
-            fmt_key=fmt_key,
-            bot=bot,
-            chat_id=chat_id,
-            status_msg_id=status_msg_id,
-            format_id=format_id,
-            has_audio=has_audio,
-        )
+        return await facebook_scrape_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
     except Exception as e:
         log.exception("Facebook scraping failed, fallback to yt-dlp | url=%s err=%r", raw_url, e)
         await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Facebook scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")
-        return await ytdlp_download(
-            raw_url,
-            fmt_key,
-            bot,
-            chat_id,
-            status_msg_id,
-            format_id=format_id,
-            has_audio=has_audio,
-        )
+        return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
