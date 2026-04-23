@@ -307,6 +307,7 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
                 log.info("Delete temp audio file %s successfully", os.path.basename(fixed_audio))
             except Exception as e:
                 log.warning("Failed to remove temporary re-encoded mp3 | path=%s err=%s", fixed_audio, e)
+        await _cleanup_single_file(file_path)
         
 async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id: str | None, has_audio: bool, engine: str | None = None):
     if is_instagram_url(raw_url):
