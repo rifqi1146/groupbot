@@ -197,6 +197,7 @@ async def _cleanup_album_files(items: list[dict]):
         try:
             if p and os.path.exists(p):
                 os.remove(p)
+                log.info("Delete download file %s successfully", os.path.basename(p))
         except Exception as e:
             log.warning("Failed to remove album temp file | path=%s err=%s", p, e)
 
@@ -204,6 +205,7 @@ async def _cleanup_single_file(path: str | None):
     try:
         if path and os.path.exists(path):
             os.remove(path)
+            log.info("Delete download file %s successfully", os.path.basename(path))
     except Exception as e:
         log.warning("Failed to remove temp file | path=%s err=%s", path, e)
 
@@ -302,10 +304,10 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
         if fixed_audio and os.path.exists(fixed_audio):
             try:
                 os.remove(fixed_audio)
+                log.info("Delete temp audio file %s successfully", os.path.basename(fixed_audio))
             except Exception as e:
                 log.warning("Failed to remove temporary re-encoded mp3 | path=%s err=%s", fixed_audio, e)
-        await _cleanup_single_file(file_path)
-
+        
 async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id: str | None, has_audio: bool, engine: str | None = None):
     if is_instagram_url(raw_url):
         try:
