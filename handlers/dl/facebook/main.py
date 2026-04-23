@@ -1,5 +1,7 @@
 import os
 import re
+import json
+import subprocess
 import time
 import uuid
 import shutil
@@ -61,6 +63,41 @@ BROWSER_NATIVE_SD_URL_PATTERN = re.compile(
     re.S,
 )
 
+def _extract_fb_title_from_info(info: dict, fallback: str = "Facebook Video") -> str:
+    candidates = [
+        (info.get("title") or "").strip(),
+        (info.get("description") or "").strip(),
+        (info.get("uploader") or "").strip(),
+    ]
+    for text in candidates:
+        if text and not re.fullmatch(r"Facebook video #\d+", text, re.I):
+            return text
+    return fallback
+
+def _probe_facebook_info_sync(url: str) -> dict:
+    ytdlp = shutil.which("yt-dlp")
+    if not ytdlp:
+        raise RuntimeError("yt-dlp not found in PATH")
+    cmd = [ytdlp]
+    cookie_header = _load_cookie_header(COOKIES_PATH)
+    if os.path.exists(COOKIES_PATH):
+        cmd += ["--cookies", COOKIES_PATH]
+    cmd += [
+        "--skip-download",
+        "--no-playlist",
+        "--dump-single-json",
+        url,
+    ]
+    _dbg("fb probe start | url=%s", url)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        _dbg("fb probe failed | code=%s err=%s", result.returncode, _clip(err, 400))
+        raise RuntimeError(err or f"yt-dlp probe failed with code {result.returncode}")
+    data = json.loads(result.stdout or "{}")
+    _dbg("fb probe success | keys=%s", list(data.keys())[:12])
+    return data if isinstance(data, dict) else {}
+    
 def is_facebook_url(url: str) -> bool:
     text = (url or "").strip()
     if not text:
@@ -505,61 +542,40 @@ async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, sta
     await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping Facebook video...</b>")
     _dbg("facebook init | BASE_DIR=%s COOKIES_PATH=%s exists=%s", BASE_DIR, COOKIES_PATH, os.path.exists(COOKIES_PATH))
     _dbg("facebook scrape start | raw_url=%s fmt_key=%s", raw_url, fmt_key)
-
     content_url = (raw_url or "").strip()
     is_share = bool(SHARE_RE.search(content_url))
     _dbg("share url detected=%s | url=%s", is_share, content_url)
-
     if is_share:
         content_url = await _follow_share_redirect(content_url)
-
     content_id = _extract_content_id(content_url)
     if not content_id:
         _dbg("scrape failed before fetch | reason=no content id | content_url=%s", content_url)
         raise RuntimeError("failed to extract facebook content id")
-
     _dbg("before _get_video_data | content_url=%s content_id=%s", content_url, content_id)
     video_data = await _get_video_data(content_url, content_id)
     _dbg("after _get_video_data | video_data=%r", video_data)
-
-    _dbg(
-        "video data parsed | hd=%s sd=%s",
-        bool(video_data.get("hd_url")),
-        bool(video_data.get("sd_url")),
-    )
-
+    _dbg("video data parsed | hd=%s sd=%s", bool(video_data.get("hd_url")), bool(video_data.get("sd_url")))
     video_url = video_data.get("hd_url") or video_data.get("sd_url")
     _dbg("video url selected | exists=%s", bool(video_url))
     if not video_url:
         _dbg("video url empty after parse | content_url=%s content_id=%s", content_url, content_id)
         raise RuntimeError("no video formats found")
-
     title = "Facebook Video"
+    try:
+        info = await asyncio.to_thread(_probe_facebook_info_sync, content_url)
+        title = _extract_fb_title_from_info(info, "Facebook Video")
+        _dbg("fb title selected | title=%s", _clip(title, 200))
+    except Exception as e:
+        _dbg("fb probe title failed | err=%r", e)
     out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
     _dbg("output path ready | out=%s", out_path)
-
     session = await get_http_session()
     headers = _build_headers(_normalize_content_url(content_url, content_id))
     _dbg("headers ready | referer=%s cookie=%s", headers.get("Referer"), bool(headers.get("Cookie")))
     _dbg("download chosen url | url=%s out=%s", _clip(video_url, 200), out_path)
-
-    await _download_with_best_engine(
-        session,
-        video_url,
-        out_path,
-        bot,
-        chat_id,
-        status_msg_id,
-        "Downloading Facebook video...",
-        headers=headers,
-    )
-
+    await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading Facebook video...", headers=headers)
     _dbg("facebook scrape download done | out=%s", out_path)
-
-    return {
-        "path": out_path,
-        "title": title,
-    }
+    return {"path": out_path, "title": title}
 
 async def facebook_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     try:
