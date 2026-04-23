@@ -16,6 +16,7 @@ from utils.http import get_http_session
 from handlers.dl.constants import TMP_DIR
 from handlers.dl.utils import sanitize_filename, is_invalid_video
 from handlers.dl.service import reencode_mp3, send_downloaded_media
+from utils.config import LOG_CHAT_ID
 
 log = logging.getLogger(__name__)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -29,6 +30,91 @@ UNIVERSAL_RE = re.compile(r'<script[^>]+\bid="__UNIVERSAL_DATA_FOR_REHYDRATION__
 SIGI_RE = re.compile(r'<script[^>]+\bid="SIGI_STATE"[^>]*>(.*?)</script>', re.S | re.I)
 NEXT_RE = re.compile(r'<script[^>]+\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S | re.I)
 
+def _ttdbg(msg:str,*args):
+    log.warning("TTDBG | "+msg,*args)
+
+def _clip_debug(text:str,limit:int=1200)->str:
+    text=str(text or "").replace("\n","\\n").replace("\r","\\r")
+    return text if len(text)<=limit else text[:limit]+"...<cut>"
+
+def _write_debug_file(prefix:str,content:str|bytes,ext:str="txt")->str:
+    try:
+        os.makedirs(TMP_DIR,exist_ok=True)
+        path=os.path.join(TMP_DIR,f"{prefix}_{uuid.uuid4().hex}.{ext}")
+        if isinstance(content,(bytes,bytearray)):
+            with open(path,"wb") as f:
+                f.write(content)
+        else:
+            with open(path,"w",encoding="utf-8",errors="ignore") as f:
+                f.write(content)
+        _ttdbg("debug file written | path=%s",path)
+        return path
+    except Exception as e:
+        _ttdbg("debug file write failed | prefix=%s err=%r",prefix,e)
+        return ""
+
+def _extract_debug_markers(html_text:str)->dict:
+    text=html_text or ""
+    return {
+        "has_universal":"__UNIVERSAL_DATA_FOR_REHYDRATION__" in text,
+        "has_sigi":"SIGI_STATE" in text,
+        "has_next":"__NEXT_DATA__" in text,
+        "has_item_module":"ItemModule" in text,
+        "has_default_scope":"__DEFAULT_SCOPE__" in text,
+        "has_video_path":"/video/" in text,
+        "has_login":"login" in text.lower(),
+        "has_verify":"verify" in text.lower(),
+        "has_captcha":"captcha" in text.lower(),
+        "has_robot":"robot" in text.lower(),
+        "has_unusual":"unusual" in text.lower(),
+    }
+
+def _dump_script_tags(html_text:str)->str:
+    scripts=re.findall(r"<script\b[^>]*>(.*?)</script>",html_text or "",re.S|re.I)
+    chunks=[]
+    for i,s in enumerate(scripts[:80],1):
+        s=(s or "").strip()
+        if not s:
+            continue
+        chunks.append(f"===== SCRIPT {i} =====\n{s[:6000]}\n")
+    return "\n\n".join(chunks)
+
+async def _send_debug_file(bot,path:str,caption:str):
+    try:
+        chat_id=int(LOG_CHAT_ID)
+    except Exception:
+        _ttdbg("invalid LOG_CHAT_ID | value=%r",LOG_CHAT_ID)
+        return
+    if not path or not os.path.exists(path):
+        return
+    try:
+        with open(path,"rb") as f:
+            await bot.send_document(chat_id=chat_id,document=f,caption=_truncate_text(caption,1024),disable_notification=True)
+        _ttdbg("debug file sent | chat_id=%s path=%s",chat_id,path)
+    except Exception as e:
+        _ttdbg("failed sending debug file | chat_id=%s path=%s err=%r",chat_id,path,e)
+
+async def _dump_tiktok_debug(bot,label:str,request_url:str,final_url:str,status:int,headers:dict,html_text:str,extra:dict|None=None):
+    markers=_extract_debug_markers(html_text)
+    meta={
+        "label":label,
+        "request_url":request_url,
+        "final_url":final_url,
+        "status":status,
+        "headers":dict(headers or {}),
+        "markers":markers,
+        "extra":extra or {},
+        "body_preview":(html_text or "")[:5000],
+    }
+    meta_path=_write_debug_file(f"tiktok_{label}_meta",json.dumps(meta,ensure_ascii=False,indent=2),"json")
+    html_path=_write_debug_file(f"tiktok_{label}_body",html_text or "","html")
+    scripts_txt=_dump_script_tags(html_text or "")
+    scripts_path=_write_debug_file(f"tiktok_{label}_scripts",scripts_txt or "no script tags","txt")
+    await _send_debug_file(bot,meta_path,f"[TTDBG] {label} meta")
+    await _send_debug_file(bot,html_path,f"[TTDBG] {label} html")
+    await _send_debug_file(bot,scripts_path,f"[TTDBG] {label} scripts")
+    _ttdbg("dump saved | label=%s status=%s final=%s markers=%s",label,status,final_url,markers)
+    
 def is_tiktok(url: str) -> bool:
     return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))
 
@@ -269,7 +355,9 @@ def _extract_aweme_id(url: str) -> str:
 async def _resolve_tiktok_url(url: str) -> str:
     session = await get_http_session()
     async with session.get(url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
-        return str(resp.url)
+        final_url=str(resp.url)
+        _ttdbg("resolve | input=%s status=%s final=%s",url,resp.status,final_url)
+        return final_url
 
 def _json_walk(obj, key: str):
     if isinstance(obj, dict):
@@ -389,12 +477,13 @@ def _extract_item_struct(html_text: str) -> dict:
         try:
             item = parser(html_text)
             if isinstance(item, dict) and item:
+                _ttdbg("parser success | parser=%s",parser.__name__)
                 return item
         except Exception as e:
-            errors.append(str(e))
+            errors.append(f"{parser.__name__}: {e}")
     raise RuntimeError(" ; ".join(errors) if errors else "TikTok itemStruct not found")
-
-async def _fetch_tiktok_direct(url: str) -> dict:
+    
+async def _fetch_tiktok_direct(url: str, bot=None) -> dict:
     resolved = await _resolve_tiktok_url(url)
     aweme_id = _extract_aweme_id(resolved)
     if not aweme_id:
@@ -407,19 +496,28 @@ async def _fetch_tiktok_direct(url: str) -> dict:
             try:
                 async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
                     final_url = str(resp.url)
-                    if "/login" in final_url:
-                        raise RuntimeError("TikTok returned login page")
+                    status = resp.status
                     html_text = await resp.text()
                     cookies = [{"name": c.key, "value": c.value} for c in resp.cookies.values()]
-                item_struct = _extract_item_struct(html_text)
+                    _ttdbg("page fetch | attempt=%s target=%s status=%s final=%s",attempt+1,target,status,final_url)
+                if "/login" in final_url:
+                    await _dump_tiktok_debug(bot,"login_redirect",target,final_url,status,resp.headers,html_text,{"resolved":resolved,"aweme_id":aweme_id,"attempt":attempt+1}) if bot else None
+                    raise RuntimeError("TikTok returned login page")
+                try:
+                    item_struct = _extract_item_struct(html_text)
+                except Exception as parse_err:
+                    await _dump_tiktok_debug(bot,"parse_failed",target,final_url,status,resp.headers,html_text,{"resolved":resolved,"aweme_id":aweme_id,"attempt":attempt+1,"parse_error":str(parse_err)}) if bot else None
+                    raise
                 media = _parse_direct_media(item_struct)
                 media["cookies"] = cookies
                 media["resolved_url"] = resolved
                 media["aweme_id"] = aweme_id
                 media["target_url"] = target
+                media["final_url"] = final_url
                 return media
             except Exception as e:
                 last_err = e
+                _ttdbg("fetch failed | attempt=%s target=%s err=%r",attempt+1,target,e)
                 await asyncio.sleep(0.35 * (attempt + 1))
     raise RuntimeError(f"TikTok scraping failed: {last_err}")
 
@@ -514,7 +612,7 @@ async def _download_direct_album(media: dict, bot, chat_id, status_msg_id) -> di
 
 async def tiktok_scrape_download(url, bot, chat_id, status_msg_id, fmt_key="mp4"):
     await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping TikTok metadata...</b>")
-    media = await _fetch_tiktok_direct(url)
+    media = await _fetch_tiktok_direct(url, bot=bot)
     kind = media.get("kind")
     log.info("TikTok scraping metadata success | url=%s kind=%s title=%r target=%s", url, kind, media.get("title"), media.get("target_url"))
     if fmt_key == "mp3":
@@ -628,6 +726,11 @@ async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_k
         raise RuntimeError("TikTok scraping result invalid")
     except Exception as e:
         log.exception("TikTok scraping failed, fallback to tikwm | url=%s fmt=%s err=%r", url, fmt_key, e)
+        try:
+            err_path=_write_debug_file("tiktok_scrape_exception",repr(e),"txt")
+            await _send_debug_file(bot,err_path,f"[TTDBG] scrape exception | {url}")
+        except Exception:
+            pass
 
     last_data = None
     for attempt in range(3):
