@@ -29,6 +29,8 @@ WEB_HEADERS = {
 UNIVERSAL_RE = re.compile(r'<script[^>]+\bid="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', re.S | re.I)
 SIGI_RE = re.compile(r'<script[^>]+\bid="SIGI_STATE"[^>]*>(.*?)</script>', re.S | re.I)
 NEXT_RE = re.compile(r'<script[^>]+\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S | re.I)
+MODERN_SSR_RE = re.compile(r'<script[^>]+\bid="__MODERN_SSR_DATA__"[^>]*>(.*?)</script>', re.S | re.I)
+MODERN_ROUTER_RE = re.compile(r'<script[^>]+\bid="__MODERN_ROUTER_DATA__"[^>]*>(.*?)</script>', re.S | re.I)
 
 def _ttdbg(msg:str,*args):
     log.warning("TTDBG | "+msg,*args)
@@ -69,6 +71,30 @@ def _extract_debug_markers(html_text:str)->dict:
         "has_unusual":"unusual" in text.lower(),
     }
 
+def _detect_weird_tiktok_page(html_text:str, final_url:str="")->str:
+    text = html_text or ""
+    low = text.lower()
+    final = (final_url or "").lower()
+    if "/player/v1/" in final:
+        return "player_v1_url"
+    if "/login" in final:
+        return "login_url"
+    if "captcha" in low or "verify" in low:
+        return "captcha_or_verify"
+    if "tiktok_4d_playback" in low or "__MODERN_SSR_DATA__" in text or "__MODERN_ROUTER_DATA__" in text:
+        try:
+            m = MODERN_SSR_RE.search(text)
+            if m:
+                ssr = json.loads(m.group(1))
+                if isinstance(ssr, dict) and not (ssr.get("data") or {}):
+                    return "modern_ssr_empty"
+        except Exception:
+            return "modern_ssr_shell"
+        return "modern_shell"
+    if "<title data-react-helmet=\"true\"></title>" in text and "__UNIVERSAL_DATA_FOR_REHYDRATION__" not in text and "SIGI_STATE" not in text and "__NEXT_DATA__" not in text:
+        return "empty_shell"
+    return ""
+    
 def _dump_script_tags(html_text:str)->str:
     scripts=re.findall(r"<script\b[^>]*>(.*?)</script>",html_text or "",re.S|re.I)
     chunks=[]
@@ -349,7 +375,7 @@ async def _download_with_best_engine(session, media_url: str, out_path: str, bot
         await _aiohttp_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, title_text, headers=headers)
 
 def _extract_aweme_id(url: str) -> str:
-    m = re.search(r"/(?:video|photo)/(\d+)", url or "", flags=re.I)
+    m = re.search(r"/(?:video|photo|player/v1)/(\d+)", url or "", flags=re.I)
     return (m.group(1) if m else "").strip()
 
 async def _resolve_tiktok_url(url: str) -> str:
@@ -471,13 +497,16 @@ def _parse_next_data(html_text: str) -> dict:
         return item_struct
     raise RuntimeError("TikTok itemStruct not found in __NEXT_DATA__")
 
-def _extract_item_struct(html_text: str) -> dict:
+def _extract_item_struct(html_text: str, final_url: str = "") -> dict:
+    weird = _detect_weird_tiktok_page(html_text, final_url)
+    if weird:
+        raise RuntimeError(f"TikTok weird page detected: {weird}")
     errors = []
     for parser in (_parse_universal_data, _parse_sigi_state, _parse_next_data):
         try:
             item = parser(html_text)
             if isinstance(item, dict) and item:
-                _ttdbg("parser success | parser=%s",parser.__name__)
+                _ttdbg("parser success | parser=%s", parser.__name__)
                 return item
         except Exception as e:
             errors.append(f"{parser.__name__}: {e}")
@@ -488,37 +517,61 @@ async def _fetch_tiktok_direct(url: str, bot=None) -> dict:
     aweme_id = _extract_aweme_id(resolved)
     if not aweme_id:
         raise RuntimeError("TikTok aweme id not found")
-    targets = [resolved, f"https://www.tiktok.com/@_/video/{aweme_id}", f"https://www.tiktok.com/embed/v3/{aweme_id}"]
+    if "/player/v1/" in (resolved or "").lower():
+        raise RuntimeError(f"TikTok weird page detected: player_v1_url | resolved={resolved}")
+
+    targets = [resolved, f"https://www.tiktok.com/@_/video/{aweme_id}"]
     session = await get_http_session()
     last_err = None
+
     for target in targets:
-        for attempt in range(4):
-            try:
-                async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
-                    final_url = str(resp.url)
-                    status = resp.status
-                    html_text = await resp.text()
-                    cookies = [{"name": c.key, "value": c.value} for c in resp.cookies.values()]
-                    _ttdbg("page fetch | attempt=%s target=%s status=%s final=%s",attempt+1,target,status,final_url)
-                if "/login" in final_url:
-                    await _dump_tiktok_debug(bot,"login_redirect",target,final_url,status,resp.headers,html_text,{"resolved":resolved,"aweme_id":aweme_id,"attempt":attempt+1}) if bot else None
-                    raise RuntimeError("TikTok returned login page")
-                try:
-                    item_struct = _extract_item_struct(html_text)
-                except Exception as parse_err:
-                    await _dump_tiktok_debug(bot,"parse_failed",target,final_url,status,resp.headers,html_text,{"resolved":resolved,"aweme_id":aweme_id,"attempt":attempt+1,"parse_error":str(parse_err)}) if bot else None
-                    raise
-                media = _parse_direct_media(item_struct)
-                media["cookies"] = cookies
-                media["resolved_url"] = resolved
-                media["aweme_id"] = aweme_id
-                media["target_url"] = target
-                media["final_url"] = final_url
-                return media
-            except Exception as e:
-                last_err = e
-                _ttdbg("fetch failed | attempt=%s target=%s err=%r",attempt+1,target,e)
-                await asyncio.sleep(0.35 * (attempt + 1))
+        try:
+            async with session.get(target, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+                final_url = str(resp.url)
+                status = resp.status
+                html_text = await resp.text()
+                cookies = [{"name": c.key, "value": c.value} for c in resp.cookies.values()]
+                headers_dump = dict(resp.headers)
+                _ttdbg("page fetch | target=%s status=%s final=%s", target, status, final_url)
+
+            weird = _detect_weird_tiktok_page(html_text, final_url)
+            if weird:
+                if bot:
+                    await _dump_tiktok_debug(bot, "weird_page", target, final_url, status, headers_dump, html_text, {
+                        "resolved": resolved,
+                        "aweme_id": aweme_id,
+                        "weird_reason": weird,
+                    })
+                raise RuntimeError(f"TikTok weird page detected: {weird}")
+
+            item_struct = _extract_item_struct(html_text, final_url)
+            media = _parse_direct_media(item_struct)
+            media["cookies"] = cookies
+            media["resolved_url"] = resolved
+            media["aweme_id"] = aweme_id
+            media["target_url"] = target
+            media["final_url"] = final_url
+            return media
+
+        except Exception as e:
+            last_err = e
+            _ttdbg("fetch failed | target=%s err=%r", target, e)
+
+            err_text = str(e).lower()
+            hard_fail_keys = (
+                "weird page detected",
+                "login page",
+                "captcha",
+                "verify",
+                "player_v1",
+                "modern_ssr_empty",
+                "empty_shell",
+            )
+            if any(k in err_text for k in hard_fail_keys):
+                break
+
+            await asyncio.sleep(0.35)
+
     raise RuntimeError(f"TikTok scraping failed: {last_err}")
 
 async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> dict:
