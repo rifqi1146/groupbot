@@ -37,7 +37,7 @@ except Exception:
 TIKTOK_COOKIES_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data", "cookies.txt"))
 TIKTOK_COOKIE_DOMAINS = ("tiktok.com", "tiktokv.com", "byteoversea.com", "ibyteimg.com", "muscdn.com", "tikwm.com")
 _TIKTOK_COOKIE_HEADER_CACHE = None
-USE_SCRAPLING = True
+USE_SCRAPLING = False
 DEBUG_TIKTOK_DUMP = False
 
 def _ttdbg(msg: str, *args):
