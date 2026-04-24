@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import html
+import logging
 import asyncio
 from urllib.parse import urlparse
 from telegram import Update
@@ -21,8 +22,9 @@ from .service import download_non_tiktok, send_downloaded_media
 from database.user_settings_db import get_user_settings
 from .remux import prepare_download_result_for_send
 
-os.makedirs(TMP_DIR, exist_ok=True)
+log = logging.getLogger(__name__)
 
+os.makedirs(TMP_DIR, exist_ok=True)
 TIKTOK_LOCK = asyncio.Lock()
 YTDLP_SEM = asyncio.Semaphore(3)
 
