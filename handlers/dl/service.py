@@ -22,15 +22,16 @@ from .remux import video_meta, make_video_thumbnail
 
 log = logging.getLogger(__name__)
 
-_SEND_LOCKS = {}
+_SEND_SEMAPHORES = {}
 _CHAT_SLOWMODE_UNTIL = {}
 _LAST_SEND_AT = {}
-_MIN_GAP_PER_CHAT = 3
+_MAX_PARALLEL_SENDS_PER_CHAT = 10
+_MIN_GAP_PER_CHAT = 0.3
 _ALBUM_CHUNK_SIZE = 10
-_ALBUM_CHUNK_COOLDOWN = 7
+_ALBUM_CHUNK_COOLDOWN = 5
 
 def reencode_mp3(src_path: str) -> str:
-    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_fixed.mp3"
+    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
     result = subprocess.run(["ffmpeg", "-y", "-i", src_path, "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", fixed_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
@@ -82,12 +83,12 @@ def _is_reply_not_found_error(exc: Exception) -> bool:
     keys = ("replied message not found", "message to be replied not found", "reply message not found", "reply_to_message_id")
     return any(k in text for k in keys)
 
-def _get_chat_lock(chat_id):
-    lock = _SEND_LOCKS.get(chat_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _SEND_LOCKS[chat_id] = lock
-    return lock
+def _get_chat_semaphore(chat_id):
+    sem = _SEND_SEMAPHORES.get(chat_id)
+    if sem is None:
+        sem = asyncio.Semaphore(_MAX_PARALLEL_SENDS_PER_CHAT)
+        _SEND_SEMAPHORES[chat_id] = sem
+    return sem
 
 async def _wait_send_slot(chat_id: int):
     now = time.monotonic()
@@ -108,13 +109,21 @@ def _apply_retry_after(chat_id: int, retry_after: int):
     _CHAT_SLOWMODE_UNTIL[chat_id] = max(prev, until)
 
 async def _guarded_api_call(rate_key: int, func, *args, **kwargs):
-    lock = _get_chat_lock(rate_key)
-    async with lock:
+    sem = _get_chat_semaphore(rate_key)
+    async with sem:
         while True:
             await _wait_send_slot(rate_key)
             try:
+                started = time.monotonic()
                 result = await func(*args, **kwargs)
+                elapsed = time.monotonic() - started
                 _mark_sent(rate_key)
+                log.info(
+                    "Telegram send done | chat_id=%s func=%s elapsed=%.2fs",
+                    rate_key,
+                    getattr(func, "__name__", str(func)),
+                    elapsed,
+                )
                 return result
             except RetryAfter as e:
                 retry_after = int(getattr(e, "retry_after", 3))
