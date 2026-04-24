@@ -76,10 +76,45 @@ def _video_meta(path: str) -> dict:
         "pix_fmt": str(video.get("pix_fmt") or ""),
     }
 
+def _is_telegram_safe_video(meta: dict) -> bool:
+    return (
+        meta.get("duration", 0) > 0
+        and meta.get("width", 0) > 0
+        and meta.get("height", 0) > 0
+        and meta.get("codec") == "h264"
+        and meta.get("pix_fmt") == "yuv420p"
+    )
+
 def fix_video_for_telegram(src_path: str) -> str:
     before = _video_meta(src_path)
     if before["duration"] <= 0:
         raise RuntimeError("Invalid video duration")
+
+    remux_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_remux.mp4"
+
+    if _is_telegram_safe_video(before):
+        try:
+            _run_cmd([
+                "ffmpeg", "-y",
+                "-i", src_path,
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                "-c", "copy",
+                "-movflags", "+faststart",
+                "-avoid_negative_ts", "make_zero",
+                remux_path,
+            ])
+            after = _video_meta(remux_path)
+            if os.path.exists(remux_path) and after["duration"] > 0:
+                log.info("Video remuxed for Telegram | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
+                return remux_path
+        except Exception as e:
+            log.warning("Video remux failed, fallback reencode | src=%s err=%s", os.path.basename(src_path), e)
+            try:
+                if os.path.exists(remux_path):
+                    os.remove(remux_path)
+            except Exception:
+                pass
 
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_fixed.mp4"
 
@@ -89,10 +124,10 @@ def fix_video_for_telegram(src_path: str) -> str:
         "-i", src_path,
         "-map", "0:v:0",
         "-map", "0:a?",
-        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+        "-vf", "scale='min(720,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
+        "-preset", "superfast",
+        "-crf", "25",
         "-profile:v", "main",
         "-level", "4.0",
         "-c:a", "aac",
@@ -109,7 +144,7 @@ def fix_video_for_telegram(src_path: str) -> str:
     if not os.path.exists(fixed_path) or after["duration"] <= 0:
         raise RuntimeError("Failed to fix video for Telegram")
 
-    log.info("Video fixed for Telegram | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
+    log.info("Video reencoded for Telegram | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
     return fixed_path
 
 def make_video_thumbnail(src_path: str) -> str | None:
@@ -429,9 +464,9 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
             video_fh = None
             thumb_fh = None
             try:
-                fixed_video = fix_video_for_telegram(file_path)
+                fixed_video = await asyncio.to_thread(fix_video_for_telegram, file_path)
                 meta_video = _video_meta(fixed_video)
-                thumb_path = make_video_thumbnail(fixed_video)
+                thumb_path = await asyncio.to_thread(make_video_thumbnail, fixed_video)
                 video_fh = open(fixed_video, "rb")
                 thumb_fh = open(thumb_path, "rb") if thumb_path else None
         
