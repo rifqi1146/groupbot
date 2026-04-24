@@ -36,6 +36,76 @@ def reencode_mp3(src_path: str) -> str:
         raise RuntimeError("FFmpeg re-encode failed")
     return fixed_path
 
+def _run_ffmpeg(cmd: list[str]):
+    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed with exit code {result.returncode}")
+
+def _ffprobe_duration(path: str) -> float:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return float((result.stdout or "0").strip() or 0)
+    except Exception:
+        return 0.0
+
+def fix_video_for_telegram(src_path: str) -> str:
+    if _ffprobe_duration(src_path) <= 0:
+        raise RuntimeError("Invalid video duration")
+
+    remux_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_remux.mp4"
+
+    try:
+        _run_ffmpeg([
+            "ffmpeg", "-y",
+            "-i", src_path,
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c", "copy",
+            "-movflags", "+faststart",
+            remux_path,
+        ])
+
+        if os.path.exists(remux_path) and _ffprobe_duration(remux_path) > 0:
+            return remux_path
+    except Exception:
+        try:
+            if os.path.exists(remux_path):
+                os.remove(remux_path)
+        except Exception:
+            pass
+
+    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}.mp4"
+
+    _run_ffmpeg([
+        "ffmpeg", "-y",
+        "-i", src_path,
+        "-map", "0:v:0",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        fixed_path,
+    ])
+
+    if not os.path.exists(fixed_path) or _ffprobe_duration(fixed_path) <= 0:
+        raise RuntimeError("Failed to fix video for Telegram")
+
+    return fixed_path
+    
 def _clean_caption_from_path(path: str) -> str:
     raw_name = os.path.splitext(os.path.basename(path))[0]
     parts = raw_name.split("_", 1)
@@ -298,7 +368,24 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
             return
         if media_type == "video":
             await _set_uploading_status(bot, chat_id, status_msg_id, "video")
-            await _send_video_with_fallback(bot=bot, chat_id=chat_id, video=file_path, caption=_build_safe_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id, supports_streaming=True)
+            fixed_video = None
+            try:
+                fixed_video = fix_video_for_telegram(file_path)
+                await _send_video_with_fallback(
+                    bot=bot,
+                    chat_id=chat_id,
+                    video=fixed_video,
+                    caption=_build_safe_caption(caption_text, bot_name),
+                    reply_to=reply_to,
+                    message_thread_id=message_thread_id,
+                    supports_streaming=True,
+                )
+            finally:
+                if fixed_video and fixed_video != file_path and os.path.exists(fixed_video):
+                    try:
+                        os.remove(fixed_video)
+                    except Exception:
+                        pass
             return
         raise RuntimeError("Media tidak didukung")
     finally:
