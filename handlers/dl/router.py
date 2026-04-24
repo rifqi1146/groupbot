@@ -93,108 +93,28 @@ async def _start_dl_task(context, message, data, fmt_key, format_id=None, has_au
         )
     )
 
-def _pick_auto_resolution_from_map(res_map: dict, preferred_height: int):
-    try:
-        preferred_height = int(preferred_height or 0)
-    except Exception:
-        preferred_height = 0
-
-    if preferred_height <= 0 or not res_map:
-        return None, None
-
-    candidates = []
-    for key, item in res_map.items():
-        try:
-            height = int(item.get("height") or key or 0)
-        except Exception:
-            height = 0
-
-        if height <= 0:
-            continue
-
-        total_size = int(item.get("total_size") or item.get("filesize") or 0)
-        if total_size and total_size > MAX_TG_SIZE:
-            continue
-
-        candidates.append((key, height, item))
-
-    if not candidates:
-        return None, None
-
-    candidates.sort(
-        key=lambda x: (
-            x[1],
-            int(x[2].get("fps") or 0),
-            1 if str(x[2].get("ext") or "").lower() == "mp4" else 0,
-            1 if bool(x[2].get("has_audio")) else 0,
-            float(x[2].get("tbr") or 0),
-        ),
-        reverse=True,
-    )
-
-    for key, height, item in candidates:
-        if height == preferred_height:
-            return key, item
-
-    lower = [(key, height, item) for key, height, item in candidates if height <= preferred_height]
-    if lower:
-        lower.sort(key=lambda x: x[1], reverse=True)
-        return lower[0][0], lower[0][2]
-
-    return candidates[0][0], candidates[0][2]
-
 async def _show_resolution_picker(context, message, dl_id: str, data: dict, engine: str | None = None):
-    chosen_engine = (engine or "").strip().lower()
     res_list = await get_resolutions(data["url"], engine=engine)
-
     if not res_list:
         DL_CACHE.pop(dl_id, None)
         return await message.edit_text("No valid resolutions available.", parse_mode="HTML")
-
-    is_ytdlp_picker = chosen_engine == "ytdlp"
-
     res_map = {}
-    if is_ytdlp_picker:
-        for idx, r in enumerate(res_list):
-            fid = str(r.get("format_id") or "")
-            if not fid:
-                continue
-            res_map[str(idx)] = {
-                "height": int(r.get("height") or 0),
-                "width": int(r.get("width") or 0),
+    for r in res_list:
+        h = int(r.get("height") or 0)
+        fid = str(r.get("format_id") or "")
+        if h and fid:
+            res_map[h] = {
                 "format_id": fid,
                 "has_audio": bool(r.get("has_audio")),
                 "filesize": int(r.get("filesize") or 0),
                 "total_size": int(r.get("total_size") or 0),
-                "ext": str(r.get("ext") or ""),
-                "fps": int(r.get("fps") or 0),
-                "label": str(r.get("label") or ""),
             }
-    else:
-        for r in res_list:
-            h = int(r.get("height") or 0)
-            fid = str(r.get("format_id") or "")
-            if h and fid:
-                res_map[str(h)] = {
-                    "height": h,
-                    "format_id": fid,
-                    "has_audio": bool(r.get("has_audio")),
-                    "filesize": int(r.get("filesize") or 0),
-                    "total_size": int(r.get("total_size") or 0),
-                }
-
-    if not res_map:
-        DL_CACHE.pop(dl_id, None)
-        return await message.edit_text("No valid resolutions available.", parse_mode="HTML")
-
     settings = get_user_settings(data["user"])
     preferred_height = int(settings.get("youtube_resolution") or 0)
-
     if preferred_height > 0:
-        picked_key, picked = _pick_auto_resolution_from_map(res_map, preferred_height)
-        if picked_key and picked:
+        picked_height, picked = _pick_auto_resolution(res_map, preferred_height)
+        if picked_height and picked:
             DL_CACHE.pop(dl_id, None)
-            picked_height = int(picked.get("height") or preferred_height)
             return await _start_dl_task(
                 context=context,
                 message=message,
@@ -205,27 +125,19 @@ async def _show_resolution_picker(context, message, dl_id: str, data: dict, engi
                 label=f"Video ({picked_height}p)",
                 engine=engine,
             )
-
     DL_CACHE[dl_id]["res_map"] = res_map
-    DL_CACHE[dl_id]["res_picker_mode"] = "format" if is_ytdlp_picker else "height"
-
     if engine:
         DL_CACHE[dl_id]["engine"] = engine
-
-    return await message.edit_text(
-        "<b>Select resolution</b>",
-        reply_markup=res_keyboard(dl_id, res_list, mode="format" if is_ytdlp_picker else "height"),
-        parse_mode="HTML",
-    )
+    return await message.edit_text("<b>Select resolution</b>", reply_markup=res_keyboard(dl_id, res_list), parse_mode="HTML")
 
 async def _process_choice(context, message, dl_id: str, data: dict, choice: str, user_id: int):
     url = data["url"]
     if choice == "video" and supports_resolution_picker(url):
         DL_CACHE[dl_id]["fmt_key"] = "video"
         settings = get_user_settings(user_id)
-        default_engine = str(settings.get("youtube_download_engine") or "ytdlp").lower()
+        default_engine = str(settings.get("youtube_download_engine") or "sonzai").lower()
         if supports_both_resolution_engines(url):
-            picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "ytdlp"
+            picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "sonzai"
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine=picked_engine)
         if supports_sonzai_resolution(url):
@@ -479,37 +391,24 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
         return
-
     q = update.callback_query
     await q.answer()
-
-    _, dl_id, key_raw = q.data.split(":", 2)
+    _, dl_id, height_raw = q.data.split(":", 2)
     data = DL_CACHE.get(dl_id)
-
     if not data:
         return await q.edit_message_text("Request expired")
-
     if q.from_user.id != data["user"]:
         return await q.answer("This is not your request", show_alert=True)
-
+    try:
+        height = int(height_raw)
+    except Exception:
+        return await q.edit_message_text("Invalid resolution")
     res_map = data.get("res_map") or {}
-    picked = res_map.get(str(key_raw))
-
-    if not picked:
-        try:
-            picked = res_map.get(str(int(key_raw)))
-        except Exception:
-            picked = None
-
+    picked = res_map.get(height)
     if not picked:
         return await q.edit_message_text("Resolution is no longer available")
-
     engine = data.get("engine")
-    height = int(picked.get("height") or 0)
-    label = picked.get("label") or (f"Video ({height}p)" if height else "Video")
-
     DL_CACHE.pop(dl_id, None)
-
     return await _start_dl_task(
         context=context,
         message=q.message,
@@ -517,7 +416,7 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fmt_key="video",
         format_id=str(picked.get("format_id") or ""),
         has_audio=bool(picked.get("has_audio")),
-        label=label,
+        label=f"Video ({height}p)",
         engine=engine,
     )
 
