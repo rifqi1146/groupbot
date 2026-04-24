@@ -42,35 +42,80 @@ async def _safe_edit_status(bot,chat_id,status_msg_id,text:str):
     except Exception:
         pass
 
-def _load_cookies(path:str)->tuple[dict,str]:
-    global _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE
+X_COOKIE_DOMAINS = ("x.com", ".x.com", "twitter.com", ".twitter.com")
+X_COOKIE_NAMES = {
+    "auth_token",
+    "ct0",
+    "twid",
+    "guest_id",
+    "personalization_id",
+    "lang",
+    "kdt",
+}
+
+def _cookie_domain_ok(domain: str) -> bool:
+    d = (domain or "").strip().lower()
+    return any(d == x or d.endswith(x) for x in X_COOKIE_DOMAINS)
+
+def _load_cookies(path: str) -> tuple[dict, str]:
+    global _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE
     if _COOKIE_MAP_CACHE is not None and _COOKIE_HEADER_CACHE is not None:
-        return _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE
-    cookies={}
+        return _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE
+
+    cookies = {}
     if not path or not os.path.exists(path):
-        _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE={}, ""
-        return _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE
+        _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE = {}, ""
+        return _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE
+
     try:
-        with open(path,"r",encoding="utf-8",errors="ignore") as f:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
             for raw in f:
-                line=raw.strip()
-                if not line or line.startswith("#"): continue
-                parts=line.split("\t")
-                if len(parts)>=7:
-                    name=(parts[5] or "").strip(); value=(parts[6] or "").strip()
-                    if name: cookies[name]=value
+                line = raw.strip()
+                if not line or line.startswith("#"):
                     continue
-                if "=" in line and "\t" not in line and not line.lower().startswith(("http://","https://")):
-                    name,value=line.split("=",1); name=name.strip(); value=value.strip()
-                    if name: cookies[name]=value
-        header="; ".join(f"{k}={v}" for k,v in cookies.items())
-        _dbg("cookie loaded | path=%s count=%s ct0=%s auth=%s",path,len(cookies),bool(cookies.get("ct0")),bool(cookies.get("auth_token")))
-        _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE=cookies,header
-        return _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE
+
+                parts = line.split("\t")
+                if len(parts) >= 7:
+                    domain = (parts[0] or "").strip().lower()
+                    name = (parts[5] or "").strip()
+                    value = (parts[6] or "").strip()
+
+                    if not name or not value:
+                        continue
+                    if not _cookie_domain_ok(domain):
+                        continue
+                    if name not in X_COOKIE_NAMES:
+                        continue
+
+                    cookies[name] = value
+                    continue
+
+                if "=" in line and "\t" not in line and not line.lower().startswith(("http://", "https://")):
+                    name, value = line.split("=", 1)
+                    name = name.strip()
+                    value = value.strip()
+                    if name in X_COOKIE_NAMES and value:
+                        cookies[name] = value
+
+        ordered = ["auth_token", "ct0", "twid", "guest_id", "personalization_id", "lang", "kdt"]
+        header = "; ".join(f"{k}={cookies[k]}" for k in ordered if cookies.get(k))
+
+        _dbg(
+            "cookie loaded | path=%s count=%s header_len=%s ct0=%s auth=%s",
+            path,
+            len(cookies),
+            len(header),
+            bool(cookies.get("ct0")),
+            bool(cookies.get("auth_token")),
+        )
+
+        _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE = cookies, header
+        return _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE
+
     except Exception as e:
-        _dbg("cookie load failed | path=%s err=%r",path,e)
-        _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE={}, ""
-        return _COOKIE_MAP_CACHE,_COOKIE_HEADER_CACHE
+        _dbg("cookie load failed | path=%s err=%r", path, e)
+        _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE = {}, ""
+        return _COOKIE_MAP_CACHE, _COOKIE_HEADER_CACHE
 
 async def _resolve_short_url(url:str)->str:
     session=await get_http_session()
@@ -85,18 +130,27 @@ def _extract_status_id(url:str)->str:
     if m: return (m.group(1) or "").strip()
     return ""
 
-def _build_api_headers()->dict:
-    cookie_map,cookie_header=_load_cookies(COOKIES_PATH)
-    csrf=cookie_map.get("ct0","")
-    if not csrf or not cookie_header: return {}
+def _build_api_headers() -> dict:
+    cookie_map, cookie_header = _load_cookies(COOKIES_PATH)
+    csrf = cookie_map.get("ct0", "")
+    auth = cookie_map.get("auth_token", "")
+
+    if not csrf or not auth or not cookie_header:
+        return {}
+
+    _dbg("api headers build | cookie_len=%s ct0_len=%s auth_len=%s", len(cookie_header), len(csrf), len(auth))
+
     return {
-        "authorization":"Bearer "+AUTH_TOKEN,
-        "x-twitter-auth-type":"OAuth2Client",
-        "x-twitter-client-language":"en",
-        "x-twitter-active-user":"yes",
-        "x-csrf-token":csrf,
-        "cookie":cookie_header,
-        "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "authorization": "Bearer " + AUTH_TOKEN,
+        "x-twitter-auth-type": "OAuth2Session",
+        "x-twitter-client-language": "en",
+        "x-twitter-active-user": "yes",
+        "x-csrf-token": csrf,
+        "cookie": cookie_header,
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "accept": "*/*",
+        "referer": "https://x.com/",
+        "origin": "https://x.com",
     }
 
 def _build_api_query(tweet_id:str)->str:
