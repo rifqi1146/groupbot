@@ -16,7 +16,7 @@ from database.download_db import load_auto_dl, save_auto_dl, is_premium_user, is
 from .utils import normalize_url, is_invalid_video
 from .keyboards import dl_keyboard, yt_engine_keyboard, res_keyboard, autodl_detect_keyboard
 from .probe import get_resolutions, supports_resolution_picker, supports_both_resolution_engines, supports_ytdlp_resolution, supports_sonzai_resolution
-from .tiktok.main import is_tiktok, douyin_download, tiktok_fallback_send, tiktok_download
+from .tiktok.main import is_tiktok, douyin_download, tiktok_download
 from .service import download_non_tiktok, send_downloaded_media
 from database.user_settings_db import get_user_settings
 
@@ -267,12 +267,10 @@ async def dlask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id: str | None = None, has_audio: bool = False, engine: str | None = None, message_thread_id: int | None = None):
     bot = app.bot
     path = None
-    async def _tiktok_fetch() -> tuple[bool, str | None]:
-        nonlocal path
-        url = raw_url
-        async with TIKTOK_LOCK:
-            try:
-                path = await tiktok_download(url, bot, chat_id, status_msg_id, fmt_key)
+    try:
+        if is_tiktok(raw_url):
+            async with TIKTOK_LOCK:
+                path = await tiktok_download(raw_url, bot, chat_id, status_msg_id, fmt_key)
                 actual_path = path.get("path") if isinstance(path, dict) else path
                 if actual_path and is_invalid_video(actual_path):
                     try:
@@ -280,24 +278,6 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                     except Exception:
                         pass
                     raise RuntimeError("Static video")
-                return (False, path)
-            except Exception:
-                ok = await tiktok_fallback_send(
-                    bot=bot,
-                    chat_id=chat_id,
-                    reply_to=reply_to,
-                    status_msg_id=status_msg_id,
-                    url=url,
-                    fmt_key=fmt_key,
-                )
-                if ok:
-                    return (True, None)
-                raise
-    try:
-        if is_tiktok(raw_url):
-            sent, _ = await _tiktok_fetch()
-            if sent:
-                return
         else:
             async with YTDLP_SEM:
                 path = await download_non_tiktok(
@@ -310,6 +290,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                     has_audio=has_audio,
                     engine=engine,
                 )
+
         await send_downloaded_media(
             bot=bot,
             chat_id=chat_id,
@@ -320,6 +301,7 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
             message_thread_id=message_thread_id,
         )
         await bot.delete_message(chat_id, status_msg_id)
+
     except Exception as e:
         err = str(e) or repr(e)
         if "Flood control exceeded" in err and "Retry in" in err:
@@ -331,9 +313,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                 wait_time = 5
             await asyncio.sleep(wait_time)
             return await _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, format_id, has_audio, engine, message_thread_id)
+
         public_err = html.escape(err.strip())[:3500] or "Unknown downloader error"
         try:
-            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=("<b>Download failed</b>\n\n" f"<code>{public_err}</code>"), parse_mode="HTML")
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=f"<b>Download failed</b>\n\n<code>{public_err}</code>",
+                parse_mode="HTML",
+            )
         except Exception:
             pass
 

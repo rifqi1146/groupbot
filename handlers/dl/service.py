@@ -174,7 +174,7 @@ async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None,
         log.exception("Failed to send photo | chat_id=%s", chat_id)
         raise
 
-async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=False):
+async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=True):
     try:
         return await _guarded_api_call(chat_id, bot.send_video, chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
     except Exception as e:
@@ -298,7 +298,7 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
             return
         if media_type == "video":
             await _set_uploading_status(bot, chat_id, status_msg_id, "video")
-            await _send_video_with_fallback(bot=bot, chat_id=chat_id, video=file_path, caption=_build_safe_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id, supports_streaming=False)
+            await _send_video_with_fallback(bot=bot, chat_id=chat_id, video=file_path, caption=_build_safe_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id, supports_streaming=True)
             return
         raise RuntimeError("Media tidak didukung")
     finally:
