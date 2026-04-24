@@ -18,6 +18,7 @@ from .threads.main import is_threads_url, threads_download
 from .twitter.main import is_x_url, twitter_download
 from .reddit.main import is_reddit_url, reddit_download
 from .pinterest.main import is_pinterest_url, pinterest_download
+from .remux import video_meta, make_video_thumbnail
 
 log = logging.getLogger(__name__)
 
@@ -37,109 +38,6 @@ def reencode_mp3(src_path: str) -> str:
         raise RuntimeError("FFmpeg re-encode failed")
     return fixed_path
 
-def _run_cmd(cmd: list[str]) -> str:
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        err = (result.stderr or result.stdout or f"command failed with exit code {result.returncode}").strip()
-        raise RuntimeError(err[-1500:])
-    return result.stdout or ""
-
-def _ffprobe_data(path: str) -> dict:
-    try:
-        out = _run_cmd([
-            "ffprobe", "-v", "error",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            path,
-        ])
-        return json.loads(out or "{}")
-    except Exception as e:
-        log.warning("ffprobe failed | path=%s err=%s", path, e)
-        return {}
-
-def _video_meta(path: str) -> dict:
-    data = _ffprobe_data(path)
-    streams = data.get("streams") or []
-    fmt = data.get("format") or {}
-    video = next((s for s in streams if s.get("codec_type") == "video"), {})
-    duration_raw = video.get("duration") or fmt.get("duration") or 0
-    try:
-        duration = float(duration_raw or 0)
-    except Exception:
-        duration = 0.0
-    return {
-        "duration": max(int(round(duration)), 0),
-        "width": int(video.get("width") or 0),
-        "height": int(video.get("height") or 0),
-        "codec": str(video.get("codec_name") or ""),
-        "pix_fmt": str(video.get("pix_fmt") or ""),
-    }
-
-def _is_telegram_safe_video(meta: dict) -> bool:
-    return (
-        meta.get("duration", 0) > 0
-        and meta.get("width", 0) > 0
-        and meta.get("height", 0) > 0
-        and meta.get("codec") == "h264"
-        and meta.get("pix_fmt") == "yuv420p"
-    )
-
-def remux_video_for_telegram(src_path: str) -> str:
-    before = _video_meta(src_path)
-    if before["duration"] <= 0:
-        raise RuntimeError("Invalid video duration")
-
-    remux_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_remux.mp4"
-
-    try:
-        _run_cmd([
-            "ffmpeg", "-y",
-            "-i", src_path,
-            "-map", "0",
-            "-c", "copy",
-            "-movflags", "+faststart",
-            "-avoid_negative_ts", "make_zero",
-            remux_path,
-        ])
-
-        after = _video_meta(remux_path)
-        if os.path.exists(remux_path) and after["duration"] > 0:
-            log.info("Video remuxed for Telegram | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
-            return remux_path
-    except Exception as e:
-        log.warning("Video remux failed, using original | src=%s err=%s", os.path.basename(src_path), e)
-        try:
-            if os.path.exists(remux_path):
-                os.remove(remux_path)
-        except Exception:
-            pass
-
-    return src_path
-
-def make_video_thumbnail(src_path: str) -> str | None:
-    thumb_path = f"{TMP_DIR}/{uuid.uuid4().hex}_thumb.jpg"
-    try:
-        _run_cmd([
-            "ffmpeg", "-y",
-            "-ss", "00:00:01",
-            "-i", src_path,
-            "-frames:v", "1",
-            "-vf", "scale=320:-2",
-            "-q:v", "3",
-            thumb_path,
-        ])
-        if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
-            return thumb_path
-    except Exception as e:
-        log.warning("Failed to make video thumbnail | path=%s err=%s", src_path, e)
-    try:
-        if os.path.exists(thumb_path):
-            os.remove(thumb_path)
-    except Exception:
-        pass
-    return None
-    
 def _clean_caption_from_path(path: str) -> str:
     raw_name = os.path.splitext(os.path.basename(path))[0]
     parts = raw_name.split("_", 1)
@@ -429,17 +327,14 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
             return
         if media_type == "video":
             await _set_uploading_status(bot, chat_id, status_msg_id, "video")
-            fixed_video = None
             thumb_path = None
             video_fh = None
             thumb_fh = None
             try:
-                fixed_video = await asyncio.to_thread(remux_video_for_telegram, file_path)
-                meta_video = _video_meta(fixed_video)
-                thumb_path = await asyncio.to_thread(make_video_thumbnail, fixed_video)
-                video_fh = open(fixed_video, "rb")
+                meta_video = await asyncio.to_thread(video_meta, file_path)
+                thumb_path = await asyncio.to_thread(make_video_thumbnail, file_path)
+                video_fh = open(file_path, "rb")
                 thumb_fh = open(thumb_path, "rb") if thumb_path else None
-        
                 await _send_video_with_fallback(
                     bot=bot,
                     chat_id=chat_id,
@@ -460,12 +355,11 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
                             fh.close()
                     except Exception:
                         pass
-                for p in (fixed_video, thumb_path):
-                    try:
-                        if p and p != file_path and os.path.exists(p):
-                            os.remove(p)
-                    except Exception:
-                        pass
+                try:
+                    if thumb_path and os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                except Exception:
+                    pass
             return
         raise RuntimeError("Media tidak didukung")
     finally:
