@@ -474,9 +474,25 @@ def _pick_first_url(value) -> str:
                 return x.strip()
     return ""
 
+def _collect_url_list(value) -> list[str]:
+    out = []
+    if isinstance(value, str) and value.strip():
+        out.append(value.strip())
+    elif isinstance(value, list):
+        for x in value:
+            if isinstance(x, str) and x.strip():
+                out.append(x.strip())
+    return out
+
+def _add_unique_urls(dst: list[str], value):
+    for u in _collect_url_list(value):
+        if u and u not in dst:
+            dst.append(u)
+
 def _parse_direct_media(item: dict) -> dict:
     desc = str(item.get("desc") or item.get("description") or "").strip()
     title = desc or "TikTok Video"
+
     image_post = item.get("imagePost") or item.get("image_post") or {}
     if isinstance(image_post, dict) and isinstance(image_post.get("images"), list) and image_post.get("images"):
         images = []
@@ -490,23 +506,40 @@ def _parse_direct_media(item: dict) -> dict:
                 images.append(image_url)
         if images:
             return {"kind": "album", "title": title, "desc": desc, "images": images}
+
     video = item.get("video") or {}
     bitrate_info = video.get("bitrateInfo") if isinstance(video, dict) else []
-    bitrate_first = bitrate_info[0] if isinstance(bitrate_info, list) and bitrate_info and isinstance(bitrate_info[0], dict) else {}
-    for candidate in (
+    video_urls = []
+
+    candidates = [
         video.get("playAddr"),
         video.get("playAddrStruct"),
         video.get("downloadAddr"),
         video.get("downloadAddrStruct"),
-        bitrate_first.get("PlayAddr"),
-        bitrate_first.get("playAddr"),
-    ):
+    ]
+
+    if isinstance(bitrate_info, list):
+        for br in bitrate_info:
+            if isinstance(br, dict):
+                candidates.append(br.get("PlayAddr"))
+                candidates.append(br.get("playAddr"))
+
+    for candidate in candidates:
         if isinstance(candidate, dict):
-            video_url = _pick_first_url(candidate.get("urlList") or candidate.get("UrlList"))
-            if video_url:
-                return {"kind": "video", "title": title, "desc": desc, "video_url": video_url}
-        elif isinstance(candidate, str) and candidate.strip():
-            return {"kind": "video", "title": title, "desc": desc, "video_url": candidate.strip()}
+            _add_unique_urls(video_urls, candidate.get("urlList") or candidate.get("UrlList"))
+            _add_unique_urls(video_urls, candidate.get("url") or candidate.get("Uri"))
+        elif isinstance(candidate, str):
+            _add_unique_urls(video_urls, candidate)
+
+    if video_urls:
+        return {
+            "kind": "video",
+            "title": title,
+            "desc": desc,
+            "video_url": video_urls[0],
+            "video_urls": video_urls,
+        }
+
     raise RuntimeError("TikTok direct media URL not found")
 
 def _parse_universal_data(html_text: str) -> dict:
@@ -701,21 +734,71 @@ async def _fetch_tiktok_direct(url: str, bot=None) -> dict:
 async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> dict:
     session = await get_http_session()
     title = (media.get("title") or "TikTok Video").strip()
-    video_url = media.get("video_url") or ""
     cookie_header = _cookie_header(media.get("cookies"))
-    headers = {"User-Agent": USER_AGENT, "Referer": "https://www.tiktok.com/"}
+
+    video_urls = media.get("video_urls") or []
+    if media.get("video_url") and media.get("video_url") not in video_urls:
+        video_urls.insert(0, media.get("video_url"))
+
+    if not video_urls:
+        raise RuntimeError("TikTok direct video URLs empty")
+
+    base_headers = {
+        "User-Agent": USER_AGENT,
+        "Referer": media.get("final_url") or media.get("resolved_url") or "https://www.tiktok.com/",
+        "Origin": "https://www.tiktok.com",
+        "Accept": "video/webm,video/mp4,video/*,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    }
+
     if cookie_header:
-        headers["Cookie"] = cookie_header
-    out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
-    await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading TikTok video (scraping)...", headers=headers)
-    if is_invalid_video(out_path):
+        base_headers["Cookie"] = cookie_header
+
+    last_err = None
+
+    for idx, video_url in enumerate(video_urls, start=1):
+        out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
         try:
-            os.remove(out_path)
-        except Exception:
-            pass
-        raise RuntimeError("Invalid video file from TikTok scraping")
-    log.info("TikTok direct scraping success | type=video file=%s", out_path)
-    return {"path": out_path, "title": title, "desc": media.get("desc") or "", "source": "scraping", "kind": "video"}
+            _ttdbg("direct video download try | index=%s total=%s url=%s", idx, len(video_urls), video_url[:180])
+            await _download_with_best_engine(
+                session,
+                video_url,
+                out_path,
+                bot,
+                chat_id,
+                status_msg_id,
+                f"Downloading TikTok video (scraping {idx}/{len(video_urls)})...",
+                headers=base_headers,
+            )
+
+            if is_invalid_video(out_path):
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
+                raise RuntimeError("Invalid video file from TikTok scraping")
+
+            log.info("TikTok direct scraping success | type=video file=%s url_index=%s", out_path, idx)
+            return {
+                "path": out_path,
+                "title": title,
+                "desc": media.get("desc") or "",
+                "source": "scraping",
+                "kind": "video",
+            }
+
+        except Exception as e:
+            last_err = e
+            log.warning("TikTok direct URL failed | index=%s total=%s err=%r", idx, len(video_urls), e)
+            try:
+                if os.path.exists(out_path):
+                    os.remove(out_path)
+            except Exception:
+                pass
+            continue
+
+    raise RuntimeError(f"All TikTok direct video URLs failed: {last_err}")
 
 async def _download_album_images(session, image_urls: list[str], title: str, bot, chat_id, status_msg_id, headers: dict | None = None) -> list[dict]:
     if not image_urls:
