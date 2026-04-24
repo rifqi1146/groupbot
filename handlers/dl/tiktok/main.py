@@ -13,7 +13,6 @@ from telegram.error import RetryAfter
 from utils.http import get_http_session
 from handlers.dl.constants import TMP_DIR
 from handlers.dl.utils import sanitize_filename, is_invalid_video
-from handlers.dl.service import reencode_mp3, send_downloaded_media
 from utils.config import LOG_CHAT_ID
 
 log = logging.getLogger(__name__)
@@ -242,31 +241,6 @@ async def _dump_tiktok_debug(bot, label: str, request_url: str, final_url: str, 
 def is_tiktok(url: str) -> bool:
     return any(x in (url or "") for x in ("tiktok.com", "vt.tiktok.com", "vm.tiktok.com"))
 
-def _build_safe_caption(title: str, desc: str, bot_name: str, max_len: int = 1024) -> str:
-    clean_title = (title or "TikTok Video").strip() or "TikTok Video"
-    clean_desc = (desc or "").strip()
-    clean_bot = (bot_name or "Bot").strip() or "Bot"
-    if clean_desc == clean_title:
-        clean_desc = ""
-    footer_plain = f"🪄 Powered by {clean_bot}"
-    def plain_len(t: str, d: str) -> int:
-        return len(f"🎬 {t}\n\n{d}\n\n{footer_plain}") if d else len(f"🎬 {t}\n\n{footer_plain}")
-    short_title, short_desc = clean_title, clean_desc
-    if short_desc:
-        allowed_desc = max_len - len(f"🎬 {short_title}\n\n\n\n{footer_plain}")
-        short_desc = _truncate_text(short_desc, allowed_desc)
-    if plain_len(short_title, short_desc) > max_len:
-        allowed_title = max_len - len(f"🎬 \n\n{short_desc}\n\n{footer_plain}") if short_desc else max_len - len(f"🎬 \n\n{footer_plain}")
-        short_title = _truncate_text(short_title, allowed_title)
-    if short_desc and plain_len(short_title, short_desc) > max_len:
-        allowed_desc = max_len - len(f"🎬 {short_title}\n\n\n\n{footer_plain}")
-        short_desc = _truncate_text(short_desc, allowed_desc)
-    if not short_title:
-        short_title = "TikTok Video"
-    if short_desc:
-        return f"<blockquote expandable>🎬 {html.escape(short_title)}</blockquote>\n\n{html.escape(short_desc)}\n\n🪄 <i>Powered by {html.escape(clean_bot)}</i>"
-    return f"<blockquote expandable>🎬 {html.escape(short_title)}</blockquote>\n\n🪄 <i>Powered by {html.escape(clean_bot)}</i>"
-
 def _format_size(num_bytes: int) -> str:
     if num_bytes <= 0:
         return "0 B"
@@ -442,7 +416,7 @@ async def _download_with_best_engine(session, media_url: str, out_path: str, bot
         log.warning("TikTok aria2c not found in PATH, using aiohttp")
     log.info("TikTok download engine | engine=aiohttp")
     await _aiohttp_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, title_text, headers=headers)
-    
+
 def _extract_aweme_id(url: str) -> str:
     m = re.search(r"/(?:video|photo|player/v1)/(\d+)", url or "", flags=re.I)
     return (m.group(1) if m else "").strip()
@@ -742,14 +716,11 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
     session = await get_http_session()
     title = (media.get("title") or "TikTok Video").strip()
     cookie_header = _cookie_header(media.get("cookies"))
-
     video_urls = media.get("video_urls") or []
     if media.get("video_url") and media.get("video_url") not in video_urls:
         video_urls.insert(0, media.get("video_url"))
-
     if not video_urls:
         raise RuntimeError("TikTok direct video URLs empty")
-
     base_headers = {
         "User-Agent": USER_AGENT,
         "Referer": media.get("final_url") or media.get("resolved_url") or "https://www.tiktok.com/",
@@ -758,12 +729,9 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
         "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
     }
-
     if cookie_header:
         base_headers["Cookie"] = cookie_header
-
     last_err = None
-
     for idx, video_url in enumerate(video_urls, start=1):
         out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
         try:
@@ -778,14 +746,12 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
                 f"Downloading TikTok video (scraping {idx}/{len(video_urls)})...",
                 headers=base_headers,
             )
-
             if is_invalid_video(out_path):
                 try:
                     os.remove(out_path)
                 except Exception:
                     pass
                 raise RuntimeError("Invalid video file from TikTok scraping")
-
             log.info("TikTok direct scraping success | type=video file=%s url_index=%s", out_path, idx)
             return {
                 "path": out_path,
@@ -794,7 +760,6 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
                 "source": "scraping",
                 "kind": "video",
             }
-
         except Exception as e:
             last_err = e
             log.warning("TikTok direct URL failed | index=%s total=%s err=%r", idx, len(video_urls), e)
@@ -804,7 +769,6 @@ async def _download_direct_video(media: dict, bot, chat_id, status_msg_id) -> di
             except Exception:
                 pass
             continue
-
     raise RuntimeError(f"All TikTok direct video URLs failed: {last_err}")
 
 async def _download_album_images(session, image_urls: list[str], title: str, bot, chat_id, status_msg_id, headers: dict | None = None) -> list[dict]:
@@ -900,7 +864,12 @@ async def _tikwm_result(url, bot, chat_id, status_msg_id, fmt_key="mp4"):
             raise RuntimeError("Audio not found")
         tmp_audio = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
         await _download_with_best_engine(session, music_url, tmp_audio, bot, chat_id, status_msg_id, "Downloading TikTok audio (tikwm)...")
-        return {"path": tmp_audio, "title": (info.get("title") or info.get("desc") or "TikTok Audio").strip() or "TikTok Audio", "source": "tikwm", "kind": "audio"}
+        return {
+            "path": tmp_audio,
+            "title": (info.get("title") or info.get("desc") or "TikTok Audio").strip() or "TikTok Audio",
+            "source": "tikwm",
+            "kind": "audio",
+        }
     images = info.get("images") or []
     if images:
         title = (info.get("title") or info.get("desc") or "TikTok Slideshow").strip() or "TikTok Slideshow"
@@ -947,71 +916,3 @@ async def tiktok_download(url, bot, chat_id, status_msg_id, fmt_key="mp4"):
             elif result.get("items"):
                 log.info("TikTok fallback success | source=tikwm items=%s", len(result.get("items") or []))
         return result
-
-async def tiktok_fallback_send(bot, chat_id, reply_to, status_msg_id, url, fmt_key):
-    async def _set_uploading(kind: str):
-        label = {"audio": "🎵 <b>Uploading audio...</b>", "video": "🎬 <b>Uploading video...</b>", "album": "🖼️ <b>Uploading slideshow...</b>"}.get(kind, "<b>Uploading...</b>")
-        try:
-            await bot.edit_message_text(chat_id=chat_id, message_id=status_msg_id, text=label, parse_mode="HTML")
-        except Exception as e:
-            if "Message is not modified" in str(e):
-                return
-            raise
-    result = await tiktok_download(url=url, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, fmt_key=fmt_key)
-    if fmt_key == "mp3":
-        path = result.get("path")
-        title = result.get("title") or "TikTok Audio"
-        if not path or not os.path.exists(path):
-            raise RuntimeError("Audio source file not found")
-        fixed_audio = None
-        try:
-            fixed_audio = reencode_mp3(path)
-            await _set_uploading("audio")
-            await bot.send_chat_action(chat_id=chat_id, action="upload_audio")
-            bot_name = (await bot.get_me()).first_name or "Bot"
-            await bot.send_audio(chat_id=chat_id, audio=fixed_audio, title=title[:64], performer=bot_name, filename=f"{title[:50]}.mp3", reply_to_message_id=reply_to, disable_notification=True)
-            await bot.delete_message(chat_id, status_msg_id)
-            log.info("TikTok send success | source=%s type=audio", result.get("source"))
-            return True
-        finally:
-            for p in (fixed_audio, path):
-                try:
-                    if p and os.path.exists(p):
-                        os.remove(p)
-                except Exception:
-                    pass
-    if result.get("items"):
-        await _set_uploading("album")
-        await send_downloaded_media(bot=bot, chat_id=chat_id, reply_to=reply_to, status_msg_id=status_msg_id, path=result, fmt_key="photo")
-        try:
-            await bot.delete_message(chat_id, status_msg_id)
-        except Exception:
-            pass
-        log.info("TikTok send success | source=%s type=album", result.get("source"))
-        return True
-    if result.get("path"):
-        out_path = result["path"]
-        title = result.get("title") or "TikTok Video"
-        desc = result.get("desc") or title
-        await _set_uploading("video")
-        await bot.send_chat_action(chat_id=chat_id, action="upload_video")
-        bot_name = (await bot.get_me()).first_name or "Bot"
-        caption = _build_safe_caption(title, desc, bot_name)
-        try:
-            with open(out_path, "rb") as fh:
-                await bot.send_video(chat_id=chat_id, video=fh, caption=caption, parse_mode="HTML", supports_streaming=False, reply_to_message_id=reply_to, disable_notification=True)
-        finally:
-            try:
-                if os.path.exists(out_path):
-                    os.remove(out_path)
-            except Exception:
-                pass
-        try:
-            await bot.delete_message(chat_id, status_msg_id)
-        except Exception:
-            pass
-        log.info("TikTok send success | source=%s type=video", result.get("source"))
-        return True
-    raise RuntimeError("TikTok result invalid")
-    
-    
