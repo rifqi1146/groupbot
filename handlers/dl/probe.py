@@ -76,84 +76,128 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
     yt_dlp_bin = shutil.which("yt-dlp")
     if not yt_dlp_bin:
         return []
+
     cmd = [yt_dlp_bin]
     if COOKIES_PATH:
         cmd += ["--cookies", COOKIES_PATH]
     cmd += ["--no-playlist", "-J", url]
+
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
         return []
+
     try:
         info = json.loads(p.stdout)
     except Exception:
         return []
+
     formats = info.get("formats") or []
     if not isinstance(formats, list):
         return []
+
     bestaudio_size = _pick_bestaudio_size(formats)
-    grouped: dict[int, list[dict]] = {}
+    out = []
+    seen = set()
+
     for f in formats:
+        if not isinstance(f, dict):
+            continue
+
+        format_id = str(f.get("format_id") or "").strip()
+        ext = str(f.get("ext") or "").strip().lower()
         vcodec = str(f.get("vcodec") or "")
+        acodec = str(f.get("acodec") or "")
+
+        if not format_id:
+            continue
+        if format_id.startswith("sb"):
+            continue
+        if ext in ("mhtml", "json", "html"):
+            continue
         if vcodec == "none":
             continue
+
         height = f.get("height")
-        format_id = f.get("format_id")
-        if not height or not format_id:
-            continue
         try:
-            height = int(height)
+            height = int(height or 0)
         except Exception:
+            height = 0
+
+        if height <= 0:
             continue
+
+        width = f.get("width")
+        try:
+            width = int(width or 0)
+        except Exception:
+            width = 0
+
+        fps = f.get("fps")
+        try:
+            fps = int(float(fps or 0))
+        except Exception:
+            fps = 0
+
         filesize = f.get("filesize") or f.get("filesize_approx") or 0
         try:
             filesize = int(filesize) if filesize else 0
         except Exception:
             filesize = 0
-        acodec = str(f.get("acodec") or "")
+
         has_audio = acodec != "none"
         total_size = filesize if has_audio else (filesize + bestaudio_size if filesize else 0)
+
         if total_size and total_size > MAX_TG_SIZE:
             continue
-        item = {
+
+        dedup_key = (format_id, height, ext, fps, vcodec, acodec)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        tbr = f.get("tbr")
+        try:
+            tbr = float(tbr or 0)
+        except Exception:
+            tbr = 0.0
+
+        label_parts = [f"{height}p"]
+        if fps:
+            label_parts[0] += str(fps)
+        if ext:
+            label_parts.append(ext)
+
+        if has_audio:
+            label_parts.append("audio")
+        else:
+            label_parts.append("video-only")
+
+        out.append({
             "height": height,
-            "format_id": str(format_id),
-            "ext": str(f.get("ext") or ""),
+            "width": width,
+            "format_id": format_id,
+            "ext": ext,
             "has_audio": has_audio,
             "filesize": filesize,
             "total_size": total_size,
             "vcodec": vcodec,
             "acodec": acodec,
-            "fps": int(f.get("fps") or 0),
-            "tbr": float(f.get("tbr") or 0),
-        }
-        grouped.setdefault(height, []).append(item)
-    def _score(item: dict):
-        ext = (item.get("ext") or "").lower()
-        has_audio = bool(item.get("has_audio"))
-        total_size = int(item.get("total_size") or 0)
-        filesize = int(item.get("filesize") or 0)
-        fps = int(item.get("fps") or 0)
-        tbr = float(item.get("tbr") or 0)
-        return (
-            1 if not has_audio else 0,
-            1 if ext == "mp4" else 0,
-            fps,
-            tbr,
-            total_size,
-            filesize,
-        )
-    out = []
-    for _, items in grouped.items():
-        best = max(items, key=_score)
-        out.append({
-            "height": best["height"],
-            "format_id": best["format_id"],
-            "ext": best["ext"],
-            "has_audio": best["has_audio"],
-            "filesize": best["filesize"],
-            "total_size": best["total_size"],
+            "fps": fps,
+            "tbr": tbr,
+            "label": "-".join(label_parts),
         })
-    out.sort(key=lambda x: x["height"], reverse=True)
+
+    out.sort(
+        key=lambda x: (
+            int(x.get("height") or 0),
+            int(x.get("fps") or 0),
+            1 if (x.get("ext") or "").lower() == "mp4" else 0,
+            1 if x.get("has_audio") else 0,
+            float(x.get("tbr") or 0),
+            int(x.get("total_size") or x.get("filesize") or 0),
+        ),
+        reverse=True,
+    )
     return out
 
 async def get_resolutions(url: str, engine: str | None = None) -> list[dict]:
