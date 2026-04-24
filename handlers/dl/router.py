@@ -19,6 +19,7 @@ from .probe import get_resolutions, supports_resolution_picker, supports_both_re
 from .tiktok.main import is_tiktok, douyin_download, tiktok_download
 from .service import download_non_tiktok, send_downloaded_media
 from database.user_settings_db import get_user_settings
+from .remux import prepare_download_result_for_send
 
 os.makedirs(TMP_DIR, exist_ok=True)
 
@@ -290,6 +291,10 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
                     has_audio=has_audio,
                     engine=engine,
                 )
+
+        prepare_started = time.monotonic()
+        path = await prepare_download_result_for_send(path, fmt_key=fmt_key)
+        log.info("Prepare media done | url=%s elapsed=%.2fs", raw_url, time.monotonic() - prepare_started)
 
         await send_downloaded_media(
             bot=bot,
