@@ -4,6 +4,8 @@ import json
 import time
 import uuid
 import html
+import shutil
+import asyncio
 import base64
 import random
 import string
@@ -415,7 +417,119 @@ async def _safe_edit_status(bot, chat_id, message_id, text: str):
             return
         log.warning("Failed to edit Instagram status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
 
+async def _probe_total_bytes(session, url: str, headers: dict | None = None) -> int:
+    try:
+        async with session.head(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+            total = int(resp.headers.get("Content-Length", 0) or 0)
+            if total > 0:
+                return total
+    except Exception:
+        pass
+    try:
+        h = dict(headers or {})
+        h["Range"] = "bytes=0-0"
+        async with session.get(url, headers=h, timeout=aiohttp.ClientTimeout(total=20), allow_redirects=True) as resp:
+            content_range = resp.headers.get("Content-Range", "")
+            m = re.search(r"/(\d+)$", content_range)
+            if m:
+                return int(m.group(1))
+            if resp.headers.get("Content-Length"):
+                return int(resp.headers.get("Content-Length", 0) or 0)
+    except Exception:
+        pass
+    return 0
+
+def _format_size(num_bytes: int) -> str:
+    if num_bytes <= 0:
+        return "0 B"
+    value = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{int(value)} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+async def _aria2c_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
+    aria2 = shutil.which("aria2c")
+    if not aria2:
+        raise RuntimeError("aria2c not found in PATH")
+    total = await _probe_total_bytes(session, media_url, headers=headers)
+    out_dir = os.path.dirname(out_path) or "."
+    out_name = os.path.basename(out_path)
+    cmd = [
+        aria2,
+        "--dir", out_dir,
+        "--out", out_name,
+        "--file-allocation=none",
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--continue=true",
+        "--max-connection-per-server=8",
+        "--split=8",
+        "--min-split-size=1M",
+        "--summary-interval=0",
+        "--download-result=hide",
+        "--console-log-level=warn",
+    ]
+    for k, v in (headers or {}).items():
+        if v:
+            cmd.extend(["--header", f"{k}: {v}"])
+    cmd.append(media_url)
+    log.info("Instagram aria2c download start | out=%s total=%s", out_path, _format_size(total))
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    last_edit = 0.0
+    while proc.returncode is None:
+        await asyncio.sleep(0.7)
+        if not os.path.exists(out_path):
+            continue
+        try:
+            downloaded = os.path.getsize(out_path)
+        except Exception:
+            continue
+        if downloaded <= 0:
+            continue
+        now = time.time()
+        if total > 0 and now - last_edit >= 1.5:
+            pct = min(downloaded * 100 / total, 100.0)
+            await _safe_edit_status(
+                bot,
+                chat_id,
+                status_msg_id,
+                f"<b>{html.escape(title_text)}</b>\n\n<code>{html.escape(progress_bar(pct))}</code>\n<code>{html.escape(_format_size(downloaded))}/{html.escape(_format_size(total))}</code>",
+            )
+            last_edit = now
+    _, stderr = await proc.communicate()
+    err = stderr.decode(errors="ignore").strip() if stderr else ""
+    if proc.returncode != 0:
+        raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
+    if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
+        raise RuntimeError("aria2c download output empty")
+    log.info("Instagram aria2c download success | file=%s size=%s", out_path, _format_size(os.path.getsize(out_path)))
+    
 async def _download_media_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str):
+    try:
+        await _aria2c_download_with_progress(
+            session=session,
+            media_url=media_url,
+            out_path=out_path,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            title_text=title_text,
+            headers=WEB_HEADERS,
+        )
+        return
+    except Exception as e:
+        log.warning("Instagram aria2c failed, fallback aiohttp | err=%r", e)
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            pass
     async with session.get(media_url, headers=WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=180), allow_redirects=True) as media_resp:
         if media_resp.status >= 400:
             raise RuntimeError(f"Failed to download media: HTTP {media_resp.status}")
@@ -423,16 +537,22 @@ async def _download_media_with_progress(session, media_url: str, out_path: str, 
         downloaded = 0
         last = 0.0
         async with aiofiles.open(out_path, "wb") as f:
-            async for chunk in media_resp.content.iter_chunked(64 * 1024):
+            async for chunk in media_resp.content.iter_chunked(256 * 1024):
                 if not chunk:
                     continue
                 await f.write(chunk)
                 downloaded += len(chunk)
                 now = time.time()
-                if total and now - last >= 1.0:
+                if total and now - last >= 1.5:
                     pct = downloaded / total * 100
-                    await _safe_edit_status(bot, chat_id, status_msg_id, f"<b>{title_text}</b>\n\n<code>{progress_bar(pct)}</code>")
+                    await _safe_edit_status(
+                        bot,
+                        chat_id,
+                        status_msg_id,
+                        f"<b>{html.escape(title_text)}</b>\n\n<code>{html.escape(progress_bar(pct))}</code>",
+                    )
                     last = now
+    log.info("Instagram aiohttp download success | file=%s size=%s", out_path, _format_size(os.path.getsize(out_path) if os.path.exists(out_path) else 0))
 
 async def _download_direct_instagram_items(meta: dict, fmt_key: str, bot, chat_id, status_msg_id) -> dict:
     session = await get_http_session()
