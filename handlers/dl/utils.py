@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import unicodedata
 
 def progress_bar(percent: float, length: int = 10) -> str:
     try:
@@ -11,11 +12,24 @@ def progress_bar(percent: float, length: int = 10) -> str:
     empty = length - filled
     return f"[{'■' * filled}{'□' * empty}] {p:.1f}%"
 
-def sanitize_filename(name: str, max_len: int = 100) -> str:
-    name = (name or "").strip()
-    name = re.sub(r'[\\/:*?"<>|]', "", name)
-    name = re.sub(r"\s+", " ", name)
-    return name[:max_len] or "video"
+def sanitize_filename(name: str, max_bytes: int = 120) -> str:
+    name = str(name or "media")
+    name = unicodedata.normalize("NFKC", name)
+    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    if not name:
+        name = "media"
+    if len(name.encode("utf-8")) <= max_bytes:
+        return name
+    out = []
+    used = 0
+    for ch in name:
+        b = ch.encode("utf-8")
+        if used + len(b) > max_bytes:
+            break
+        out.append(ch)
+        used += len(b)
+    return ("".join(out).rstrip(" .") or "media")
 
 def detect_media_type(path: str) -> str:
     ext = os.path.splitext(path.lower())[1]
