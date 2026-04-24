@@ -671,39 +671,69 @@ async def _fetch_tiktok_direct(url: str, bot=None) -> dict:
         raise RuntimeError("TikTok aweme id not found")
     if "/player/v1/" in (resolved or "").lower():
         raise RuntimeError(f"TikTok weird page detected: player_v1_url | resolved={resolved}")
+
     session = await get_http_session()
-    target = resolved
+    target = f"https://www.tiktok.com/@_/video/{aweme_id}"
     headers = _build_tiktok_headers("https://www.tiktok.com/", resolved_cookie)
-    async with session.get(target, headers=headers, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
-        final_url = str(resp.url)
-        status = resp.status
-        html_text = await resp.text()
-        resp_cookie = _cookie_header([{"name": c.key, "value": c.value} for c in resp.cookies.values()])
-        merged_cookie = _merge_cookie_headers(headers.get("Cookie", ""), resp_cookie)
-        headers_dump = dict(resp.headers)
-        _ttdbg("aiohttp fetch | target=%s status=%s final=%s len=%s cookie=%s", target, status, final_url, len(html_text), bool(merged_cookie))
-    try:
-        item_struct = _extract_item_struct(html_text, final_url)
-    except Exception as aio_err:
-        _ttdbg("aiohttp parse failed, try scrapling once | target=%s err=%r", target, aio_err)
+
+    last_aio_err = None
+    final_url = target
+    status = 0
+    html_text = ""
+    merged_cookie = resolved_cookie
+    headers_dump = {}
+
+    for attempt in range(5):
         try:
-            scrap_html, scrap_final, scrap_status, scrap_cookie, scrap_headers = await _fetch_html_with_scrapling(target, merged_cookie)
-            scrap_merged_cookie = _merge_cookie_headers(merged_cookie, scrap_cookie)
-            item_struct = _extract_item_struct(scrap_html, scrap_final)
-            html_text = scrap_html
-            final_url = scrap_final
-            status = scrap_status
-            merged_cookie = scrap_merged_cookie
-            headers_dump = scrap_headers
-        except Exception as scrap_err:
-            await _dump_tiktok_debug(bot, "scrape_failed", target, final_url, status, headers_dump, html_text, {
-                "resolved": resolved,
-                "aweme_id": aweme_id,
-                "aiohttp_error": str(aio_err),
-                "scrapling_error": str(scrap_err),
-                "has_cookie": bool(merged_cookie),
-            }) if bot else None
-            raise RuntimeError(f"TikTok scraping failed: aiohttp={aio_err} ; scrapling={scrap_err}") from scrap_err
+            async with session.get(target, headers=headers, timeout=aiohttp.ClientTimeout(total=25), allow_redirects=True) as resp:
+                final_url = str(resp.url)
+                status = resp.status
+                html_text = await resp.text()
+                resp_cookie = _cookie_header([{"name": c.key, "value": c.value} for c in resp.cookies.values()])
+                merged_cookie = _merge_cookie_headers(headers.get("Cookie", ""), resp_cookie)
+                headers_dump = dict(resp.headers)
+                _ttdbg(
+                    "aiohttp fetch | attempt=%s target=%s status=%s final=%s len=%s cookie=%s resolved=%s",
+                    attempt + 1,
+                    target,
+                    status,
+                    final_url,
+                    len(html_text),
+                    bool(merged_cookie),
+                    resolved,
+                )
+
+            item_struct = _extract_item_struct(html_text, final_url)
+            break
+        except Exception as e:
+            last_aio_err = e
+            _ttdbg("aiohttp parse/fetch failed | attempt=%s target=%s err=%r", attempt + 1, target, e)
+            if attempt < 4:
+                await asyncio.sleep(0.35 * (attempt + 1))
+            else:
+                _ttdbg("aiohttp failed after retries, try scrapling once | target=%s err=%r", target, e)
+                try:
+                    scrap_html, scrap_final, scrap_status, scrap_cookie, scrap_headers = await _fetch_html_with_scrapling(target, merged_cookie)
+                    scrap_merged_cookie = _merge_cookie_headers(merged_cookie, scrap_cookie)
+                    item_struct = _extract_item_struct(scrap_html, scrap_final)
+                    html_text = scrap_html
+                    final_url = scrap_final
+                    status = scrap_status
+                    merged_cookie = scrap_merged_cookie
+                    headers_dump = scrap_headers
+                    break
+                except Exception as scrap_err:
+                    await _dump_tiktok_debug(bot, "scrape_failed", target, final_url, status, headers_dump, html_text, {
+                        "input_url": url,
+                        "resolved": resolved,
+                        "canonical_target": target,
+                        "aweme_id": aweme_id,
+                        "aiohttp_error": str(last_aio_err),
+                        "scrapling_error": str(scrap_err),
+                        "has_cookie": bool(merged_cookie),
+                    }) if bot else None
+                    raise RuntimeError(f"TikTok scraping failed: aiohttp={last_aio_err} ; scrapling={scrap_err}") from scrap_err
+
     media = _parse_direct_media(item_struct)
     media["cookies"] = [{"name": x.split("=", 1)[0], "value": x.split("=", 1)[1]} for x in merged_cookie.split("; ") if "=" in x] if merged_cookie else []
     media["resolved_url"] = resolved
