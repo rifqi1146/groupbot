@@ -18,7 +18,13 @@ def _run_cmd(cmd: list[str]) -> str:
 
 def _ffprobe_data(path: str) -> dict:
     try:
-        out = _run_cmd(["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path])
+        out = _run_cmd([
+            "ffprobe", "-v", "error",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            path,
+        ])
         return json.loads(out or "{}")
     except Exception as e:
         log.warning("ffprobe failed | path=%s err=%s", path, e)
@@ -46,9 +52,7 @@ def remux_video_for_telegram(src_path: str) -> str:
     before = video_meta(src_path)
     if before["duration"] <= 0:
         raise RuntimeError("Invalid video duration")
-
     remux_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_remux.mp4"
-
     try:
         _run_cmd([
             "ffmpeg", "-y",
@@ -59,10 +63,10 @@ def remux_video_for_telegram(src_path: str) -> str:
             "-avoid_negative_ts", "make_zero",
             remux_path,
         ])
-
         after = video_meta(remux_path)
         if os.path.exists(remux_path) and after["duration"] > 0:
-            log.info("Video remuxed after download | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
+            log.info("Video remuxed | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
+            log.info("Remux done | original=%s output=%s", os.path.basename(src_path), os.path.basename(remux_path))
             if remux_path != src_path:
                 try:
                     os.remove(src_path)
@@ -76,7 +80,6 @@ def remux_video_for_telegram(src_path: str) -> str:
                 os.remove(remux_path)
         except Exception:
             pass
-
     return src_path
 
 def make_video_thumbnail(src_path: str) -> str | None:
@@ -112,7 +115,6 @@ def _prepare_single_path(file_path: str) -> str:
 async def prepare_download_result_for_send(result, fmt_key: str = "mp4"):
     if fmt_key == "mp3":
         return result
-
     if isinstance(result, dict) and result.get("items"):
         items = result.get("items") or []
         for item in items:
@@ -121,14 +123,11 @@ async def prepare_download_result_for_send(result, fmt_key: str = "mp4"):
                 new_path = await asyncio.to_thread(_prepare_single_path, p)
                 item["path"] = new_path
         return result
-
     if isinstance(result, dict):
         p = result.get("path")
         if p and os.path.exists(p):
             result["path"] = await asyncio.to_thread(_prepare_single_path, p)
         return result
-
     if isinstance(result, str) and os.path.exists(result):
         return await asyncio.to_thread(_prepare_single_path, result)
-
     return result
