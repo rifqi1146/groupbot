@@ -4,6 +4,7 @@ import html
 import time
 import logging
 import subprocess
+import json
 import asyncio
 from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.error import RetryAfter
@@ -36,75 +37,103 @@ def reencode_mp3(src_path: str) -> str:
         raise RuntimeError("FFmpeg re-encode failed")
     return fixed_path
 
-def _run_ffmpeg(cmd: list[str]):
-    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def _run_cmd(cmd: list[str]) -> str:
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed with exit code {result.returncode}")
+        err = (result.stderr or result.stdout or f"command failed with exit code {result.returncode}").strip()
+        raise RuntimeError(err[-1500:])
+    return result.stdout or ""
 
-def _ffprobe_duration(path: str) -> float:
+def _ffprobe_data(path: str) -> dict:
     try:
-        result = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                path,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        return float((result.stdout or "0").strip() or 0)
+        out = _run_cmd([
+            "ffprobe", "-v", "error",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            path,
+        ])
+        return json.loads(out or "{}")
+    except Exception as e:
+        log.warning("ffprobe failed | path=%s err=%s", path, e)
+        return {}
+
+def _video_meta(path: str) -> dict:
+    data = _ffprobe_data(path)
+    streams = data.get("streams") or []
+    fmt = data.get("format") or {}
+    video = next((s for s in streams if s.get("codec_type") == "video"), {})
+    duration_raw = video.get("duration") or fmt.get("duration") or 0
+    try:
+        duration = float(duration_raw or 0)
     except Exception:
-        return 0.0
+        duration = 0.0
+    return {
+        "duration": max(int(round(duration)), 0),
+        "width": int(video.get("width") or 0),
+        "height": int(video.get("height") or 0),
+        "codec": str(video.get("codec_name") or ""),
+        "pix_fmt": str(video.get("pix_fmt") or ""),
+    }
 
 def fix_video_for_telegram(src_path: str) -> str:
-    if _ffprobe_duration(src_path) <= 0:
+    before = _video_meta(src_path)
+    if before["duration"] <= 0:
         raise RuntimeError("Invalid video duration")
 
-    remux_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_remux.mp4"
+    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}_tg_fixed.mp4"
 
-    try:
-        _run_ffmpeg([
-            "ffmpeg", "-y",
-            "-i", src_path,
-            "-map", "0:v:0",
-            "-map", "0:a?",
-            "-c", "copy",
-            "-movflags", "+faststart",
-            remux_path,
-        ])
-
-        if os.path.exists(remux_path) and _ffprobe_duration(remux_path) > 0:
-            return remux_path
-    except Exception:
-        try:
-            if os.path.exists(remux_path):
-                os.remove(remux_path)
-        except Exception:
-            pass
-
-    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}.mp4"
-
-    _run_ffmpeg([
+    _run_cmd([
         "ffmpeg", "-y",
+        "-fflags", "+genpts",
         "-i", src_path,
         "-map", "0:v:0",
         "-map", "0:a?",
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "23",
-        "-pix_fmt", "yuv420p",
+        "-profile:v", "main",
+        "-level", "4.0",
         "-c:a", "aac",
         "-b:a", "128k",
+        "-ar", "44100",
+        "-ac", "2",
         "-movflags", "+faststart",
+        "-avoid_negative_ts", "make_zero",
+        "-max_muxing_queue_size", "1024",
         fixed_path,
     ])
 
-    if not os.path.exists(fixed_path) or _ffprobe_duration(fixed_path) <= 0:
+    after = _video_meta(fixed_path)
+    if not os.path.exists(fixed_path) or after["duration"] <= 0:
         raise RuntimeError("Failed to fix video for Telegram")
 
+    log.info("Video fixed for Telegram | src=%s before=%s after=%s", os.path.basename(src_path), before, after)
     return fixed_path
+
+def make_video_thumbnail(src_path: str) -> str | None:
+    thumb_path = f"{TMP_DIR}/{uuid.uuid4().hex}_thumb.jpg"
+    try:
+        _run_cmd([
+            "ffmpeg", "-y",
+            "-ss", "00:00:01",
+            "-i", src_path,
+            "-frames:v", "1",
+            "-vf", "scale=320:-2",
+            "-q:v", "3",
+            thumb_path,
+        ])
+        if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+            return thumb_path
+    except Exception as e:
+        log.warning("Failed to make video thumbnail | path=%s err=%s", src_path, e)
+    try:
+        if os.path.exists(thumb_path):
+            os.remove(thumb_path)
+    except Exception:
+        pass
+    return None
     
 def _clean_caption_from_path(path: str) -> str:
     raw_name = os.path.splitext(os.path.basename(path))[0]
@@ -244,12 +273,39 @@ async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None,
         log.exception("Failed to send photo | chat_id=%s", chat_id)
         raise
 
-async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=True):
+async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=True, duration=None, width=None, height=None, thumbnail=None):
+    kwargs = {
+        "chat_id": chat_id,
+        "video": video,
+        "caption": caption,
+        "parse_mode": "HTML",
+        "supports_streaming": supports_streaming,
+        "reply_to_message_id": reply_to,
+        "message_thread_id": message_thread_id,
+        "disable_notification": True,
+    }
+    if duration:
+        kwargs["duration"] = int(duration)
+    if width:
+        kwargs["width"] = int(width)
+    if height:
+        kwargs["height"] = int(height)
+    if thumbnail:
+        kwargs["thumbnail"] = thumbnail
+
     try:
-        return await _guarded_api_call(chat_id, bot.send_video, chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
+        return await _guarded_api_call(chat_id, bot.send_video, **kwargs)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await _guarded_api_call(chat_id, bot.send_video, chat_id=chat_id, video=video, caption=caption, parse_mode="HTML", supports_streaming=supports_streaming, message_thread_id=message_thread_id, disable_notification=True)
+            try:
+                if hasattr(video, "seek"):
+                    video.seek(0)
+                if hasattr(thumbnail, "seek"):
+                    thumbnail.seek(0)
+            except Exception:
+                pass
+            kwargs.pop("reply_to_message_id", None)
+            return await _guarded_api_call(chat_id, bot.send_video, **kwargs)
         log.exception("Failed to send video | chat_id=%s", chat_id)
         raise
 
@@ -369,21 +425,40 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
         if media_type == "video":
             await _set_uploading_status(bot, chat_id, status_msg_id, "video")
             fixed_video = None
+            thumb_path = None
+            video_fh = None
+            thumb_fh = None
             try:
                 fixed_video = fix_video_for_telegram(file_path)
+                meta_video = _video_meta(fixed_video)
+                thumb_path = make_video_thumbnail(fixed_video)
+                video_fh = open(fixed_video, "rb")
+                thumb_fh = open(thumb_path, "rb") if thumb_path else None
+        
                 await _send_video_with_fallback(
                     bot=bot,
                     chat_id=chat_id,
-                    video=fixed_video,
+                    video=video_fh,
                     caption=_build_safe_caption(caption_text, bot_name),
                     reply_to=reply_to,
                     message_thread_id=message_thread_id,
                     supports_streaming=True,
+                    duration=meta_video.get("duration"),
+                    width=meta_video.get("width"),
+                    height=meta_video.get("height"),
+                    thumbnail=thumb_fh,
                 )
             finally:
-                if fixed_video and fixed_video != file_path and os.path.exists(fixed_video):
+                for fh in (video_fh, thumb_fh):
                     try:
-                        os.remove(fixed_video)
+                        if fh:
+                            fh.close()
+                    except Exception:
+                        pass
+                for p in (fixed_video, thumb_path):
+                    try:
+                        if p and p != file_path and os.path.exists(p):
+                            os.remove(p)
                     except Exception:
                         pass
             return
