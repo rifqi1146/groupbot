@@ -44,6 +44,30 @@ OG_TITLE_RE = re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\
 TWITTER_TITLE_RE = re.compile(r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']', re.I)
 TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
 
+FACEBOOK_COOKIE_DOMAINS = (
+    "facebook.com",
+    ".facebook.com",
+    "www.facebook.com",
+    "m.facebook.com",
+    "mbasic.facebook.com",
+)
+
+FACEBOOK_COOKIE_NAMES = {
+    "c_user",
+    "xs",
+    "fr",
+    "datr",
+    "sb",
+    "wd",
+    "dpr",
+    "locale",
+    "presence",
+    "vpd",
+    "m_pixel_ratio",
+    "fbl_st",
+    "wl_cbv",
+}
+
 def is_facebook_url(url: str) -> bool:
     text = (url or "").strip()
     if not text:
@@ -77,38 +101,83 @@ def _write_debug_file(prefix: str, content: bytes | str) -> str:
         _dbg("failed writing debug file | err=%r", e)
         return ""
 
+def _cookie_domain_ok(domain: str) -> bool:
+    d = (domain or "").strip().lower()
+    return any(d == x or d.endswith(x) for x in FACEBOOK_COOKIE_DOMAINS)
+
 def _load_cookie_header(path: str) -> str:
     global _COOKIE_HEADER_CACHE
     if _COOKIE_HEADER_CACHE is not None:
         return _COOKIE_HEADER_CACHE
+
     if not path or not os.path.exists(path):
         _dbg("cookie file not found | path=%s", path)
         _COOKIE_HEADER_CACHE = ""
         return _COOKIE_HEADER_CACHE
-    pairs = []
+
+    jar = {}
+
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             for raw in f:
                 line = raw.strip()
                 if not line or line.startswith("#"):
                     continue
+
                 parts = line.split("\t")
+
                 if len(parts) >= 7:
+                    domain = (parts[0] or "").strip().lower()
                     name = (parts[5] or "").strip()
                     value = (parts[6] or "").strip()
-                    if name:
-                        pairs.append(f"{name}={value}")
+
+                    if not name or not value:
+                        continue
+                    if not _cookie_domain_ok(domain):
+                        continue
+                    if name not in FACEBOOK_COOKIE_NAMES:
+                        continue
+
+                    jar[name] = value
                     continue
+
                 if "=" in line and "\t" not in line and not line.lower().startswith(("http://", "https://")):
                     name, value = line.split("=", 1)
                     name = name.strip()
                     value = value.strip()
-                    if name:
-                        pairs.append(f"{name}={value}")
-        header = "; ".join(pairs)
-        _dbg("cookie header loaded | path=%s pairs=%s", path, len(pairs))
+
+                    if name in FACEBOOK_COOKIE_NAMES and value:
+                        jar[name] = value
+
+        ordered = [
+            "c_user",
+            "xs",
+            "fr",
+            "datr",
+            "sb",
+            "wd",
+            "dpr",
+            "locale",
+            "presence",
+            "vpd",
+            "m_pixel_ratio",
+            "fbl_st",
+            "wl_cbv",
+        ]
+
+        header = "; ".join(f"{k}={jar[k]}" for k in ordered if jar.get(k))
+
+        _dbg(
+            "facebook cookie loaded | path=%s pairs=%s header_len=%s has_login=%s",
+            path,
+            len(jar),
+            len(header),
+            bool(jar.get("c_user") and jar.get("xs")),
+        )
+
         _COOKIE_HEADER_CACHE = header
         return _COOKIE_HEADER_CACHE
+
     except Exception as e:
         _dbg("failed to load cookie file | path=%s err=%r", path, e)
         _COOKIE_HEADER_CACHE = ""
