@@ -22,7 +22,7 @@ from database.user_settings_db import get_user_settings
 
 os.makedirs(TMP_DIR, exist_ok=True)
 
-TIKTOK_LOCK = asyncio.Semaphore(3)
+TIKTOK_LOCK = asyncio.Lock()
 YTDLP_SEM = asyncio.Semaphore(3)
 
 def _host(url: str) -> str:
