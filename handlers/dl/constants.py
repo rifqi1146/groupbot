@@ -33,6 +33,7 @@ AUTO_DOWNLOAD_DOMAINS = {
     "xhamster.com",
     "threads.net",
     "pinterest.com",
+    "pin.it",
     "threads.com",
     "redtube.com",
     "xvideos.com",
