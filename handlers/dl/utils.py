@@ -2,17 +2,14 @@ import os
 import re
 import subprocess
 
-def progress_bar(percent: float, length: int = 12) -> str:
+def progress_bar(percent: float, length: int = 10) -> str:
     try:
         p = max(0.0, min(100.0, float(percent)))
     except Exception:
         p = 0.0
-
     filled = int((p / 100.0) * length)
     empty = length - filled
-
-    bar = "█" * filled + "░" * empty
-    return f"{bar} {p:.1f}%"
+    return f"[{'■' * filled}{'□' * empty}] {p:.1f}%"
 
 def sanitize_filename(name: str, max_len: int = 100) -> str:
     name = (name or "").strip()
