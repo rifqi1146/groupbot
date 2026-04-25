@@ -4,7 +4,7 @@ from handlers.nsfw import nsfw_cmd
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd
 from handlers.broadcast import broadcast_cmd
 from handlers.start import start_cmd
-from handlers.tr import tr_cmd, trlist_cmd
+from handlers.translate import tr_cmd, trlist_cmd
 from handlers.restart import restart_cmd
 from handlers.gsearch import gsearch_cmd
 from handlers.stats import stats_cmd
