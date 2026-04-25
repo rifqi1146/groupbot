@@ -15,6 +15,36 @@ _SIZE_100MB = 100 * 1024 * 1024
 
 log = logging.getLogger(__name__)
 
+def _format_dl_value(value: str) -> str:
+    value = str(value or "").strip()
+    if not value or value in ("N/A", "NA", "Unknown", "None"):
+        return "?"
+    return value
+
+def _clean_percent(value: str) -> float:
+    text = str(value or "").replace("%", "").strip()
+    try:
+        return max(0.0, min(100.0, float(text)))
+    except Exception:
+        return 0.0
+
+def _format_download_status(pct: float, downloaded: str = "", total: str = "", speed: str = "", eta: str = "") -> str:
+    downloaded = _format_dl_value(downloaded)
+    total = _format_dl_value(total)
+    speed = _format_dl_value(speed)
+    eta = _format_dl_value(eta)
+    lines = [
+        "<b>Downloading...</b>",
+        "",
+        f"<code>{progress_bar(pct)}</code>",
+        f"<code>{downloaded}/{total}</code>",
+    ]
+    if speed != "?":
+        lines.append(f"<code>Speed: {speed}</code>")
+    if eta != "?":
+        lines.append(f"<code>ETA: {eta}</code>")
+    return "\n".join(lines)
+    
 def _extract_title_from_path(path: str, prefix: str) -> str:
     base = os.path.splitext(os.path.basename(path))[0]
     if base.startswith(prefix + "_"):
@@ -381,22 +411,34 @@ async def ytdlp_download(
             log.debug("yt-dlp stdout | job_id=%s %s", job_id, raw)
             if "|" not in raw:
                 continue
-            head = raw.split("|", 1)[0].replace("%", "")
-            if not head.replace(".", "", 1).isdigit():
+            
+            parts = raw.split("|")
+            if len(parts) < 5:
                 continue
-            pct = float(head)
-            if pct <= last_pct:
+            
+            pct = _clean_percent(parts[0])
+            downloaded = parts[1] if len(parts) > 1 else ""
+            total = parts[2] if len(parts) > 2 else ""
+            speed = parts[3] if len(parts) > 3 else ""
+            eta = parts[4] if len(parts) > 4 else ""
+            
+            if pct <= last_pct and pct < 100:
                 continue
+            
             last_pct = pct
             now = time.time()
-            if now - last_edit >= update_interval:
+            
+            if now - last_edit >= update_interval or pct >= 100:
                 await _safe_edit_status(
                     bot=bot,
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text=(
-                        "<b>Downloading...</b>\n\n"
-                        f"<code>{progress_bar(pct)}</code>"
+                    text=_format_download_status(
+                        pct=pct,
+                        downloaded=downloaded,
+                        total=total,
+                        speed=speed,
+                        eta=eta,
                     ),
                 )
                 last_edit = now
@@ -428,7 +470,7 @@ async def ytdlp_download(
             "--audio-format", "flac",
             "--audio-quality", "0",
             "--newline",
-            "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url,
         ]
@@ -471,7 +513,7 @@ async def ytdlp_download(
             "-f", fmt,
             "--merge-output-format", "mp4",
             "--newline",
-            "--progress-template", "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url,
         ]
