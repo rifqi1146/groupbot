@@ -17,6 +17,7 @@ PREMIUM_ONLY_DOMAINS = {
     "pornhub.com",
     "xnxx.com",
     "redtube.com",
+    "bdsmstreak.com",
     "xvideos.com",
     "vjav.com",
     "japanhdv.com",
@@ -30,6 +31,7 @@ PREMIUM_ONLY_DOMAINS = {
 AUTO_DOWNLOAD_DOMAINS = {
     "pornhub.com",
     "xnxx.com",
+    "bdsmstreak.com",
     "xhamster.com",
     "threads.net",
     "pinterest.com",

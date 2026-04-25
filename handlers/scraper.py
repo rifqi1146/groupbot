@@ -137,22 +137,38 @@ async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("Invalid URL. Use http/https link.")
     if not await _is_safe_public_url(url):
         return await msg.reply_text("Blocked URL. Public http/https URL only.")
+    os.makedirs(TMP_DIR, exist_ok=True)
+    out_path = os.path.join(TMP_DIR, f"scraper_{uuid.uuid4().hex}.html")
     started = time.monotonic()
     status = await msg.reply_text("🕷️ <b>Scraping page...</b>", parse_mode="HTML")
-    out_path = None
     try:
-        picked, out_path, src_count = await _scrape_iframe_link(url)
-        if not picked:
-            return await _send_html_result(msg, status, out_path, src_count)
+        await _run_scrapling(url, out_path)
+        with open(out_path, "r", encoding="utf-8", errors="ignore") as f:
+            raw = f.read()
+        srcs = _extract_iframe_srcs(raw, url)
+        picked = _pick_target_iframe(srcs)
         elapsed = time.monotonic() - started
-        text = "<b>Iframe found</b>\n\n" f"<code>{html.escape(picked)}</code>\n\n" f"Time <i>{elapsed:.2f}s</i>"
-        await status.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
+        caption = (
+            "<b>HTML scraper result</b>\n\n"
+            f"Iframe count: <code>{len(srcs)}</code>\n"
+            f"Matched iframe: <code>{html.escape(picked or '-')}</code>\n"
+            f"Time: <i>{elapsed:.2f}s</i>"
+        )
+        await status.edit_text("<b>Scrape done. Sending HTML file...</b>", parse_mode="HTML")
+        with open(out_path, "rb") as f:
+            await msg.reply_document(
+                document=f,
+                filename=os.path.basename(out_path),
+                caption=caption,
+                parse_mode="HTML",
+            )
+        await status.delete()
     except Exception as e:
         err = html.escape((str(e) or repr(e)).strip())[:3500]
         await status.edit_text(f"<b>Scraper failed</b>\n\n<code>{err}</code>", parse_mode="HTML")
     finally:
         try:
-            if out_path and os.path.exists(out_path):
+            if os.path.exists(out_path):
                 os.remove(out_path)
                 log.info("Scraper temp deleted | file=%s", out_path)
         except Exception as e:
