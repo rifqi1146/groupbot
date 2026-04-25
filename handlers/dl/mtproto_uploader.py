@@ -5,6 +5,7 @@ import logging
 from utils.config import BOT_TOKEN
 from telegram.error import RetryAfter
 from .utils import progress_bar
+
 log = logging.getLogger(__name__)
 
 try:
@@ -16,16 +17,27 @@ except Exception:
 
 _CLIENT = None
 _CLIENT_LOCK = asyncio.Lock()
+_PROGRESS_LOCKS = {}
 _SESSION_NAME = os.getenv("MTPROTO_SESSION", "data/mtproto_bot")
 _ENABLED = os.getenv("MTPROTO_UPLOAD", "1").lower() not in ("0", "false", "off", "no")
+_PROGRESS_MIN_BYTES = int(os.getenv("MTPROTO_PROGRESS_MIN_BYTES", str(30 * 1024 * 1024)))
+_PROGRESS_INTERVAL = float(os.getenv("MTPROTO_PROGRESS_INTERVAL", "3.0"))
+_PROGRESS_STEP = float(os.getenv("MTPROTO_PROGRESS_STEP", "20"))
 
-def _format_size(num: int) -> str:
+def _format_size(num: int | float) -> str:
     value = float(num or 0)
     for unit in ("B", "KB", "MB", "GB"):
         if value < 1024 or unit == "GB":
             return f"{int(value)} {unit}" if unit == "B" else f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} GB"
+
+def _get_progress_lock(key):
+    lock = _PROGRESS_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PROGRESS_LOCKS[key] = lock
+    return lock
 
 async def _get_client():
     global _CLIENT
@@ -47,29 +59,38 @@ async def _get_client():
         return _CLIENT
 
 async def _safe_edit_upload(bot, chat_id, message_id, current, total, started):
-    try:
-        percent = (current / total * 100) if total else 0
-        elapsed = max(time.monotonic() - started, 0.001)
-        speed = current / elapsed
-        text = (
-            "<b>Uploading video...</b>\n\n"
-            f"<code>{progress_bar(percent)}</code>\n"
-            f"<code>{_format_size(current)}/{_format_size(total)}</code>\n"
-            f"<code>Speed: {_format_size(speed)}/s</code>"
-        )
-        await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
-    except RetryAfter as e:
-        await asyncio.sleep(int(getattr(e, "retry_after", 1)) + 1)
-    except Exception as e:
-        if "message is not modified" not in str(e).lower():
-            log.debug("MTProto upload progress edit ignored | err=%s", e)
+    key = (int(chat_id), int(message_id))
+    lock = _get_progress_lock(key)
+    async with lock:
+        try:
+            percent = (current / total * 100) if total else 0
+            elapsed = max(time.monotonic() - started, 0.001)
+            speed = current / elapsed
+            text = (
+                "<b>Uploading video...</b>\n\n"
+                f"<code>{progress_bar(percent)}</code>\n"
+                f"<code>{_format_size(current)}/{_format_size(total)}</code>\n"
+                f"<code>Speed: {_format_size(speed)}/s</code>"
+            )
+            await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
+            log.info("MTProto upload progress | chat_id=%s %.1f%% %s/%s", chat_id, percent, _format_size(current), _format_size(total))
+        except RetryAfter as e:
+            wait = int(getattr(e, "retry_after", 1))
+            log.warning("MTProto progress RetryAfter | chat_id=%s wait=%s", chat_id, wait)
+            await asyncio.sleep(wait + 1)
+        except Exception as e:
+            if "message is not modified" not in str(e).lower():
+                log.warning("MTProto upload progress edit failed | chat_id=%s err=%r", chat_id, e)
 
 async def try_send_video_via_mtproto(bot, chat_id, status_msg_id, file_path, caption, reply_to=None, message_thread_id=None, duration=None, width=None, height=None, thumb_path=None):
     if not _ENABLED:
         return False
     if not file_path or not os.path.exists(file_path):
         return False
+    file_size = os.path.getsize(file_path)
+    show_progress = file_size >= _PROGRESS_MIN_BYTES
     started = time.monotonic()
+    last_progress_task = None
     try:
         client = await _get_client()
         attrs = []
@@ -77,16 +98,23 @@ async def try_send_video_via_mtproto(bot, chat_id, status_msg_id, file_path, cap
             attrs.append(DocumentAttributeVideo(duration=int(duration), w=int(width), h=int(height), supports_streaming=True))
         progress_state = {"last_ts": 0.0, "last_pct": -1.0}
         loop = asyncio.get_running_loop()
+
         def progress_callback(current, total):
-            if not total:
+            nonlocal last_progress_task
+            if not show_progress or not total:
                 return
             now = time.monotonic()
             pct = current / total * 100
-            if pct < 100 and now - progress_state["last_ts"] < 1.5 and pct - progress_state["last_pct"] < 4:
+            if pct < 100 and now - progress_state["last_ts"] < _PROGRESS_INTERVAL:
+                return
+            if pct < 100 and pct - progress_state["last_pct"] < _PROGRESS_STEP:
+                return
+            if last_progress_task and not last_progress_task.done():
                 return
             progress_state["last_ts"] = now
             progress_state["last_pct"] = pct
-            loop.create_task(_safe_edit_upload(bot, chat_id, status_msg_id, current, total, started))
+            last_progress_task = loop.create_task(_safe_edit_upload(bot, chat_id, status_msg_id, current, total, started))
+
         await client.send_file(
             entity=chat_id,
             file=file_path,
@@ -96,10 +124,14 @@ async def try_send_video_via_mtproto(bot, chat_id, status_msg_id, file_path, cap
             supports_streaming=True,
             attributes=attrs or None,
             thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
-            reply_to=reply_to or message_thread_id,
+            reply_to=reply_to,
             progress_callback=progress_callback,
         )
-        log.info("Telegram MTProto send done | chat_id=%s file=%s elapsed=%.2fs", chat_id, os.path.basename(file_path), time.monotonic() - started)
+
+        if last_progress_task:
+            await asyncio.gather(last_progress_task, return_exceptions=True)
+
+        log.info("Telegram MTProto send done | chat_id=%s file=%s size=%s elapsed=%.2fs", chat_id, os.path.basename(file_path), _format_size(file_size), time.monotonic() - started)
         return True
     except Exception as e:
         log.warning("MTProto upload failed, fallback to PTB | chat_id=%s file=%s err=%r", chat_id, os.path.basename(file_path), e)
