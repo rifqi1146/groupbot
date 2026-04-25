@@ -45,6 +45,11 @@ def is_supported_platform(url: str) -> bool:
         return False
     return any(_host_match(host, d) for d in AUTO_DOWNLOAD_DOMAINS)
 
+def _format_id_for_engine(engine: str | None, height: int, picked: dict) -> str:
+    if str(engine or "").lower() == "ytdlp":
+        return f"height:{int(height)}"
+    return str(picked.get("format_id") or "")
+
 def _pick_auto_resolution(res_map: dict[int, dict], preferred_height: int):
     try:
         preferred_height = int(preferred_height or 0)
@@ -143,7 +148,7 @@ async def _show_resolution_picker(context, message, dl_id: str, data: dict, engi
                 message=message,
                 data=data,
                 fmt_key="video",
-                format_id=str(picked.get("format_id") or ""),
+                format_id=_format_id_for_engine(engine, picked_height, picked),
                 has_audio=bool(picked.get("has_audio")),
                 label=f"Video ({picked_height}p)",
                 engine=engine,
@@ -461,7 +466,7 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message=q.message,
         data=data,
         fmt_key="video",
-        format_id=str(picked.get("format_id") or ""),
+        format_id=_format_id_for_engine(engine, height, picked),
         has_audio=bool(picked.get("has_audio")),
         label=f"Video ({height}p)",
         engine=engine,

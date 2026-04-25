@@ -50,14 +50,24 @@ def _looks_like_media_id(text: str) -> bool:
     s = (text or "").strip()
     return bool(s) and len(s) >= 8 and s.isdigit()
 
+def _host(url: str) -> str:
+    try:
+        return (urlparse((url or "").strip()).hostname or "").lower()
+    except Exception:
+        return ""
+
 def is_x_url(url: str) -> bool:
     try:
-        host = (urlparse((url or "").strip()).hostname or "").lower()
+        host = _host(url)
         return host in ("x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com")
     except Exception as e:
         text = (url or "").lower()
         log.warning("Failed to parse URL host for X detection | url=%s err=%s", url, e)
         return "x.com/" in text or "twitter.com/" in text
+
+def is_youtube_url(url: str) -> bool:
+    host = _host(url)
+    return host in ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be") or host.endswith(".youtube.com")
 
 def _fallback_title_from_url(url: str) -> str:
     try:
@@ -160,6 +170,25 @@ def _append_cookies_args(cmd: list[str]) -> list[str]:
     if COOKIES_PATH and os.path.exists(COOKIES_PATH):
         cmd.extend(["--cookies", COOKIES_PATH])
     return cmd
+
+def _build_ytdlp_format(format_id: str | None, has_audio: bool = False) -> str:
+    fid = str(format_id or "").strip()
+    if not fid:
+        return "bestvideo+bestaudio/best"
+    if fid.startswith("height:"):
+        h = fid.split(":", 1)[1].strip()
+        return (
+            f"bestvideo[height={h}][ext=mp4]+bestaudio[ext=m4a]/"
+            f"bestvideo[height={h}]+bestaudio[ext=m4a]/"
+            f"bestvideo[height={h}]+bestaudio/"
+            f"best[height={h}]/"
+            f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
+            f"bestvideo[height<={h}]+bestaudio/"
+            f"best[height<={h}]"
+        )
+    if has_audio:
+        return fid
+    return f"{fid}+bestaudio[ext=m4a]/{fid}+bestaudio/bestvideo[format_id={fid}]+bestaudio/best[format_id={fid}]"
 
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
     try:
@@ -301,6 +330,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
     update_interval = 5
     is_ig = is_instagram_url(url)
     is_x = is_x_url(url)
+    is_yt = is_youtube_url(url)
 
     async def run(cmd):
         nonlocal update_interval
@@ -378,16 +408,16 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
             fallback = await gallerydl_fallback(url=url, job_id=job_id, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, status_text="<b>Downloading with gallery-dl...</b>")
             if fallback:
                 return fallback
-        if format_id:
-            fmt = format_id if has_audio else f"{format_id}+bestaudio[ext=m4a]/{format_id}+bestaudio"
-        else:
-            fmt = "bestvideo+bestaudio/best"
+
+        fmt = _build_ytdlp_format(format_id, has_audio)
         log.info("yt-dlp selected format | url=%s format_id=%s has_audio=%s fmt=%s", url, format_id, has_audio, fmt)
+
         est_size = await asyncio.to_thread(_probe_total_size_sync, url, fmt)
         if not est_size and format_id:
             update_interval = 7
         else:
             update_interval = 7 if est_size >= _SIZE_100MB else 5
+
         cmd = [YT_DLP]
         if is_ig:
             cmd += ["--ignore-errors", "--no-abort-on-error"]
@@ -411,10 +441,11 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
                 picked = _pick_latest_media_file(start_ts, job_id)
                 if picked:
                     return {"path": picked, "title": _extract_title_from_path(picked, job_id)}
-            log.warning("yt-dlp video download failed, trying gallery-dl fallback | url=%s job_id=%s err=%s", url, job_id, yt_error)
-            fallback = await gallerydl_fallback(url=url, job_id=job_id, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id)
-            if fallback:
-                return fallback
+            if not is_yt:
+                log.warning("yt-dlp video download failed, trying gallery-dl fallback | url=%s job_id=%s err=%s", url, job_id, yt_error)
+                fallback = await gallerydl_fallback(url=url, job_id=job_id, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id)
+                if fallback:
+                    return fallback
             if is_ig:
                 picked = _pick_latest_media_file(start_ts, job_id)
                 if picked:
