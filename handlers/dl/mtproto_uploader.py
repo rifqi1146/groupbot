@@ -53,7 +53,7 @@ async def _safe_edit_upload(bot, chat_id, message_id, current, total, started):
         speed = current / elapsed
         text = (
             "<b>Uploading video...</b>\n\n"
-            f"<code>{_progress_bar(percent)} {percent:.1f}%</code>\n"
+            f"<code>{progress_bar(percent)}</code>\n"
             f"<code>{_format_size(current)}/{_format_size(total)}</code>\n"
             f"<code>Speed: {_format_size(speed)}/s</code>"
         )
