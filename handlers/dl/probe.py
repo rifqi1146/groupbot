@@ -13,6 +13,10 @@ YTDLP_RESOLUTION_DOMAINS = (
     "youtube.com",
     "youtu.be",
     "pornhub.com",
+    "xhsocial.com",
+    "xhamster.com",
+    "xnxx.com",
+    "xvideos.com",
 )
 
 SONZAI_RESOLUTION_DOMAINS = (
