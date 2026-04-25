@@ -101,6 +101,7 @@ HELP_TEXT = {
         "• <code>/ping</code> — Check bot response time\n"
         "• <code>/stats</code> — Bot & system statistics\n"
         "• <code>/ip</code> — IP address lookup\n"
+        "• <code>/net</code> — all in one network information\n"
         "• <code>/domain</code> — Domain information\n"
         "• <code>/whoisdomain</code> — Detailed domain lookup\n"
     ),
