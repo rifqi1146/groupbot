@@ -424,6 +424,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
             "--concurrent-fragments", "8",
             "--no-playlist",
             "-f", fmt,
+            "--extractor-args", "generic:impersonate"
             "--merge-output-format", "mp4",
             "--newline",
             "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
