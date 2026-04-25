@@ -1,13 +1,12 @@
 import os
-import time
 import uuid
+import time
 import html
 import logging
 import asyncio
 from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ContextTypes
-from .constants import MAX_TG_SIZE
 from handlers.join import require_join_or_block
 from utils.config import OWNER_ID
 from database.premium import init_premium_db
@@ -31,8 +30,7 @@ YTDLP_SEM = asyncio.Semaphore(10)
 def _host(url: str) -> str:
     try:
         u = urlparse((url or "").strip())
-        h = (u.hostname or "").lower()
-        return h
+        return (u.hostname or "").lower()
     except Exception:
         return ""
 
@@ -60,9 +58,6 @@ def _pick_auto_resolution(res_map: dict[int, dict], preferred_height: int):
             height = int(h)
         except Exception:
             continue
-        total_size = int(item.get("total_size") or item.get("filesize") or 0)
-        if total_size and total_size > MAX_TG_SIZE:
-            continue
         candidates.append((height, item))
     if not candidates:
         return None, None
@@ -77,6 +72,15 @@ def _pick_auto_resolution(res_map: dict[int, dict], preferred_height: int):
     return candidates[0]
 
 async def _start_dl_task(context, message, data, fmt_key, format_id=None, has_audio=False, label=None, engine: str | None = None):
+    log.info(
+        "Start download task | url=%s fmt_key=%s format_id=%s has_audio=%s engine=%s label=%s",
+        data.get("url"),
+        fmt_key,
+        format_id,
+        has_audio,
+        engine,
+        label,
+    )
     await message.edit_text(f"<b>Preparing {label or DL_FORMATS[fmt_key]['label']}...</b>", parse_mode="HTML")
     context.application.create_task(
         _dl_worker(
@@ -98,6 +102,7 @@ async def _show_resolution_picker(context, message, dl_id: str, data: dict, engi
     if not res_list:
         DL_CACHE.pop(dl_id, None)
         return await message.edit_text("No valid resolutions available.", parse_mode="HTML")
+
     res_map = {}
     for r in res_list:
         h = int(r.get("height") or 0)
@@ -109,10 +114,28 @@ async def _show_resolution_picker(context, message, dl_id: str, data: dict, engi
                 "filesize": int(r.get("filesize") or 0),
                 "total_size": int(r.get("total_size") or 0),
             }
+
+    log.info(
+        "Resolution picker ready | url=%s engine=%s heights=%s map=%s",
+        data.get("url"),
+        engine,
+        sorted(res_map.keys(), reverse=True),
+        res_map,
+    )
+
     settings = get_user_settings(data["user"])
     preferred_height = int(settings.get("youtube_resolution") or 0)
+
     if preferred_height > 0:
         picked_height, picked = _pick_auto_resolution(res_map, preferred_height)
+        log.info(
+            "Auto resolution preference | url=%s preferred=%s picked_height=%s picked=%s engine=%s",
+            data.get("url"),
+            preferred_height,
+            picked_height,
+            picked,
+            engine,
+        )
         if picked_height and picked:
             DL_CACHE.pop(dl_id, None)
             return await _start_dl_task(
@@ -125,6 +148,7 @@ async def _show_resolution_picker(context, message, dl_id: str, data: dict, engi
                 label=f"Video ({picked_height}p)",
                 engine=engine,
             )
+
     DL_CACHE[dl_id]["res_map"] = res_map
     if engine:
         DL_CACHE[dl_id]["engine"] = engine
@@ -136,25 +160,25 @@ async def _process_choice(context, message, dl_id: str, data: dict, choice: str,
         DL_CACHE[dl_id]["fmt_key"] = "video"
         settings = get_user_settings(user_id)
         default_engine = str(settings.get("youtube_download_engine") or "ytdlp").lower()
+
         if supports_both_resolution_engines(url):
-            picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "sonzai"
+            picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "ytdlp"
+            log.info("Resolution engine selected | url=%s engine=%s default=%s", url, picked_engine, default_engine)
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine=picked_engine)
-        if supports_sonzai_resolution(url):
-            await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
-            return await _show_resolution_picker(context, message, dl_id, data, engine="sonzai")
+
         if supports_ytdlp_resolution(url):
+            log.info("Resolution engine selected | url=%s engine=ytdlp", url)
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine="ytdlp")
+
+        if supports_sonzai_resolution(url):
+            log.info("Resolution engine selected | url=%s engine=sonzai", url)
+            await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
+            return await _show_resolution_picker(context, message, dl_id, data, engine="sonzai")
+
     DL_CACHE.pop(dl_id, None)
-    return await _start_dl_task(
-        context=context,
-        message=message,
-        data=data,
-        fmt_key=choice,
-        format_id=None,
-        has_audio=False,
-    )
+    return await _start_dl_task(context=context, message=message, data=data, fmt_key=choice, format_id=None, has_audio=False)
 
 async def _is_admin_or_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -271,6 +295,15 @@ async def _dl_worker(app, chat_id, reply_to, raw_url, fmt_key, status_msg_id, fo
     bot = app.bot
     path = None
     try:
+        log.info(
+            "Download worker start | url=%s fmt_key=%s format_id=%s has_audio=%s engine=%s",
+            raw_url,
+            fmt_key,
+            format_id,
+            has_audio,
+            engine,
+        )
+
         if is_tiktok(raw_url):
             async with TIKTOK_LOCK:
                 path = await tiktok_download(raw_url, bot, chat_id, status_msg_id, fmt_key)
@@ -369,6 +402,7 @@ async def dlengine_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if engine not in ("ytdlp", "sonzai"):
         return await q.edit_message_text("Invalid engine selection")
     data["engine"] = engine
+    log.info("Engine callback selected | url=%s engine=%s", data.get("url"), engine)
     await q.edit_message_text("<b>Fetching video formats...</b>", parse_mode="HTML")
     return await _show_resolution_picker(context, q.message, dl_id, data, engine=engine)
 
@@ -403,12 +437,25 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         height = int(height_raw)
     except Exception:
         return await q.edit_message_text("Invalid resolution")
+
     res_map = data.get("res_map") or {}
     picked = res_map.get(height)
     if not picked:
         return await q.edit_message_text("Resolution is no longer available")
+
     engine = data.get("engine")
     DL_CACHE.pop(dl_id, None)
+
+    log.info(
+        "Resolution callback selected | url=%s height=%s format_id=%s has_audio=%s engine=%s picked=%s",
+        data.get("url"),
+        height,
+        picked.get("format_id"),
+        picked.get("has_audio"),
+        engine,
+        picked,
+    )
+
     return await _start_dl_task(
         context=context,
         message=q.message,

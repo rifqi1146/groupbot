@@ -33,12 +33,7 @@ def _format_download_status(pct: float, downloaded: str = "", total: str = "", s
     total = _format_dl_value(total)
     speed = _format_dl_value(speed)
     eta = _format_dl_value(eta)
-    lines = [
-        "<b>Downloading...</b>",
-        "",
-        f"<code>{progress_bar(pct)}</code>",
-        f"<code>{downloaded}/{total}</code>",
-    ]
+    lines = ["<b>Downloading...</b>", "", f"<code>{progress_bar(pct)}</code>", f"<code>{downloaded}/{total}</code>"]
     if speed != "?":
         lines.append(f"<code>Speed: {speed}</code>")
     if eta != "?":
@@ -237,14 +232,7 @@ def _probe_total_size_sync(url: str, fmt: str) -> int:
         return 0
     cmd = [YT_DLP]
     _append_cookies_args(cmd)
-    cmd += [
-        "--js-runtimes", "deno:/root/.deno/bin/deno",
-        "--extractor-args", "youtube:player_client=web",
-        "--no-playlist",
-        "-J",
-        "-f", fmt,
-        url,
-    ]
+    cmd += ["--js-runtimes", "deno:/root/.deno/bin/deno", "--extractor-args", "youtube:player_client=web", "--no-playlist", "-J", "-f", fmt, url]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True)
     except Exception as e:
@@ -296,11 +284,7 @@ def _extract_tool_error(stdout_text: str, stderr_text: str, code: int, tool_name
             idx = lower.rfind("error:")
             msg = line[idx + len("error:"):].strip()
             return msg or f"{tool_name} exited with code {code}"
-        if any(key in lower for key in (
-            "unsupported url", "unable to extract", "video unavailable", "private video",
-            "sign in to confirm", "requested format is not available", "http error",
-            "forbidden", "cloudflare", "login required", "members only", "429", "403",
-        )):
+        if any(key in lower for key in ("unsupported url", "unable to extract", "video unavailable", "private video", "sign in to confirm", "requested format is not available", "http error", "forbidden", "cloudflare", "login required", "members only", "429", "403")):
             return line
     tail = [x.strip() for x in merged_lines if (x or "").strip()]
     if tail:
@@ -321,7 +305,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
     async def run(cmd):
         nonlocal update_interval
         log.info("Running yt-dlp | url=%s job_id=%s fmt_key=%s", url, job_id, fmt_key)
-        log.debug("yt-dlp command: %s", " ".join(cmd))
+        log.info("yt-dlp command | %s", " ".join(cmd))
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         last_edit = 0.0
         last_pct = -1.0
@@ -350,12 +334,7 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
             last_pct = pct
             now = time.time()
             if now - last_edit >= update_interval or pct >= 100:
-                await _safe_edit_status(
-                    bot=bot,
-                    chat_id=chat_id,
-                    message_id=status_msg_id,
-                    text=_format_download_status(pct=pct, downloaded=downloaded, total=total, speed=speed, eta=eta),
-                )
+                await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=_format_download_status(pct=pct, downloaded=downloaded, total=total, speed=speed, eta=eta))
                 last_edit = now
         stdout_rest, stderr = await proc.communicate()
         stdout_text = "\n".join(stdout_lines)
@@ -396,20 +375,14 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
             raise RuntimeError(_extract_tool_error(stdout_text, stderr_text, code, "yt-dlp"))
     else:
         if is_x:
-            fallback = await gallerydl_fallback(
-                url=url,
-                job_id=job_id,
-                bot=bot,
-                chat_id=chat_id,
-                status_msg_id=status_msg_id,
-                status_text="<b>Downloading with gallery-dl...</b>",
-            )
+            fallback = await gallerydl_fallback(url=url, job_id=job_id, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, status_text="<b>Downloading with gallery-dl...</b>")
             if fallback:
                 return fallback
         if format_id:
-            fmt = format_id if has_audio else f"{format_id}+bestaudio/best"
+            fmt = format_id if has_audio else f"{format_id}+bestaudio[ext=m4a]/{format_id}+bestaudio"
         else:
-            fmt = "bestvideo*+bestaudio/best"
+            fmt = "bestvideo+bestaudio/best"
+        log.info("yt-dlp selected format | url=%s format_id=%s has_audio=%s fmt=%s", url, format_id, has_audio, fmt)
         est_size = await asyncio.to_thread(_probe_total_size_sync, url, fmt)
         if not est_size and format_id:
             update_interval = 7
