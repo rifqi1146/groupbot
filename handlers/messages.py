@@ -4,7 +4,7 @@ from utils.logger import log_commands
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
 from handlers.dl.router import auto_dl_detect
-from handlers.bot_dollar import dollar_router
+from handlers.prefix_dollar import dollar_router
 from handlers.welcome import welcome_handler, welcome_chat_member_handler
 from utils.user_collector import user_collector
 from handlers.caca import meta_query
