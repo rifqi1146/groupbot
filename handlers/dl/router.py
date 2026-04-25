@@ -46,8 +46,6 @@ def is_supported_platform(url: str) -> bool:
     return any(_host_match(host, d) for d in AUTO_DOWNLOAD_DOMAINS)
 
 def _format_id_for_engine(engine: str | None, height: int, picked: dict) -> str:
-    if str(engine or "").lower() == "ytdlp":
-        return f"height:{int(height)}"
     return str(picked.get("format_id") or "")
 
 def _pick_auto_resolution(res_map: dict[int, dict], preferred_height: int):
