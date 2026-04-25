@@ -25,8 +25,8 @@ from .remux import prepare_download_result_for_send
 log = logging.getLogger(__name__)
 
 os.makedirs(TMP_DIR, exist_ok=True)
-TIKTOK_LOCK = asyncio.Lock()
-YTDLP_SEM = asyncio.Semaphore(3)
+TIKTOK_LOCK = asyncio.Semaphore(10)
+YTDLP_SEM = asyncio.Semaphore(10)
 
 def _host(url: str) -> str:
     try:
