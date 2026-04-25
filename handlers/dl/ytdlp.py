@@ -7,17 +7,17 @@ import json
 import logging
 import subprocess
 from urllib.parse import urlparse
+from telegram.error import RetryAfter
 from .instagram.main import is_instagram_url
 from .constants import COOKIES_PATH, TMP_DIR
 from .utils import progress_bar
 
 _SIZE_100MB = 100 * 1024 * 1024
-
 log = logging.getLogger(__name__)
 
 def _format_dl_value(value: str) -> str:
     value = str(value or "").strip()
-    if not value or value in ("N/A", "NA", "Unknown", "None"):
+    if not value or value.lower() in ("n/a", "na", "unknown", "none", "null", "-"):
         return "?"
     return value
 
@@ -44,18 +44,16 @@ def _format_download_status(pct: float, downloaded: str = "", total: str = "", s
     if eta != "?":
         lines.append(f"<code>ETA: {eta}</code>")
     return "\n".join(lines)
-    
+
 def _extract_title_from_path(path: str, prefix: str) -> str:
     base = os.path.splitext(os.path.basename(path))[0]
     if base.startswith(prefix + "_"):
         base = base[len(prefix) + 1:]
     return base.strip() or "Media"
 
-
 def _looks_like_media_id(text: str) -> bool:
     s = (text or "").strip()
     return bool(s) and len(s) >= 8 and s.isdigit()
-
 
 def is_x_url(url: str) -> bool:
     try:
@@ -65,7 +63,6 @@ def is_x_url(url: str) -> bool:
         text = (url or "").lower()
         log.warning("Failed to parse URL host for X detection | url=%s err=%s", url, e)
         return "x.com/" in text or "twitter.com/" in text
-
 
 def _fallback_title_from_url(url: str) -> str:
     try:
@@ -90,7 +87,6 @@ def _fallback_title_from_url(url: str) -> str:
         log.warning("Failed to derive fallback title from URL | url=%s err=%s", url, e)
         return "Media"
 
-
 def title_gallerydl(path: str, prefix: str, url: str = "") -> str:
     title = _extract_title_from_path(path, prefix)
     title = title.replace("_", " ").strip(" -_.")
@@ -101,7 +97,6 @@ def title_gallerydl(path: str, prefix: str, url: str = "") -> str:
     if parent and "gallerydl" not in parent.lower() and not _looks_like_media_id(parent):
         return parent
     return _fallback_title_from_url(url)
-
 
 def _strip_job_prefix(path: str, prefix: str) -> str:
     try:
@@ -121,7 +116,6 @@ def _strip_job_prefix(path: str, prefix: str) -> str:
         log.warning("Failed to strip job prefix from path | path=%s prefix=%s err=%s", path, prefix, e)
         return path
 
-
 def _pick_latest_media_file(since_ts: float, prefix: str) -> str | None:
     exts = (".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
     try:
@@ -130,9 +124,7 @@ def _pick_latest_media_file(since_ts: float, prefix: str) -> str | None:
             if not f.startswith(prefix + "_"):
                 continue
             p = os.path.join(TMP_DIR, f)
-            if not os.path.isfile(p):
-                continue
-            if not f.lower().endswith(exts):
+            if not os.path.isfile(p) or not f.lower().endswith(exts):
                 continue
             try:
                 mt = os.path.getmtime(p)
@@ -146,14 +138,8 @@ def _pick_latest_media_file(since_ts: float, prefix: str) -> str | None:
         files.sort(key=lambda x: x[0], reverse=True)
         return files[0][1]
     except Exception as e:
-        log.warning(
-            "Failed to pick latest media file | tmp_dir=%s prefix=%s err=%s",
-            TMP_DIR,
-            prefix,
-            e,
-        )
+        log.warning("Failed to pick latest media file | tmp_dir=%s prefix=%s err=%s", TMP_DIR, prefix, e)
         return None
-
 
 def _collect_media_files_recursive(root_dir: str) -> list[str]:
     exts = (".mp4", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
@@ -164,9 +150,8 @@ def _collect_media_files_recursive(root_dir: str) -> list[str]:
                 if not name.lower().endswith(exts):
                     continue
                 p = os.path.join(root, name)
-                if not os.path.isfile(p):
-                    continue
-                files.append(p)
+                if os.path.isfile(p):
+                    files.append(p)
     except Exception as e:
         log.warning("Failed to collect media files recursively | root_dir=%s err=%s", root_dir, e)
         return []
@@ -174,41 +159,26 @@ def _collect_media_files_recursive(root_dir: str) -> list[str]:
         files.sort(key=lambda p: os.path.getmtime(p))
     except Exception as e:
         log.warning("Failed to sort collected media files | root_dir=%s err=%s", root_dir, e)
-
     return files
-
 
 def _append_cookies_args(cmd: list[str]) -> list[str]:
     if COOKIES_PATH and os.path.exists(COOKIES_PATH):
         cmd.extend(["--cookies", COOKIES_PATH])
     return cmd
 
-
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
     try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=text,
-            parse_mode="HTML",
-        )
+        await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
+    except RetryAfter as e:
+        wait = int(getattr(e, "retry_after", 1))
+        log.warning("Progress edit RetryAfter | chat_id=%s wait=%s", chat_id, wait)
+        await asyncio.sleep(wait + 1)
     except Exception as e:
-        log.warning(
-            "Failed to edit status message | chat_id=%s message_id=%s err=%s",
-            chat_id,
-            message_id,
-            e,
-        )
+        if "message is not modified" in str(e).lower():
+            return
+        log.warning("Failed to edit status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
 
-
-async def gallerydl_fallback(
-    url: str,
-    job_id: str,
-    bot,
-    chat_id,
-    status_msg_id,
-    status_text: str = "<b>yt-dlp failed, fallback to gallery-dl...</b>",
-):
+async def gallerydl_fallback(url: str, job_id: str, bot, chat_id, status_msg_id, status_text: str = "<b>yt-dlp failed, fallback to gallery-dl...</b>"):
     GALLERY_DL = shutil.which("gallery-dl")
     if not GALLERY_DL:
         log.warning("gallery-dl not found in PATH")
@@ -216,23 +186,13 @@ async def gallerydl_fallback(
     job_dir = os.path.join(TMP_DIR, f"{job_id}_gallerydl")
     os.makedirs(job_dir, exist_ok=True)
     try:
-        await _safe_edit_status(
-            bot=bot,
-            chat_id=chat_id,
-            message_id=status_msg_id,
-            text=status_text,
-        )
+        await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=status_text)
         cmd = [GALLERY_DL]
         _append_cookies_args(cmd)
         cmd += [url]
         log.info("Running gallery-dl fallback | url=%s job_id=%s", url, job_id)
         log.debug("gallery-dl command: %s", " ".join(cmd))
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=job_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        proc = await asyncio.create_subprocess_exec(*cmd, cwd=job_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await proc.communicate()
         stdout_text = stdout.decode(errors="ignore") if stdout else ""
         stderr_text = stderr.decode(errors="ignore") if stderr else ""
@@ -258,16 +218,10 @@ async def gallerydl_fallback(
                     stem, ext = os.path.splitext(final_name)
                     final_path = os.path.join(TMP_DIR, f"{stem}_{uuid.uuid4().hex[:6]}{ext}")
                 shutil.move(src, final_path)
-            moved_items.append({
-                "path": final_path,
-                "title": title_gallerydl(final_path, job_id, url),
-            })
+            moved_items.append({"path": final_path, "title": title_gallerydl(final_path, job_id, url)})
         if len(moved_items) == 1:
             return moved_items[0]
-        return {
-            "items": moved_items,
-            "title": _fallback_title_from_url(url),
-        }
+        return {"items": moved_items, "title": _fallback_title_from_url(url)}
     except Exception as e:
         log.warning("gallery-dl fallback crashed | url=%s job_id=%s err=%r", url, job_id, e)
         return None
@@ -277,7 +231,6 @@ async def gallerydl_fallback(
         except Exception as e:
             log.warning("Failed to remove gallery-dl temp directory | dir=%s err=%s", job_dir, e)
 
-
 def _probe_total_size_sync(url: str, fmt: str) -> int:
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
@@ -285,6 +238,7 @@ def _probe_total_size_sync(url: str, fmt: str) -> int:
     cmd = [YT_DLP]
     _append_cookies_args(cmd)
     cmd += [
+        "--js-runtimes", "deno:/root/.deno/bin/deno",
         "--extractor-args", "youtube:player_client=web",
         "--no-playlist",
         "-J",
@@ -324,16 +278,8 @@ def _probe_total_size_sync(url: str, fmt: str) -> int:
         s += fs
     return s
 
-
 def _extract_tool_error(stdout_text: str, stderr_text: str, code: int, tool_name: str = "yt-dlp") -> str:
-    skip_starts = (
-        "[download]",
-        "[info]",
-        "[debug]",
-        "[generic]",
-        "[redirect]",
-        "[metadata]",
-    )
+    skip_starts = ("[download]", "[info]", "[debug]", "[generic]", "[redirect]", "[metadata]")
     merged_lines = []
     if stderr_text:
         merged_lines.extend(stderr_text.splitlines())
@@ -351,19 +297,9 @@ def _extract_tool_error(stdout_text: str, stderr_text: str, code: int, tool_name
             msg = line[idx + len("error:"):].strip()
             return msg or f"{tool_name} exited with code {code}"
         if any(key in lower for key in (
-            "unsupported url",
-            "unable to extract",
-            "video unavailable",
-            "private video",
-            "sign in to confirm",
-            "requested format is not available",
-            "http error",
-            "forbidden",
-            "cloudflare",
-            "login required",
-            "members only",
-            "429",
-            "403",
+            "unsupported url", "unable to extract", "video unavailable", "private video",
+            "sign in to confirm", "requested format is not available", "http error",
+            "forbidden", "cloudflare", "login required", "members only", "429", "403",
         )):
             return line
     tail = [x.strip() for x in merged_lines if (x or "").strip()]
@@ -371,34 +307,22 @@ def _extract_tool_error(stdout_text: str, stderr_text: str, code: int, tool_name
         return tail[-1][:700]
     return f"{tool_name} exited with code {code}"
 
-
-async def ytdlp_download(
-    url,
-    fmt_key,
-    bot,
-    chat_id,
-    status_msg_id,
-    format_id: str | None = None,
-    has_audio: bool = False,
-):
+async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
     YT_DLP = shutil.which("yt-dlp")
     if not YT_DLP:
         raise RuntimeError("yt-dlp not found in PATH")
     os.makedirs(TMP_DIR, exist_ok=True)
     job_id = uuid.uuid4().hex[:10]
-    out_tpl = f"{TMP_DIR}/{job_id}_%(title)s.%(ext)s"
+    out_tpl = f"{TMP_DIR}/{job_id}_%(title).120s.%(ext)s"
     update_interval = 5
     is_ig = is_instagram_url(url)
     is_x = is_x_url(url)
+
     async def run(cmd):
         nonlocal update_interval
         log.info("Running yt-dlp | url=%s job_id=%s fmt_key=%s", url, job_id, fmt_key)
         log.debug("yt-dlp command: %s", " ".join(cmd))
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         last_edit = 0.0
         last_pct = -1.0
         stdout_lines = []
@@ -411,35 +335,26 @@ async def ytdlp_download(
             log.debug("yt-dlp stdout | job_id=%s %s", job_id, raw)
             if "|" not in raw:
                 continue
-            
             parts = raw.split("|")
-            if len(parts) < 5:
+            if len(parts) < 6:
                 continue
-            
             pct = _clean_percent(parts[0])
             downloaded = parts[1] if len(parts) > 1 else ""
-            total = parts[2] if len(parts) > 2 else ""
-            speed = parts[3] if len(parts) > 3 else ""
-            eta = parts[4] if len(parts) > 4 else ""
-            
+            total_exact = parts[2] if len(parts) > 2 else ""
+            total_est = parts[3] if len(parts) > 3 else ""
+            speed = parts[4] if len(parts) > 4 else ""
+            eta = parts[5] if len(parts) > 5 else ""
+            total = total_exact if _format_dl_value(total_exact) != "?" else total_est
             if pct <= last_pct and pct < 100:
                 continue
-            
             last_pct = pct
             now = time.time()
-            
             if now - last_edit >= update_interval or pct >= 100:
                 await _safe_edit_status(
                     bot=bot,
                     chat_id=chat_id,
                     message_id=status_msg_id,
-                    text=_format_download_status(
-                        pct=pct,
-                        downloaded=downloaded,
-                        total=total,
-                        speed=speed,
-                        eta=eta,
-                    ),
+                    text=_format_download_status(pct=pct, downloaded=downloaded, total=total, speed=speed, eta=eta),
                 )
                 last_edit = now
         stdout_rest, stderr = await proc.communicate()
@@ -455,7 +370,9 @@ async def ytdlp_download(
             log.debug("yt-dlp stderr | job_id=%s\n%s", job_id, stderr_text)
         log.info("yt-dlp exit code | job_id=%s code=%s", job_id, proc.returncode)
         return proc.returncode, stdout_text, stderr_text
+
     start_ts = time.time()
+
     if fmt_key == "mp3":
         update_interval = 2
         cmd = [YT_DLP]
@@ -490,10 +407,7 @@ async def ytdlp_download(
             if fallback:
                 return fallback
         if format_id:
-            if has_audio:
-                fmt = format_id
-            else:
-                fmt = f"{format_id}+bestaudio/best"
+            fmt = format_id if has_audio else f"{format_id}+bestaudio/best"
         else:
             fmt = "bestvideo*+bestaudio/best"
         est_size = await asyncio.to_thread(_probe_total_size_sync, url, fmt)
@@ -523,28 +437,17 @@ async def ytdlp_download(
             if is_ig:
                 picked = _pick_latest_media_file(start_ts, job_id)
                 if picked:
-                    return {
-                        "path": picked,
-                        "title": _extract_title_from_path(picked, job_id),
-                    }
+                    return {"path": picked, "title": _extract_title_from_path(picked, job_id)}
             log.warning("yt-dlp video download failed, trying gallery-dl fallback | url=%s job_id=%s err=%s", url, job_id, yt_error)
-            fallback = await gallerydl_fallback(
-                url=url,
-                job_id=job_id,
-                bot=bot,
-                chat_id=chat_id,
-                status_msg_id=status_msg_id,
-            )
+            fallback = await gallerydl_fallback(url=url, job_id=job_id, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id)
             if fallback:
                 return fallback
             if is_ig:
                 picked = _pick_latest_media_file(start_ts, job_id)
                 if picked:
-                    return {
-                        "path": picked,
-                        "title": _extract_title_from_path(picked, job_id),
-                    }
+                    return {"path": picked, "title": _extract_title_from_path(picked, job_id)}
             raise RuntimeError(yt_error)
+
     def media_priority(p):
         p = p.lower()
         if p.endswith(".mp4"):
@@ -554,6 +457,7 @@ async def ytdlp_download(
         if p.endswith((".jpg", ".jpeg", ".png", ".webp")):
             return 2
         return 9
+
     files = sorted(
         (
             os.path.join(TMP_DIR, f)
@@ -570,7 +474,4 @@ async def ytdlp_download(
     picked = files[0]
     title = title_gallerydl(picked, job_id, url)
     final_path = _strip_job_prefix(picked, job_id)
-    return {
-        "path": final_path,
-        "title": title,
-    }
+    return {"path": final_path, "title": title}
