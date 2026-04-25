@@ -91,19 +91,18 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
     ]
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
-        log.warning("yt-dlp probe failed | code=%s err=%s", p.returncode, (p.stderr or "")[-500:])
+        print("yt-dlp probe failed:", (p.stderr or p.stdout or "")[-1000:])
         return []
     try:
         info = json.loads(p.stdout)
     except Exception as e:
-        log.warning("yt-dlp probe json parse failed | err=%s", e)
+        print("yt-dlp probe json failed:", e)
         return []
     formats = info.get("formats") or []
     if not isinstance(formats, list):
         return []
     bestaudio_size = _pick_bestaudio_size(formats)
     grouped: dict[int, list[dict]] = {}
-
     for f in formats:
         vcodec = str(f.get("vcodec") or "")
         if vcodec == "none":
@@ -116,17 +115,14 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             height = int(height)
         except Exception:
             continue
-
         filesize = f.get("filesize") or f.get("filesize_approx") or 0
         try:
             filesize = int(filesize) if filesize else 0
         except Exception:
             filesize = 0
-
         acodec = str(f.get("acodec") or "")
         has_audio = acodec != "none"
         total_size = filesize if has_audio else (filesize + bestaudio_size if filesize else 0)
-
         item = {
             "height": height,
             "format_id": str(format_id),
@@ -140,7 +136,6 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "tbr": float(f.get("tbr") or 0),
         }
         grouped.setdefault(height, []).append(item)
-
     def _score(item: dict):
         ext = (item.get("ext") or "").lower()
         has_audio = bool(item.get("has_audio"))
@@ -150,13 +145,12 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         tbr = float(item.get("tbr") or 0)
         return (
             1 if not has_audio else 0,
-            1 if ext == "mp4" else 0,
+            1 if ext in ("mp4", "webm") else 0,
             fps,
             tbr,
             total_size,
             filesize,
         )
-
     out = []
     for _, items in grouped.items():
         best = max(items, key=_score)
@@ -168,9 +162,8 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "filesize": best["filesize"],
             "total_size": best["total_size"],
         })
-
     out.sort(key=lambda x: x["height"], reverse=True)
-    log.info("yt-dlp probe resolutions | url=%s heights=%s", url, [x.get("height") for x in out])
+    print("yt-dlp probe heights:", [x["height"] for x in out])
     return out
 
 async def get_resolutions(url: str, engine: str | None = None) -> list[dict]:

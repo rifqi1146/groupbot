@@ -135,7 +135,7 @@ async def _process_choice(context, message, dl_id: str, data: dict, choice: str,
     if choice == "video" and supports_resolution_picker(url):
         DL_CACHE[dl_id]["fmt_key"] = "video"
         settings = get_user_settings(user_id)
-        default_engine = str(settings.get("youtube_download_engine") or "sonzai").lower()
+        default_engine = str(settings.get("youtube_download_engine") or "ytdlp").lower()
         if supports_both_resolution_engines(url):
             picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "sonzai"
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
