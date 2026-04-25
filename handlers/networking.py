@@ -3,11 +3,13 @@ import re
 import socket
 import aiohttp
 import whois
+import time
 import ipaddress
+import asyncio
+
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.http import get_http_session
-import asyncio
 from urllib.parse import urlparse
 
 _NET_CACHE = {}
