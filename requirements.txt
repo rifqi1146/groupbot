@@ -22,3 +22,5 @@ deep-translator
 dnspython
 uvloop
 aiofiles
+cryptg
+telethon
