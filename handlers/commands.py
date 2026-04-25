@@ -1,4 +1,4 @@
-from telegram.ext import CommandHandler, MessageHandler, filters
+from telegram.ext import CommandHandler, MessageHandler
 
 from handlers.nsfw import nsfw_cmd
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd, net_cmd
@@ -28,7 +28,7 @@ from handlers.music import music_cmd
 from handlers.kurs import kurs_cmd
 from handlers.cookies import cookies_cmd
 from handlers.donate import donate_cmd
-from handlers.quotly import q_cmd, quote_cache_message
+from handlers.quotly import q_cmd
 from handlers.kang import kang_cmd
 from handlers.setting import setting_cmd
 from handlers.backup import backup_cmd, restore_cmd, autobackup_cmd
@@ -130,15 +130,6 @@ COMMAND_HANDLERS = [
 ]
 
 def register_commands(app):
-    app.add_handler(
-        MessageHandler(
-            filters.ALL & ~filters.COMMAND,
-            quote_cache_message,
-            block=False,
-        ),
-        group=-50,
-    )
-
     for name, handler, blocking in COMMAND_HANDLERS:
         app.add_handler(
             CommandHandler(name, handler, block=blocking),
