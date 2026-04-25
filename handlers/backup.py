@@ -159,9 +159,9 @@ async def _reload_runtime_state(app) -> list[str]:
         errors.append("asupan")
 
     try:
-        from database import premium_service
+        from database import premium
 
-        premium_service.init()
+        premium.init()
         log.info("✓ Premium runtime reloaded")
     except Exception:
         log.exception("Failed to reload premium runtime state after restore")
