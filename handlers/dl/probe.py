@@ -2,12 +2,9 @@ import shutil
 import subprocess
 import asyncio
 import json
-import logging
 from urllib.parse import urlparse
 from .constants import COOKIES_PATH, MAX_TG_SIZE
 from .youtube.main import sonzai_get_resolutions
-
-log = logging.getLogger(__name__)
 
 YTDLP_RESOLUTION_DOMAINS = (
     "youtube.com",
@@ -82,21 +79,13 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
     cmd = [yt_dlp_bin]
     if COOKIES_PATH:
         cmd += ["--cookies", COOKIES_PATH]
-    cmd += [
-        "--js-runtimes", "deno:/root/.deno/bin/deno",
-        "--extractor-args", "youtube:player_client=web",
-        "--no-playlist",
-        "-J",
-        url,
-    ]
+    cmd += ["--no-playlist", "-J", url]
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
-        print("yt-dlp probe failed:", (p.stderr or p.stdout or "")[-1000:])
         return []
     try:
         info = json.loads(p.stdout)
-    except Exception as e:
-        print("yt-dlp probe json failed:", e)
+    except Exception:
         return []
     formats = info.get("formats") or []
     if not isinstance(formats, list):
@@ -123,6 +112,8 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         acodec = str(f.get("acodec") or "")
         has_audio = acodec != "none"
         total_size = filesize if has_audio else (filesize + bestaudio_size if filesize else 0)
+        if total_size and total_size > MAX_TG_SIZE:
+            continue
         item = {
             "height": height,
             "format_id": str(format_id),
@@ -145,7 +136,7 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         tbr = float(item.get("tbr") or 0)
         return (
             1 if not has_audio else 0,
-            1 if ext in ("mp4", "webm") else 0,
+            1 if ext == "mp4" else 0,
             fps,
             tbr,
             total_size,
@@ -163,7 +154,6 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "total_size": best["total_size"],
         })
     out.sort(key=lambda x: x["height"], reverse=True)
-    print("yt-dlp probe heights:", [x["height"] for x in out])
     return out
 
 async def get_resolutions(url: str, engine: str | None = None) -> list[dict]:
