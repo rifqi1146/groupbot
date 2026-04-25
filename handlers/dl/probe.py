@@ -2,9 +2,12 @@ import shutil
 import subprocess
 import asyncio
 import json
+import logging
 from urllib.parse import urlparse
 from .constants import COOKIES_PATH, MAX_TG_SIZE
 from .youtube.main import sonzai_get_resolutions
+
+log = logging.getLogger(__name__)
 
 YTDLP_RESOLUTION_DOMAINS = (
     "youtube.com",
@@ -79,19 +82,28 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
     cmd = [yt_dlp_bin]
     if COOKIES_PATH:
         cmd += ["--cookies", COOKIES_PATH]
-    cmd += ["--no-playlist", "-J", url]
+    cmd += [
+        "--js-runtimes", "deno:/root/.deno/bin/deno",
+        "--extractor-args", "youtube:player_client=web",
+        "--no-playlist",
+        "-J",
+        url,
+    ]
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
+        log.warning("yt-dlp probe failed | code=%s err=%s", p.returncode, (p.stderr or "")[-500:])
         return []
     try:
         info = json.loads(p.stdout)
-    except Exception:
+    except Exception as e:
+        log.warning("yt-dlp probe json parse failed | err=%s", e)
         return []
     formats = info.get("formats") or []
     if not isinstance(formats, list):
         return []
     bestaudio_size = _pick_bestaudio_size(formats)
     grouped: dict[int, list[dict]] = {}
+
     for f in formats:
         vcodec = str(f.get("vcodec") or "")
         if vcodec == "none":
@@ -104,15 +116,17 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             height = int(height)
         except Exception:
             continue
+
         filesize = f.get("filesize") or f.get("filesize_approx") or 0
         try:
             filesize = int(filesize) if filesize else 0
         except Exception:
             filesize = 0
+
         acodec = str(f.get("acodec") or "")
         has_audio = acodec != "none"
         total_size = filesize if has_audio else (filesize + bestaudio_size if filesize else 0)
-        too_large = bool(total_size and total_size > MAX_TG_SIZE)
+
         item = {
             "height": height,
             "format_id": str(format_id),
@@ -120,28 +134,29 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "has_audio": has_audio,
             "filesize": filesize,
             "total_size": total_size,
-            "too_large": too_large,
             "vcodec": vcodec,
             "acodec": acodec,
             "fps": int(f.get("fps") or 0),
             "tbr": float(f.get("tbr") or 0),
         }
         grouped.setdefault(height, []).append(item)
+
     def _score(item: dict):
         ext = (item.get("ext") or "").lower()
         has_audio = bool(item.get("has_audio"))
-        too_large = bool(item.get("too_large"))
         total_size = int(item.get("total_size") or 0)
+        filesize = int(item.get("filesize") or 0)
         fps = int(item.get("fps") or 0)
         tbr = float(item.get("tbr") or 0)
         return (
-            0 if too_large else 1,
             1 if not has_audio else 0,
             1 if ext == "mp4" else 0,
             fps,
             tbr,
             total_size,
+            filesize,
         )
+
     out = []
     for _, items in grouped.items():
         best = max(items, key=_score)
@@ -152,9 +167,10 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "has_audio": best["has_audio"],
             "filesize": best["filesize"],
             "total_size": best["total_size"],
-            "too_large": best["too_large"],
         })
+
     out.sort(key=lambda x: x["height"], reverse=True)
+    log.info("yt-dlp probe resolutions | url=%s heights=%s", url, [x.get("height") for x in out])
     return out
 
 async def get_resolutions(url: str, engine: str | None = None) -> list[dict]:
