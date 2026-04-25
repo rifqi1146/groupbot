@@ -470,7 +470,7 @@ async def ytdlp_download(
             "--audio-format", "flac",
             "--audio-quality", "0",
             "--newline",
-            "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url,
         ]
@@ -513,7 +513,7 @@ async def ytdlp_download(
             "-f", fmt,
             "--merge-output-format", "mp4",
             "--newline",
-            "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "--progress-template", "%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "-o", out_tpl,
             url,
         ]
