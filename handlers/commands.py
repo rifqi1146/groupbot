@@ -1,7 +1,7 @@
 from telegram.ext import CommandHandler
 
 from handlers.nsfw import nsfw_cmd
-from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd
+from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd, net_cmd
 from handlers.broadcast import broadcast_cmd
 from handlers.start import start_cmd
 from handlers.translate import tr_cmd, trlist_cmd
@@ -26,7 +26,6 @@ from handlers.update import update_cmd
 from handlers.groups import groups_cmd
 from handlers.music import music_cmd
 from handlers.kurs import kurs_cmd
-from handlers.net import net_cmd
 from handlers.cookies import cookies_cmd
 from handlers.donate import donate_cmd
 from handlers.quotly import q_cmd
