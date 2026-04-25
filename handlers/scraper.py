@@ -80,6 +80,19 @@ def _pick_target_iframe(srcs: list[str]) -> str | None:
             return src
     return srcs[0] if srcs else None
 
+async def _send_html_result(msg, status, out_path: str, src_count: int):
+    size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+    await status.edit_text(
+        f"No iframe link found.\n\nSending HTML file instead...\nFound iframe count: <code>{src_count}</code>\nSize: <code>{size} bytes</code>",
+        parse_mode="HTML",
+    )
+    with open(out_path, "rb") as f:
+        await msg.reply_document(
+            document=f,
+            filename=os.path.basename(out_path),
+            caption="HTML scraper result",
+        )
+        
 async def _run_scrapling(url: str, out_path: str):
     if not SCRAPLING_BIN:
         raise RuntimeError("scrapling binary not found. Install it or set SCRAPLING_BIN.")
@@ -134,7 +147,7 @@ async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         srcs = _extract_iframe_srcs(raw, url)
         picked = _pick_target_iframe(srcs)
         if not picked:
-            return await status.edit_text("No iframe link found.")
+            return await _send_html_result(msg, status, out_path, len(srcs))
         elapsed = time.monotonic() - started
         text = (
             "<b>Iframe found</b>\n\n"
