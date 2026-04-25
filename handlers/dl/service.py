@@ -19,6 +19,7 @@ from .twitter.main import is_x_url, twitter_download
 from .reddit.main import is_reddit_url, reddit_download
 from .pinterest.main import is_pinterest_url, pinterest_download
 from .remux import video_meta, make_video_thumbnail
+from .mtproto_uploader import try_send_video_via_mtproto
 
 log = logging.getLogger(__name__)
 
@@ -342,13 +343,29 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
             try:
                 meta_video = await asyncio.to_thread(video_meta, file_path)
                 thumb_path = await asyncio.to_thread(make_video_thumbnail, file_path)
+                caption = _build_safe_caption(caption_text, bot_name)
+                sent = await try_send_video_via_mtproto(
+                    bot=bot,
+                    chat_id=chat_id,
+                    status_msg_id=status_msg_id,
+                    file_path=file_path,
+                    caption=caption,
+                    reply_to=reply_to,
+                    message_thread_id=message_thread_id,
+                    duration=meta_video.get("duration"),
+                    width=meta_video.get("width"),
+                    height=meta_video.get("height"),
+                    thumb_path=thumb_path,
+                )
+                if sent:
+                    return
                 video_fh = open(file_path, "rb")
                 thumb_fh = open(thumb_path, "rb") if thumb_path else None
                 await _send_video_with_fallback(
                     bot=bot,
                     chat_id=chat_id,
                     video=video_fh,
-                    caption=_build_safe_caption(caption_text, bot_name),
+                    caption=caption,
                     reply_to=reply_to,
                     message_thread_id=message_thread_id,
                     supports_streaming=True,
