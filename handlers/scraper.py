@@ -72,6 +72,47 @@ def _extract_iframe_srcs(raw_html: str, base_url: str) -> list[str]:
             found.append(abs_url)
     return found
 
+def _clean_found_url(value: str, base_url: str) -> str | None:
+    value = html.unescape((value or "").strip().strip("'\""))
+    value = value.replace("\\/", "/").replace("\\u002F", "/").replace("\\u0026", "&")
+    if not value or value.lower().startswith(("javascript:", "data:", "blob:")):
+        return None
+    abs_url = urljoin(base_url, value)
+    return abs_url if _is_http_url(abs_url) else None
+
+def _add_unique(items: list[str], url: str | None):
+    if url and url not in items:
+        items.append(url)
+
+def _extract_embed_urls(raw_html: str, base_url: str) -> list[str]:
+    found = []
+    for m in re.finditer(r"""["']embedUrl["']\s*:\s*["']([^"']+)["']""", raw_html or "", flags=re.I | re.S):
+        _add_unique(found, _clean_found_url(m.group(1), base_url))
+    for m in re.finditer(r"""\bembedUrl\b\s*[:=]\s*["']([^"']+)["']""", raw_html or "", flags=re.I | re.S):
+        _add_unique(found, _clean_found_url(m.group(1), base_url))
+    for tag in re.findall(r"""<(?:meta|link)\b[^>]*>""", raw_html or "", flags=re.I | re.S):
+        attrs = dict((k.lower(), html.unescape(v.strip())) for k, _, v in re.findall(r"""([a-zA-Z_:.-]+)\s*=\s*(['"])(.*?)\2""", tag, flags=re.S))
+        key = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
+        val = attrs.get("content") or attrs.get("href") or ""
+        if key in ("embedurl", "embed_url", "og:video", "og:video:url", "twitter:player"):
+            _add_unique(found, _clean_found_url(val, base_url))
+    return found
+
+def _extract_target_links(raw_html: str, base_url: str) -> tuple[list[str], list[str], list[str]]:
+    iframes = _extract_iframe_srcs(raw_html, base_url)
+    embeds = _extract_embed_urls(raw_html, base_url)
+    all_links = []
+    for x in iframes + embeds:
+        _add_unique(all_links, x)
+    return iframes, embeds, all_links
+
+def _pick_target_link(links: list[str]) -> str | None:
+    for src in links:
+        host = _host(src)
+        if any(_host_match(host, d) for d in SCRAPER_IFRAME_DOMAINS):
+            return src
+    return links[0] if links else None
+    
 def _pick_target_iframe(srcs: list[str]) -> str | None:
     for src in srcs:
         host = _host(src)
@@ -79,10 +120,14 @@ def _pick_target_iframe(srcs: list[str]) -> str | None:
             return src
     return srcs[0] if srcs else None
 
-async def _send_html_result(msg, status, out_path: str, src_count: int):
+async def _send_html_result(msg, status, out_path: str, iframe_count: int, embed_count: int):
     size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
     await status.edit_text(
-        f"No iframe link found.\n\nSending HTML file instead...\nFound iframe count: <code>{src_count}</code>\nSize: <code>{size} bytes</code>",
+        "No target link found.\n\n"
+        "Sending HTML file instead...\n"
+        f"Iframe count: <code>{iframe_count}</code>\n"
+        f"embedUrl count: <code>{embed_count}</code>\n"
+        f"Size: <code>{size} bytes</code>",
         parse_mode="HTML",
     )
     with open(out_path, "rb") as f:
@@ -116,15 +161,15 @@ async def _run_scrapling(url: str, out_path: str):
     if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
         raise RuntimeError("Scraper finished but HTML output is empty")
 
-async def _scrape_iframe_link(url: str) -> tuple[str | None, str, int]:
+async def _scrape_target_link(url: str) -> tuple[str | None, str, int, int]:
     os.makedirs(TMP_DIR, exist_ok=True)
     out_path = os.path.join(TMP_DIR, f"scraper_{uuid.uuid4().hex}.html")
     await _run_scrapling(url, out_path)
     with open(out_path, "r", encoding="utf-8", errors="ignore") as f:
         raw = f.read()
-    srcs = _extract_iframe_srcs(raw, url)
-    picked = _pick_target_iframe(srcs)
-    return picked, out_path, len(srcs)
+    iframes, embeds, links = _extract_target_links(raw, url)
+    picked = _pick_target_link(links)
+    return picked, out_path, len(iframes), len(embeds)
 
 async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -145,13 +190,14 @@ async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _run_scrapling(url, out_path)
         with open(out_path, "r", encoding="utf-8", errors="ignore") as f:
             raw = f.read()
-        srcs = _extract_iframe_srcs(raw, url)
-        picked = _pick_target_iframe(srcs)
+        iframes, embeds, links = _extract_target_links(raw, url)
+        picked = _pick_target_link(links)
         elapsed = time.monotonic() - started
         caption = (
             "<b>HTML scraper result</b>\n\n"
-            f"Iframe count: <code>{len(srcs)}</code>\n"
-            f"Matched iframe: <code>{html.escape(picked or '-')}</code>\n"
+            f"Iframe count: <code>{len(iframes)}</code>\n"
+            f"embedUrl count: <code>{len(embeds)}</code>\n"
+            f"Matched link: <code>{html.escape(picked or '-')}</code>\n"
             f"Time: <i>{elapsed:.2f}s</i>"
         )
         await status.edit_text("<b>Scrape done. Sending HTML file...</b>", parse_mode="HTML")
@@ -189,17 +235,17 @@ async def sdl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     out_path = None
     path = None
     try:
-        picked, out_path, src_count = await _scrape_iframe_link(url)
+        picked, out_path, iframe_count, embed_count = await _scrape_target_link(url)
         if not picked:
-            return await _send_html_result(msg, status, out_path, src_count)
+            return await _send_html_result(msg, status, out_path, iframe_count, embed_count)
         await status.edit_text(
-            "<b>Iframe found</b>\n\n"
+            "<b>Target link found</b>\n\n"
             f"<code>{html.escape(picked)}</code>\n\n"
             "<b>Downloading with yt-dlp...</b>",
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
-        log.info("SDL iframe picked | source=%s picked=%s", url, picked)
+        log.info("SDL target picked | source=%s picked=%s", url, picked)
         path = await ytdlp_download(
             url=picked,
             fmt_key="video",
