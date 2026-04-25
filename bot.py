@@ -63,10 +63,11 @@ def _build_application():
         .token(BOT_TOKEN)
         .job_queue(JobQueue())
         .concurrent_updates(True)
+        .connection_pool_size(512)
         .connect_timeout(30)
         .read_timeout(60 * 20)
         .write_timeout(60 * 20)
-        .pool_timeout(60)
+        .pool_timeout(60 * 10)
     )
 
     if PREFER_LOCAL_BOT_API and _local_bot_api_available(LOCAL_BOT_API_HOST, LOCAL_BOT_API_PORT):
