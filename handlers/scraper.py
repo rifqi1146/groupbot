@@ -137,14 +137,14 @@ async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await status.edit_text("No iframe link found.")
         elapsed = time.monotonic() - started
         text = (
-            "✅ <b>Iframe found</b>\n\n"
+            "<b>Iframe found</b>\n\n"
             f"<code>{html.escape(picked)}</code>\n\n"
-            f"⏱ <i>{elapsed:.2f}s</i>"
+            f"Time <i>{elapsed:.2f}s</i>"
         )
         await status.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
     except Exception as e:
         err = html.escape((str(e) or repr(e)).strip())[:3500]
-        await status.edit_text(f"❌ <b>Scraper failed</b>\n\n<code>{err}</code>", parse_mode="HTML")
+        await status.edit_text(f"<b>Scraper failed</b>\n\n<code>{err}</code>", parse_mode="HTML")
     finally:
         try:
             if os.path.exists(out_path):
