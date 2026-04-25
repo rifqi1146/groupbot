@@ -181,14 +181,11 @@ def _build_ytdlp_format(format_id: str | None, has_audio: bool = False) -> str:
             f"bestvideo[height={h}][ext=mp4]+bestaudio[ext=m4a]/"
             f"bestvideo[height={h}]+bestaudio[ext=m4a]/"
             f"bestvideo[height={h}]+bestaudio/"
-            f"best[height={h}]/"
-            f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
-            f"bestvideo[height<={h}]+bestaudio/"
-            f"best[height<={h}]"
+            f"best[height={h}]"
         )
     if has_audio:
         return fid
-    return f"{fid}+bestaudio[ext=m4a]/{fid}+bestaudio/bestvideo[format_id={fid}]+bestaudio/best[format_id={fid}]"
+    return f"{fid}+bestaudio[ext=m4a]/{fid}+bestaudio"
 
 async def _safe_edit_status(bot, chat_id, message_id, text: str):
     try:
@@ -261,7 +258,7 @@ def _probe_total_size_sync(url: str, fmt: str) -> int:
         return 0
     cmd = [YT_DLP]
     _append_cookies_args(cmd)
-    cmd += ["--js-runtimes", "deno:/root/.deno/bin/deno", "--extractor-args", "youtube:player_client=web", "--no-playlist", "-J", "-f", fmt, url]
+    cmd += ["--js-runtimes", "deno:/root/.deno/bin/deno", "--no-playlist", "-J", "-f", fmt, url]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True)
     except Exception as e:
@@ -424,7 +421,6 @@ async def ytdlp_download(url, fmt_key, bot, chat_id, status_msg_id, format_id: s
         _append_cookies_args(cmd)
         cmd += [
             "--js-runtimes", "deno:/root/.deno/bin/deno",
-            "--extractor-args", "youtube:player_client=web",
             "--concurrent-fragments", "8",
             "--no-playlist",
             "-f", fmt,
