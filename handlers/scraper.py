@@ -21,6 +21,7 @@ TMP_DIR = os.getenv("TMP_DIR", "downloads")
 SCRAPLING_BIN = os.getenv("SCRAPLING_BIN") or shutil.which("scrapling")
 SCRAPER_TIMEOUT = int(os.getenv("SCRAPER_TIMEOUT", "60"))
 SCRAPER_IFRAME_DOMAINS = tuple(x.strip().lower() for x in os.getenv("SCRAPER_IFRAME_DOMAINS", "nozstream.site").split(",") if x.strip())
+SCRAPER_IGNORE_DOMAINS = tuple(x.strip().lower() for x in os.getenv("SCRAPER_IGNORE_DOMAINS", "googletagmanager.com,google.com,doubleclick.net,googlesyndication.com,facebook.com,analytics.google.com,google-analytics.com").split(",") if x.strip())
 
 def _host(url: str) -> str:
     try:
@@ -39,6 +40,10 @@ def _is_http_url(url: str) -> bool:
         return p.scheme in ("http", "https") and bool(p.hostname)
     except Exception:
         return False
+
+def _is_ignored_url(url: str) -> bool:
+    host = _host(url)
+    return any(_host_match(host, d) for d in SCRAPER_IGNORE_DOMAINS)
 
 def _is_blocked_ip(ip: str) -> bool:
     try:
@@ -60,21 +65,9 @@ async def _is_safe_public_url(url: str) -> bool:
     except Exception:
         return False
 
-def _extract_iframe_srcs(raw_html: str, base_url: str) -> list[str]:
-    found = []
-    pattern = r"<iframe\b[^>]*\bsrc\s*=\s*(['\"])(.*?)\1"
-    for m in re.finditer(pattern, raw_html or "", flags=re.I | re.S):
-        src = html.unescape((m.group(2) or "").strip())
-        if not src or src.lower().startswith(("javascript:", "data:")):
-            continue
-        abs_url = urljoin(base_url, src)
-        if abs_url not in found:
-            found.append(abs_url)
-    return found
-
 def _clean_found_url(value: str, base_url: str) -> str | None:
     value = html.unescape((value or "").strip().strip("'\""))
-    value = value.replace("\\/", "/").replace("\\u002F", "/").replace("\\u0026", "&")
+    value = value.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/").replace("\\u0026", "&").replace("\\u0026amp;", "&")
     if not value or value.lower().startswith(("javascript:", "data:", "blob:")):
         return None
     abs_url = urljoin(base_url, value)
@@ -84,54 +77,90 @@ def _add_unique(items: list[str], url: str | None):
     if url and url not in items:
         items.append(url)
 
+def _clean_links(links: list[str]) -> list[str]:
+    return [x for x in links if x and not _is_ignored_url(x)]
+
+def _short_url(url: str, limit: int = 220) -> str:
+    url = str(url or "")
+    return url if len(url) <= limit else url[:limit - 3] + "..."
+
+def _fmt_links(title: str, links: list[str], limit: int = 4) -> str:
+    usable = _clean_links(links)
+    if not usable:
+        return f"<b>{title}</b>\n<code>-</code>"
+    out = [f"<b>{title}</b>"]
+    for i, link in enumerate(usable[:limit], start=1):
+        out.append(f"{i}. <code>{html.escape(_short_url(link))}</code>")
+    if len(usable) > limit:
+        out.append(f"...and {len(usable) - limit} more")
+    return "\n".join(out)
+
+def _build_caption(iframes: list[str], embeds: list[str], picked: str | None, elapsed: float | None = None) -> str:
+    clean_iframes = _clean_links(iframes)
+    clean_embeds = _clean_links(embeds)
+    lines = [
+        "<b>HTML scraper result</b>",
+        "",
+        f"Iframe count: <code>{len(clean_iframes)}</code> usable / <code>{len(iframes)}</code> raw",
+        f"embedUrl count: <code>{len(clean_embeds)}</code> usable / <code>{len(embeds)}</code> raw",
+        f"Matched link: <code>{html.escape(_short_url(picked or '-'))}</code>",
+    ]
+    if elapsed is not None:
+        lines.append(f"Time: <i>{elapsed:.2f}s</i>")
+    lines.extend(["", _fmt_links("Iframe links", iframes), "", _fmt_links("embedUrl links", embeds)])
+    caption = "\n".join(lines)
+    return caption[:1010] + "..." if len(caption) > 1024 else caption
+
+def _extract_iframe_srcs(raw_html: str, base_url: str) -> list[str]:
+    found = []
+    text = html.unescape(raw_html or "")
+    pattern = r"<iframe\b[^>]*\bsrc\s*=\s*(['\"])(.*?)\1"
+    for m in re.finditer(pattern, text, flags=re.I | re.S):
+        _add_unique(found, _clean_found_url(m.group(2), base_url))
+    return found
+
 def _extract_embed_urls(raw_html: str, base_url: str) -> list[str]:
     found = []
-    for m in re.finditer(r"""["']embedUrl["']\s*:\s*["']([^"']+)["']""", raw_html or "", flags=re.I | re.S):
+    text = html.unescape(raw_html or "")
+    for m in re.finditer(r"""["']embedUrl["']\s*:\s*["']([^"']+)["']""", text, flags=re.I | re.S):
         _add_unique(found, _clean_found_url(m.group(1), base_url))
-    for m in re.finditer(r"""\bembedUrl\b\s*[:=]\s*["']([^"']+)["']""", raw_html or "", flags=re.I | re.S):
+    for m in re.finditer(r"""\bembedUrl\b\s*[:=]\s*["']([^"']+)["']""", text, flags=re.I | re.S):
         _add_unique(found, _clean_found_url(m.group(1), base_url))
-    for tag in re.findall(r"""<(?:meta|link)\b[^>]*>""", raw_html or "", flags=re.I | re.S):
+    for tag in re.findall(r"""<(?:meta|link)\b[^>]*>""", text, flags=re.I | re.S):
         attrs = dict((k.lower(), html.unescape(v.strip())) for k, _, v in re.findall(r"""([a-zA-Z_:.-]+)\s*=\s*(['"])(.*?)\2""", tag, flags=re.S))
         key = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
         val = attrs.get("content") or attrs.get("href") or ""
-        if key in ("embedurl", "embed_url", "og:video", "og:video:url", "twitter:player"):
+        if key in ("embedurl", "embed_url", "og:video", "og:video:url", "og:video:secure_url", "twitter:player"):
             _add_unique(found, _clean_found_url(val, base_url))
     return found
 
 def _extract_target_links(raw_html: str, base_url: str) -> tuple[list[str], list[str], list[str]]:
     iframes = _extract_iframe_srcs(raw_html, base_url)
     embeds = _extract_embed_urls(raw_html, base_url)
-    all_links = []
-    for x in iframes + embeds:
-        _add_unique(all_links, x)
-    return iframes, embeds, all_links
+    links = []
+    for x in _clean_links(iframes) + _clean_links(embeds):
+        _add_unique(links, x)
+    return iframes, embeds, links
 
 def _pick_target_link(links: list[str]) -> str | None:
+    links = _clean_links(links)
     for src in links:
         host = _host(src)
         if any(_host_match(host, d) for d in SCRAPER_IFRAME_DOMAINS):
             return src
     return links[0] if links else None
-    
-def _pick_target_iframe(srcs: list[str]) -> str | None:
-    for src in srcs:
-        host = _host(src)
-        if any(_host_match(host, d) for d in SCRAPER_IFRAME_DOMAINS):
-            return src
-    return srcs[0] if srcs else None
 
-async def _send_html_result(msg, status, out_path: str, iframe_count: int, embed_count: int):
+async def _send_html_result(msg, status, out_path: str, iframes: list[str], embeds: list[str], picked: str | None = None, elapsed: float | None = None):
     size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
     await status.edit_text(
-        "No target link found.\n\n"
-        "Sending HTML file instead...\n"
-        f"Iframe count: <code>{iframe_count}</code>\n"
-        f"embedUrl count: <code>{embed_count}</code>\n"
+        "<b>Sending HTML file...</b>\n\n"
+        f"Iframe: <code>{len(_clean_links(iframes))}</code> usable / <code>{len(iframes)}</code> raw\n"
+        f"embedUrl: <code>{len(_clean_links(embeds))}</code> usable / <code>{len(embeds)}</code> raw\n"
         f"Size: <code>{size} bytes</code>",
         parse_mode="HTML",
     )
     with open(out_path, "rb") as f:
-        await msg.reply_document(document=f, filename=os.path.basename(out_path), caption="HTML scraper result")
+        await msg.reply_document(document=f, filename=os.path.basename(out_path), caption=_build_caption(iframes, embeds, picked, elapsed), parse_mode="HTML")
 
 async def _run_scrapling(url: str, out_path: str):
     if not SCRAPLING_BIN:
@@ -161,7 +190,7 @@ async def _run_scrapling(url: str, out_path: str):
     if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
         raise RuntimeError("Scraper finished but HTML output is empty")
 
-async def _scrape_target_link(url: str) -> tuple[str | None, str, int, int]:
+async def _scrape_target_link(url: str) -> tuple[str | None, str, list[str], list[str]]:
     os.makedirs(TMP_DIR, exist_ok=True)
     out_path = os.path.join(TMP_DIR, f"scraper_{uuid.uuid4().hex}.html")
     await _run_scrapling(url, out_path)
@@ -169,7 +198,8 @@ async def _scrape_target_link(url: str) -> tuple[str | None, str, int, int]:
         raw = f.read()
     iframes, embeds, links = _extract_target_links(raw, url)
     picked = _pick_target_link(links)
-    return picked, out_path, len(iframes), len(embeds)
+    log.info("Scraper extracted | iframe=%s embedUrl=%s picked=%s", _clean_links(iframes), _clean_links(embeds), picked)
+    return picked, out_path, iframes, embeds
 
 async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -182,39 +212,23 @@ async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("Invalid URL. Use http/https link.")
     if not await _is_safe_public_url(url):
         return await msg.reply_text("Blocked URL. Public http/https URL only.")
-    os.makedirs(TMP_DIR, exist_ok=True)
-    out_path = os.path.join(TMP_DIR, f"scraper_{uuid.uuid4().hex}.html")
     started = time.monotonic()
     status = await msg.reply_text("🕷️ <b>Scraping page...</b>", parse_mode="HTML")
+    out_path = None
     try:
-        await _run_scrapling(url, out_path)
-        with open(out_path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
-        iframes, embeds, links = _extract_target_links(raw, url)
-        picked = _pick_target_link(links)
+        picked, out_path, iframes, embeds = await _scrape_target_link(url)
         elapsed = time.monotonic() - started
-        caption = (
-            "<b>HTML scraper result</b>\n\n"
-            f"Iframe count: <code>{len(iframes)}</code>\n"
-            f"embedUrl count: <code>{len(embeds)}</code>\n"
-            f"Matched link: <code>{html.escape(picked or '-')}</code>\n"
-            f"Time: <i>{elapsed:.2f}s</i>"
-        )
-        await status.edit_text("<b>Scrape done. Sending HTML file...</b>", parse_mode="HTML")
-        with open(out_path, "rb") as f:
-            await msg.reply_document(
-                document=f,
-                filename=os.path.basename(out_path),
-                caption=caption,
-                parse_mode="HTML",
-            )
-        await status.delete()
+        await _send_html_result(msg, status, out_path, iframes, embeds, picked, elapsed)
+        try:
+            await status.delete()
+        except Exception:
+            pass
     except Exception as e:
         err = html.escape((str(e) or repr(e)).strip())[:3500]
         await status.edit_text(f"<b>Scraper failed</b>\n\n<code>{err}</code>", parse_mode="HTML")
     finally:
         try:
-            if os.path.exists(out_path):
+            if out_path and os.path.exists(out_path):
                 os.remove(out_path)
                 log.info("Scraper temp deleted | file=%s", out_path)
         except Exception as e:
@@ -233,11 +247,12 @@ async def sdl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("Blocked URL. Public http/https URL only.")
     status = await msg.reply_text("🕷️ <b>Scraping page...</b>", parse_mode="HTML")
     out_path = None
-    path = None
     try:
-        picked, out_path, iframe_count, embed_count = await _scrape_target_link(url)
+        picked, out_path, iframes, embeds = await _scrape_target_link(url)
         if not picked:
-            return await _send_html_result(msg, status, out_path, iframe_count, embed_count)
+            return await _send_html_result(msg, status, out_path, iframes, embeds)
+        if not await _is_safe_public_url(picked):
+            return await _send_html_result(msg, status, out_path, iframes, embeds, picked)
         await status.edit_text(
             "<b>Target link found</b>\n\n"
             f"<code>{html.escape(picked)}</code>\n\n"
