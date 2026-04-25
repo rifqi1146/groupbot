@@ -140,6 +140,7 @@ def _build_from_payload(sender):
             "last_name": "",
             "username": None,
         }
+
     if hasattr(sender, "title"):
         title = getattr(sender, "title", None) or "User"
         return {
@@ -149,10 +150,12 @@ def _build_from_payload(sender):
             "last_name": "",
             "username": getattr(sender, "username", None),
         }
+
     first = getattr(sender, "first_name", None) or ""
     last = getattr(sender, "last_name", None) or ""
     username = getattr(sender, "username", None)
     name = f"{first} {last}".strip() or (f"@{username}" if username else "User")
+
     return {
         "id": int(getattr(sender, "id", 0) or 0),
         "name": name,
@@ -170,12 +173,16 @@ def _build_reply_payload(message):
     reply = getattr(message, "reply_to_message", None)
     if not reply:
         return {}
+
     reply_sender = _get_sender_obj(reply)
     reply_text, reply_entities = _get_message_text_and_entities(reply)
+
     if not reply_text:
         return {}
+
     if len(reply_text) > 200:
         reply_text = reply_text[:200].rstrip() + "..."
+
     if reply_sender and hasattr(reply_sender, "title"):
         reply_name = getattr(reply_sender, "title", None) or "User"
         reply_chat_id = int(getattr(reply_sender, "id", 0) or 0)
@@ -185,6 +192,7 @@ def _build_reply_payload(message):
         username = (getattr(reply_sender, "username", "") or "").strip()
         reply_name = f"{first} {last}".strip() or (f"@{username}" if username else "User")
         reply_chat_id = int(getattr(reply_sender, "id", 0) or 0)
+
     return {
         "name": reply_name,
         "chatId": reply_chat_id,
@@ -198,6 +206,7 @@ def _collect_quote_messages(command_message, start_message, count: int):
     start_id = int(getattr(start_message, "message_id", 0) or 0)
     picked = [start_message]
     seen = {start_id}
+
     for item in cached:
         item_id = int(getattr(item, "message_id", 0) or 0)
         if item_id <= start_id or item_id in seen:
@@ -206,15 +215,18 @@ def _collect_quote_messages(command_message, start_message, count: int):
         seen.add(item_id)
         if len(picked) >= count:
             break
+
     return picked[:count]
 
 def _parse_args(args: list[str], command_text: str = ""):
     count = 1
     include_reply = False
     color_arg = None
+
     m = re.match(r"^/(?:q|quote)(\d{1,2})?(?:@\w+)?(?:\s|$)", command_text or "", flags=re.I)
     if m and m.group(1):
         count = max(1, min(int(m.group(1)), 10))
+
     for raw in args or []:
         arg = (raw or "").strip().lower()
         if not arg:
@@ -222,10 +234,15 @@ def _parse_args(args: list[str], command_text: str = ""):
         if arg.isdigit():
             count = max(1, min(int(arg), 10))
             continue
+        m = re.match(r"^(?:q|quote)(\d{1,2})$", arg, flags=re.I)
+        if m:
+            count = max(1, min(int(m.group(1)), 10))
+            continue
         if arg in ("r", "reply"):
             include_reply = True
             continue
         color_arg = arg
+
     return count, include_reply, color_arg
 
 async def _generate_quote_sticker(session, bot_token: str, payload: dict):
@@ -243,33 +260,43 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg:
         return
+
     if not QUOTE_API_URI:
-        return await msg.reply_text("QUOTE_API_URI belum diset.")
+        return await msg.reply_text("QUOTE_API_URI is not configured.")
+
     target = msg.reply_to_message
     if not target:
-        return await msg.reply_text("Reply pesan untuk membuat sticker.")
+        return await msg.reply_text("Reply to a message to create a sticker.")
+
     command_text = msg.text or msg.caption or ""
     count, include_reply, color_arg = _parse_args(context.args or [], command_text)
     background_color = _pick_color(color_arg)
+
     messages = _collect_quote_messages(msg, target, count)
     if not messages:
-        return await msg.reply_text("Pesan tidak ditemukan.")
+        return await msg.reply_text("Message not found.")
+
     valid_messages = []
     for item in messages:
         text, entities = _get_message_text_and_entities(item)
         if text:
             valid_messages.append((item, text, entities))
+
     if not valid_messages:
-        return await msg.reply_text("Pesan yang dipilih tidak punya teks.")
-    wait = await msg.reply_text(f"Sedang membuat {len(valid_messages)} sticker...")
+        return await msg.reply_text("The selected message has no text.")
+
+    wait = await msg.reply_text(f"Creating {len(valid_messages)} sticker(s)...")
+
     kwargs = {}
     if getattr(msg, "message_thread_id", None):
         kwargs["message_thread_id"] = msg.message_thread_id
+
     try:
         async with aiohttp.ClientSession() as session:
             for idx, (item, text, entities) in enumerate(valid_messages, start=1):
                 sender = _get_sender_obj(item)
                 from_payload = _build_from_payload(sender)
+
                 payload = {
                     "type": "quote",
                     "format": "webp",
@@ -289,15 +316,20 @@ async def q_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         }
                     ],
                 }
+
                 image_bytes = await _generate_quote_sticker(session, context.bot.token, payload)
+
                 sticker = io.BytesIO(image_bytes)
                 sticker.name = f"quote_{idx}.webp"
+
                 await context.bot.send_sticker(
                     chat_id=msg.chat_id,
                     sticker=sticker,
                     reply_to_message_id=target.message_id,
                     **kwargs,
                 )
+
         await wait.delete()
+
     except Exception as e:
-        await wait.edit_text(f"Gagal membuat sticker: {e}")
+        await wait.edit_text(f"Failed to create sticker: {e}")
