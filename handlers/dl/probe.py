@@ -112,8 +112,7 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
         acodec = str(f.get("acodec") or "")
         has_audio = acodec != "none"
         total_size = filesize if has_audio else (filesize + bestaudio_size if filesize else 0)
-        if total_size and total_size > MAX_TG_SIZE:
-            continue
+        too_large = bool(total_size and total_size > MAX_TG_SIZE)
         item = {
             "height": height,
             "format_id": str(format_id),
@@ -121,6 +120,7 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "has_audio": has_audio,
             "filesize": filesize,
             "total_size": total_size,
+            "too_large": too_large,
             "vcodec": vcodec,
             "acodec": acodec,
             "fps": int(f.get("fps") or 0),
@@ -130,17 +130,17 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
     def _score(item: dict):
         ext = (item.get("ext") or "").lower()
         has_audio = bool(item.get("has_audio"))
+        too_large = bool(item.get("too_large"))
         total_size = int(item.get("total_size") or 0)
-        filesize = int(item.get("filesize") or 0)
         fps = int(item.get("fps") or 0)
         tbr = float(item.get("tbr") or 0)
         return (
+            0 if too_large else 1,
             1 if not has_audio else 0,
             1 if ext == "mp4" else 0,
             fps,
             tbr,
             total_size,
-            filesize,
         )
     out = []
     for _, items in grouped.items():
@@ -152,6 +152,7 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
             "has_audio": best["has_audio"],
             "filesize": best["filesize"],
             "total_size": best["total_size"],
+            "too_large": best["too_large"],
         })
     out.sort(key=lambda x: x["height"], reverse=True)
     return out
