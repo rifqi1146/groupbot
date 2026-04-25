@@ -1,4 +1,4 @@
-from telegram.ext import CommandHandler, MessageHandler
+from telegram.ext import CommandHandler
 
 from handlers.nsfw import nsfw_cmd
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd, net_cmd
@@ -65,17 +65,6 @@ COMMAND_HANDLERS = [
     ("autobackup", autobackup_cmd, True),
     ("restore", restore_cmd, True),
     ("q", q_cmd, False),
-    ("quote", q_cmd, False),
-    ("q1", q_cmd, False),
-    ("q2", q_cmd, False),
-    ("q3", q_cmd, False),
-    ("q4", q_cmd, False),
-    ("q5", q_cmd, False),
-    ("q6", q_cmd, False),
-    ("q7", q_cmd, False),
-    ("q8", q_cmd, False),
-    ("q9", q_cmd, False),
-    ("q10", q_cmd, False),
     ("kang", kang_cmd, False),
     ("cookies", cookies_cmd, False),
     ("moderation", moderation_cmd, False),
@@ -133,6 +122,6 @@ def register_commands(app):
     for name, handler, blocking in COMMAND_HANDLERS:
         app.add_handler(
             CommandHandler(name, handler, block=blocking),
-            group=-1,
+            group=-1
         )
         

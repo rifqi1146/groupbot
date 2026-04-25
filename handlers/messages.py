@@ -12,7 +12,7 @@ from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
 from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
-from handlers.quotly import quote_cache_message
+
 
 async def ai_reply_router(update, context):
     msg = update.message
@@ -60,13 +60,47 @@ async def ai_reply_router(update, context):
 
 
 def register_messages(app):
-    app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, quote_cache_message, block=False), group=-100)
-    app.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, ai_reply_router), group=-1)
-    app.add_handler(MessageHandler(filters.ALL, collect_chat), group=0)
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, user_collector), group=1)
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_handler), group=2)
-    app.add_handler(ChatMemberHandler(welcome_chat_member_handler, ChatMemberHandler.CHAT_MEMBER), group=2)
-    app.add_handler(MessageHandler(filters.TEXT & filters.REPLY, reply_del_handler), group=3)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router), group=4)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect), group=5)
-    app.add_handler(MessageHandler(filters.ALL, log_commands), group=99)
+    app.add_handler(
+        MessageHandler(filters.ALL, collect_chat),
+        group=0,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_handler),
+        group=1,
+    )
+
+    app.add_handler(
+        ChatMemberHandler(welcome_chat_member_handler, ChatMemberHandler.CHAT_MEMBER),
+        group=1,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & filters.REPLY, reply_del_handler),
+        group=2,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, dollar_router),
+        group=3,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect),
+        group=4,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.ALL, log_commands),
+        group=99,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
+        group=1
+    )
+
+    app.add_handler(
+        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, ai_reply_router),
+        group=-1
+    )
