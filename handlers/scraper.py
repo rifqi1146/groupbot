@@ -1,25 +1,21 @@
 import os
-import re
 import socket
+import shutil
 import asyncio
 import logging
+import tempfile
+import subprocess
 import ipaddress
 from io import BytesIO
-from urllib.parse import urlparse, urljoin
+from pathlib import Path
+from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ContextTypes
-from scrapling.fetchers import StealthyFetcher
 
 log = logging.getLogger(__name__)
 
-SCRAPER_IGNORE_DOMAINS = tuple(
-    x.strip().lower()
-    for x in os.getenv(
-        "SCRAPER_IGNORE_DOMAINS",
-        "googletagmanager.com,google.com,doubleclick.net,googlesyndication.com,facebook.com,analytics.google.com,google-analytics.com"
-    ).split(",")
-    if x.strip()
-)
+SCRAPLING_BIN = os.getenv("SCRAPLING_BIN") or shutil.which("scrapling")
+SCRAPER_TIMEOUT = int(os.getenv("SCRAPER_TIMEOUT", "120"))
 
 def _host(url: str) -> str:
     try:
@@ -38,10 +34,6 @@ def _is_http_url(url: str) -> bool:
         return p.scheme in ("http", "https") and bool(p.hostname)
     except Exception:
         return False
-
-def _is_ignored_url(url: str) -> bool:
-    host = _host(url)
-    return any(_host_match(host, d) for d in SCRAPER_IGNORE_DOMAINS)
 
 def _is_blocked_ip(ip: str) -> bool:
     try:
@@ -70,70 +62,46 @@ async def _is_safe_public_url(url: str) -> bool:
     except Exception:
         return False
 
-def _body_to_text(body) -> str:
-    if body is None:
-        return ""
-    if isinstance(body, bytes):
-        return body.decode("utf-8", errors="ignore")
-    return str(body)
+def _decode(data: bytes) -> str:
+    return (data or b"").decode("utf-8", errors="ignore").strip()
 
 def _fetch_candidates(url: str) -> tuple[list[str], str]:
-    page = StealthyFetcher.fetch(
-        url,
-        headless=True,
-        real_chrome=True,
-        network_idle=True,
-        timeout=90000,
-        wait=5000,
-        block_webrtc=True,
-        hide_canvas=True,
-        load_dom=True,
-        extra_headers={
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.google.com/",
-        },
-    )
+    if not SCRAPLING_BIN:
+        raise RuntimeError("scrapling binary not found. Install scrapling or set SCRAPLING_BIN.")
 
-    page_html = _body_to_text(page.body)
-    final_url = getattr(page, "url", None) or url
-    candidates = set()
+    with tempfile.TemporaryDirectory(prefix="scrapling_") as tmpdir:
+        out_path = Path(tmpdir) / "scrapling.md"
 
-    for el in page.css("video[src], source[src], iframe[src]"):
-        tag = el.attrib
-        link = tag.get("src")
-        if link:
-            candidates.add(urljoin(final_url, link))
+        result = subprocess.run(
+            [
+                SCRAPLING_BIN,
+                "extract",
+                "stealthy-fetch",
+                url,
+                str(out_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=SCRAPER_TIMEOUT,
+        )
 
-    for m in re.findall(r'https?://[^"\'<>\s\\]+(?:\.mp4|\.m3u8|\.mpd|\.webm)[^"\'<>\s\\]*', page_html, re.I):
-        candidates.add(m)
+        stdout = _decode(result.stdout)
+        stderr = _decode(result.stderr)
+        log_text = "\n".join(x for x in [stdout, stderr] if x).strip()
 
-    patterns = [
-        r'"playAddr"\s*:\s*"([^"]+)"',
-        r'"downloadAddr"\s*:\s*"([^"]+)"',
-        r'"urlList"\s*:\s*\[\s*"([^"]+)"',
-        r'"mainUrl"\s*:\s*"([^"]+)"',
-        r'"backupUrl"\s*:\s*"([^"]+)"',
-        r'"src"\s*:\s*"([^"]+)"',
-        r'"url"\s*:\s*"([^"]+)"',
-    ]
+        if result.returncode != 0:
+            raise RuntimeError(log_text or f"scrapling failed with exit code {result.returncode}")
 
-    for pat in patterns:
-        for m in re.findall(pat, page_html, re.I):
-            link = m.encode("utf-8").decode("unicode_escape")
-            link = link.replace("\\u002F", "/").replace("\\/", "/")
-            if any(x in link.lower() for x in [".mp4", ".m3u8", ".webm", "tiktokcdn.com", "byteoversea.com", "akamaized.net"]):
-                candidates.add(urljoin(final_url, link))
+        if not out_path.exists():
+            raise RuntimeError(log_text or "scrapling finished but output file not found")
 
-    valid = []
-    for c in sorted(candidates):
-        if not _is_http_url(c):
-            continue
-        if _is_ignored_url(c):
-            continue
-        if "tiktokcdn.com" in c or "byteoversea.com" in c or ".mp4" in c or ".m3u8" in c or ".webm" in c:
-            valid.append(c)
+        md_text = out_path.read_text(encoding="utf-8", errors="ignore")
 
-    return valid, page_html
+        if not md_text.strip():
+            raise RuntimeError(log_text or "scrapling output is empty")
+
+        logs = [log_text] if log_text else []
+        return logs, md_text
 
 async def _send_text_document(msg, text: str, filename: str):
     data = BytesIO((text or "").encode("utf-8", errors="ignore"))
@@ -160,30 +128,29 @@ async def scraper_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _is_safe_public_url(url):
         return await msg.reply_text("Blocked URL. Public http/https URL only.")
 
-    status = await msg.reply_text("Scraping page...")
+    status = await msg.reply_text("Running scrapling extract stealthy-fetch...")
 
     try:
-        candidates, page_html = await asyncio.to_thread(_fetch_candidates, url)
+        logs, md_text = await asyncio.to_thread(_fetch_candidates, url)
 
-        await _send_text_document(msg, page_html, "index.html")
-
-        if not candidates:
-            return await status.edit_text("No candidates found. index.html sent.")
-
-        out = []
-        for i, c in enumerate(candidates, 1):
-            out.append(f"Candidate {i}\n{c}\n")
-
-        res = "\n".join(out).strip()
-
-        if len(res) > 4000:
-            await _send_text_document(msg, res, "candidates.txt")
-            try:
-                await status.delete()
-            except Exception:
-                pass
+        if logs:
+            log_text = "\n".join(logs).strip()
+            if len(log_text) > 4000:
+                await _send_text_document(msg, log_text, "scrapling-log.txt")
+            else:
+                await status.edit_text(log_text)
         else:
-            await status.edit_text(res, disable_web_page_preview=True)
+            await status.edit_text("Scrapling extract finished.")
 
+        await _send_text_document(msg, md_text, "scrapling.md")
+
+        try:
+            await status.delete()
+        except Exception:
+            pass
+
+    except subprocess.TimeoutExpired:
+        await status.edit_text(f"Scraper failed: timeout after {SCRAPER_TIMEOUT}s")
     except Exception as e:
+        log.exception("scraper_cmd failed")
         await status.edit_text(f"Scraper failed: {str(e)[:1000]}")
