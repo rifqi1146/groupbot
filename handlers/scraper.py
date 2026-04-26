@@ -88,28 +88,49 @@ def _fetch_candidates(url: str) -> tuple[list[str], str]:
         block_webrtc=True,
         hide_canvas=True,
         load_dom=True,
-        extra_headers={"Accept-Language": "en-US,en;q=0.9"},
+        extra_headers={
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.google.com/",
+        },
     )
 
     page_html = _body_to_text(page.body)
+    final_url = getattr(page, "url", None) or url
     candidates = set()
 
-    for el in page.css("video[src], source[src], iframe[src], a[href]"):
+    for el in page.css("video[src], source[src], iframe[src]"):
         tag = el.attrib
-        link = tag.get("src") or tag.get("href")
+        link = tag.get("src")
         if link:
-            candidates.add(urljoin(url, link))
+            candidates.add(urljoin(final_url, link))
 
-    for m in re.findall(r'https?://[^"\'<>\s]+(?:\.mp4|\.m3u8|\.mpd|\.webm)[^"\'<>\s]*', page_html, re.I):
+    for m in re.findall(r'https?://[^"\'<>\s\\]+(?:\.mp4|\.m3u8|\.mpd|\.webm)[^"\'<>\s\\]*', page_html, re.I):
         candidates.add(m)
 
-    for m in re.findall(r'(?:file|src|source|url|hls|videoUrl|video_url)\s*[:=]\s*["\']([^"\']+)["\']', page_html, re.I):
-        if any(x in m.lower() for x in [".mp4", ".m3u8", ".mpd", ".webm", "/e/", "embed"]):
-            candidates.add(urljoin(url, m))
+    patterns = [
+        r'"playAddr"\s*:\s*"([^"]+)"',
+        r'"downloadAddr"\s*:\s*"([^"]+)"',
+        r'"urlList"\s*:\s*\[\s*"([^"]+)"',
+        r'"mainUrl"\s*:\s*"([^"]+)"',
+        r'"backupUrl"\s*:\s*"([^"]+)"',
+        r'"src"\s*:\s*"([^"]+)"',
+        r'"url"\s*:\s*"([^"]+)"',
+    ]
+
+    for pat in patterns:
+        for m in re.findall(pat, page_html, re.I):
+            link = m.encode("utf-8").decode("unicode_escape")
+            link = link.replace("\\u002F", "/").replace("\\/", "/")
+            if any(x in link.lower() for x in [".mp4", ".m3u8", ".webm", "tiktokcdn.com", "byteoversea.com", "akamaized.net"]):
+                candidates.add(urljoin(final_url, link))
 
     valid = []
     for c in sorted(candidates):
-        if _is_http_url(c) and not _is_ignored_url(c):
+        if not _is_http_url(c):
+            continue
+        if _is_ignored_url(c):
+            continue
+        if "tiktokcdn.com" in c or "byteoversea.com" in c or ".mp4" in c or ".m3u8" in c or ".webm" in c:
             valid.append(c)
 
     return valid, page_html
