@@ -336,7 +336,7 @@ async def _probe_total_bytes(session, url: str, headers: dict | None = None) -> 
         pass
     return 0
 
-async def _aria2c_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
+async def aria2c_download(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
     aria2 = shutil.which("aria2c")
     if not aria2:
         raise RuntimeError("aria2c not found in PATH")
@@ -377,7 +377,7 @@ async def _aria2c_download_with_progress(session, media_url: str, out_path: str,
         err = stderr.decode(errors="ignore").strip() if stderr else ""
         raise RuntimeError(err or f"aria2c exited with code {proc.returncode}")
 
-async def _aiohttp_download_with_progress(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
+async def aiohttp_download(session, media_url: str, out_path: str, bot, chat_id, status_msg_id, title_text: str, headers: dict | None = None):
     async with session.get(media_url, headers=headers, timeout=aiohttp.ClientTimeout(total=600), allow_redirects=True) as r:
         if r.status >= 400:
             raise RuntimeError(f"Download failed: HTTP {r.status}")
@@ -404,7 +404,7 @@ async def _download_with_best_engine(session, media_url: str, out_path: str, bot
     if aria2_path:
         try:
             log.info("TikTok download engine | engine=aria2c path=%s", aria2_path)
-            await _aria2c_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, title_text, headers=headers)
+            await aria2c_download(session, media_url, out_path, bot, chat_id, status_msg_id, title_text, headers=headers)
             return
         except Exception as e:
             log.warning("TikTok aria2c failed, fallback aiohttp | err=%r", e)
@@ -416,7 +416,7 @@ async def _download_with_best_engine(session, media_url: str, out_path: str, bot
     else:
         log.warning("TikTok aria2c not found in PATH, using aiohttp")
     log.info("TikTok download engine | engine=aiohttp")
-    await _aiohttp_download_with_progress(session, media_url, out_path, bot, chat_id, status_msg_id, title_text, headers=headers)
+    await aiohttp_download(session, media_url, out_path, bot, chat_id, status_msg_id, title_text, headers=headers)
 
 def _extract_aweme_id(url: str) -> str:
     m = re.search(r"/(?:video|photo|player/v1)/(\d+)", url or "", flags=re.I)
