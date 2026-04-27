@@ -51,6 +51,8 @@ from handlers.moderation import (
     addsudo_cmd,
     rmsudo_cmd,
     sudolist_cmd,
+    promote_cmd,
+    demote_cmd,
 )
     
 from handlers.asupan import (
@@ -62,6 +64,8 @@ from handlers.asupan import (
 COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("settings", setting_cmd, False),
+    ("promote", promote_cmd, False),
+    ("denote", demote_cmd, False),
     ("backup", backup_cmd, True),
     ("autobackup", autobackup_cmd, True),
     ("restore", restore_cmd, True),
