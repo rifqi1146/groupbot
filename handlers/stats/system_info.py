@@ -16,7 +16,41 @@ try:
 except Exception:
     psutil = None
 
+NET_SAMPLE_SECONDS = float(os.getenv("STATS_NET_SAMPLE_SECONDS", "1.0"))
+NET_BAR_MBPS = float(os.getenv("STATS_NET_BAR_MBPS", "1000"))
+NET_IFACE = os.getenv("STATS_NET_IFACE", "").strip()
 
+def _ignored_iface(name: str) -> bool:
+    n = (name or "").lower()
+    return n == "lo" or n.startswith(("docker", "br-", "veth", "virbr", "tun", "tap", "cni", "flannel"))
+
+def _pick_net_counters():
+    if not psutil:
+        return "N/A", 0, 0
+    counters = psutil.net_io_counters(pernic=True)
+    stats = psutil.net_if_stats()
+    if NET_IFACE and NET_IFACE in counters:
+        c = counters[NET_IFACE]
+        return NET_IFACE, int(c.bytes_recv), int(c.bytes_sent)
+    picked = {}
+    for name, c in counters.items():
+        st = stats.get(name)
+        if st and not st.isup:
+            continue
+        if _ignored_iface(name):
+            continue
+        picked[name] = c
+    if not picked:
+        picked = {k: v for k, v in counters.items() if k != "lo"}
+    if not picked:
+        return "N/A", 0, 0
+    iface = ",".join(sorted(picked.keys()))
+    if len(iface) > 32:
+        iface = f"{len(picked)} interfaces"
+    rx = sum(int(c.bytes_recv) for c in picked.values())
+    tx = sum(int(c.bytes_sent) for c in picked.values())
+    return iface, rx, tx
+    
 def get_os_name():
     try:
         if os.path.exists("/etc/os-release"):
@@ -140,15 +174,13 @@ def gather_system_stats():
     except Exception as e:
         logger.error(f"Failed to gather Disk stats: {e}", exc_info=True)
 
+    net_iface = "N/A"
     rx = tx = 0
     try:
-        if psutil:
-            net = psutil.net_io_counters()
-            rx = int(net.bytes_recv)
-            tx = int(net.bytes_sent)
+        net_iface, rx, tx = _pick_net_counters()
     except Exception as e:
         logger.error(f"Failed to gather Network stats: {e}", exc_info=True)
-
+    
     os_name = get_os_name()
     kernel = platform.release() or "N/A"
     pyver = platform.python_version() or "N/A"
@@ -162,7 +194,7 @@ def gather_system_stats():
         "ram": {"total": ram_total, "used": ram_used, "free": ram_free, "pct": float(ram_pct)},
         "swap": {"total": swap_total, "used": swap_used, "pct": float(swap_pct)},
         "disk": {"total": disk_total, "used": disk_used, "free": disk_free, "pct": float(disk_pct)},
-        "net": {"rx": rx, "tx": tx},
+        "net": {"iface": net_iface, "rx": rx, "tx": tx},
         "sys": {
             "hostname": hostname,
             "os": os_name,
@@ -175,18 +207,20 @@ def gather_system_stats():
 
 
 async def measure_network_speed():
+    max_bps = (NET_BAR_MBIT * 1000 * 1000) / 8
     if not psutil:
-        return 0.0, 0.0
+        return {"rxps": 0.0, "txps": 0.0, "iface": "N/A", "max_bps": max_bps}
     try:
-        first = psutil.net_io_counters()
-        rx0 = int(first.bytes_recv)
-        tx0 = int(first.bytes_sent)
+        iface0, rx0, tx0 = _pick_net_counters()
         t0 = time.time()
-        await asyncio.sleep(0.25)
-        second = psutil.net_io_counters()
-        rx1 = int(second.bytes_recv)
-        tx1 = int(second.bytes_sent)
+        await asyncio.sleep(max(0.2, NET_SAMPLE_SECONDS))
+        iface1, rx1, tx1 = _pick_net_counters()
         dt = max(0.001, time.time() - t0)
-        return (rx1 - rx0) / dt, (tx1 - tx0) / dt
+        return {
+            "rxps": max(0.0, (rx1 - rx0) / dt),
+            "txps": max(0.0, (tx1 - tx0) / dt),
+            "iface": iface1 or iface0,
+            "max_bps": max_bps,
+        }
     except Exception:
-        return 0.0, 0.0
+        return {"rxps": 0.0, "txps": 0.0, "iface": "N/A", "max_bps": max_bps}

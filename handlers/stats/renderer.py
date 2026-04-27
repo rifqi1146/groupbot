@@ -127,8 +127,9 @@ def render_dashboard(stats, net_speed=(0.0, 0.0)):
         f"Node    : {runtime['node']}",
         f"Deno    : {runtime['deno']}",
         f"yt-dlp  : {runtime['ytdlp']}",
+        f"aria2c  : {runtime['aria2c']}",
         f"PTB     : {runtime['ptb']}",
-        f"HTTP    : aiohttp {runtime['aiohttp']} • requests {runtime['requests']}",
+        f"HTTP    : aiohttp {runtime['aiohttp']}",
         f"Core    : Pillow {runtime['pillow']} • psutil {runtime['psutil']} • aiofiles {runtime['aiofiles']}",
     ]
 
@@ -169,27 +170,37 @@ def render_dashboard(stats, net_speed=(0.0, 0.0)):
     nx0, ny0, nx1, ny1 = net_card
     draw.text((nx0 + int(18 * scale), ny0 + int(16 * scale)), "Network", font=font_heading, fill=text)
 
-    rx = stats["net"]["rx"]
-    tx = stats["net"]["tx"]
-
-    draw.text((nx0 + int(18 * scale), ny0 + int(58 * scale)), f"RX Total: {humanize_bytes(rx)}", font=font_mono, fill=muted)
-    draw.text((nx0 + int(18 * scale), ny0 + int(82 * scale)), f"TX Total: {humanize_bytes(tx)}", font=font_mono, fill=muted)
-
+    net = stats["net"]
+    rx = net["rx"]
+    tx = net["tx"]
+    iface = net.get("iface") or "N/A"
+    
+    draw.text((nx0 + int(18 * scale), ny0 + int(58 * scale)), f"Iface   : {shorten_text(iface, 42)}", font=font_mono, fill=muted)
+    draw.text((nx0 + int(18 * scale), ny0 + int(82 * scale)), f"RX Total: {humanize_bytes(rx)}", font=font_mono, fill=muted)
+    draw.text((nx0 + int(18 * scale), ny0 + int(106 * scale)), f"TX Total: {humanize_bytes(tx)}", font=font_mono, fill=muted)
+    
     try:
-        rxps, txps = net_speed
-        draw.text((nx0 + int(18 * scale), ny0 + int(120 * scale)), "Speed", font=font_body, fill=text)
-        draw.text((nx0 + int(18 * scale), ny0 + int(144 * scale)), f"RX/s: {humanize_bytes(int(rxps))}/s", font=font_mono, fill=muted)
-        draw.text((nx0 + int(18 * scale), ny0 + int(168 * scale)), f"TX/s: {humanize_bytes(int(txps))}/s", font=font_mono, fill=muted)
-
-        peak = max(rxps, txps, 1.0)
-        rxp = min(100.0, (rxps / peak) * 100.0)
-        txp = min(100.0, (txps / peak) * 100.0)
-
-        draw.text((nx0 + int(18 * scale), ny0 + int(206 * scale)), "RX", font=font_small, fill=text)
-        draw_progress_bar(draw, nx0 + int(58 * scale), ny0 + int(206 * scale), (nx1 - nx0) - int(76 * scale), int(16 * scale), rxp, bar_bg, bar_fg, border, radius=int(8 * scale))
-
-        draw.text((nx0 + int(18 * scale), ny0 + int(234 * scale)), "TX", font=font_small, fill=text)
-        draw_progress_bar(draw, nx0 + int(58 * scale), ny0 + int(234 * scale), (nx1 - nx0) - int(76 * scale), int(16 * scale), txp, bar_bg, bar_fg2, border, radius=int(8 * scale))
+        if isinstance(net_speed, dict):
+            rxps = float(net_speed.get("rxps") or 0)
+            txps = float(net_speed.get("txps") or 0)
+            max_bps = float(net_speed.get("max_bps") or (10 * 1024 * 1024))
+        else:
+            rxps, txps = net_speed
+            max_bps = 10 * 1024 * 1024
+    
+        rxp = min(100.0, max(0.0, (rxps / max_bps) * 100.0))
+        txp = min(100.0, max(0.0, (txps / max_bps) * 100.0))
+    
+        draw.text((nx0 + int(18 * scale), ny0 + int(144 * scale)), "Speed", font=font_body, fill=text)
+        draw.text((nx0 + int(18 * scale), ny0 + int(168 * scale)), f"RX/s: {humanize_bytes(int(rxps))}/s", font=font_mono, fill=muted)
+        draw.text((nx0 + int(18 * scale), ny0 + int(192 * scale)), f"TX/s: {humanize_bytes(int(txps))}/s", font=font_mono, fill=muted)
+        draw.text((nx0 + int(18 * scale), ny0 + int(216 * scale)), f"Scale: {humanize_bytes(int(max_bps))}/s", font=font_small_mono, fill=muted)
+    
+        draw.text((nx0 + int(18 * scale), ny0 + int(250 * scale)), "RX", font=font_small, fill=text)
+        draw_progress_bar(draw, nx0 + int(58 * scale), ny0 + int(250 * scale), (nx1 - nx0) - int(76 * scale), int(16 * scale), rxp, bar_bg, bar_fg, border, radius=int(8 * scale))
+    
+        draw.text((nx0 + int(18 * scale), ny0 + int(278 * scale)), "TX", font=font_small, fill=text)
+        draw_progress_bar(draw, nx0 + int(58 * scale), ny0 + int(278 * scale), (nx1 - nx0) - int(76 * scale), int(16 * scale), txp, bar_bg, bar_fg2, border, radius=int(8 * scale))
     except Exception:
         pass
 

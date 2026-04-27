@@ -72,7 +72,7 @@ def build_fallback_text(stats):
     lines.append(f"Deno: {runtime['deno']}")
     lines.append(f"PTB: {runtime['ptb']}")
     lines.append(f"aiohttp: {runtime['aiohttp']}")
-    lines.append(f"requests: {runtime['requests']}")
+    lines.append(f"aria2c: {runtime['aria2c']}")
     lines.append(f"Pillow: {runtime['pillow']}")
     lines.append(f"psutil: {runtime['psutil']}")
     lines.append(f"aiofiles: {runtime['aiofiles']}")
