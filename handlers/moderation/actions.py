@@ -49,6 +49,11 @@ FULL_ADMIN_RIGHTS = {
 
 DEMOTE_ADMIN_RIGHTS = {k: False for k in FULL_ADMIN_RIGHTS}
 
+def _clean_admin_title(raw: str | None) -> str:
+    title = re.sub(r"\s+", " ", (raw or "").strip())
+    if not title or title == "-":
+        title = "Admin"
+    return title[:16]
 
 async def _call_supported_kwargs(method, **kwargs):
     try:
@@ -61,29 +66,34 @@ async def _call_supported_kwargs(method, **kwargs):
     except ValueError:
         return await method(**kwargs)
 
+def _rights_from_admin(member) -> dict:
+    return {key: bool(getattr(member, key, False)) for key in FULL_ADMIN_RIGHTS}
 
-def _clean_admin_title(raw: str | None) -> str:
-    title = re.sub(r"\s+", " ", (raw or "").strip())
-    if not title or title == "-":
-        title = "Admin"
-    return title[:16]
-
-
-async def _actor_can_promote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def _actor_promote_rights(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
+
     if not user or not chat:
-        return False
+        return False, {}, "Invalid update."
+
     if is_owner(user.id) or sudo_is(user.id):
-        return True
+        return True, dict(FULL_ADMIN_RIGHTS), "owner"
+
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
-        if member.status == "creator":
-            return True
-        return bool(getattr(member, "can_promote_members", False))
-    except Exception:
-        return False
+    except Exception as e:
+        return False, {}, str(e)
 
+    if member.status == "creator":
+        return True, dict(FULL_ADMIN_RIGHTS), "creator"
+
+    if member.status != "administrator":
+        return False, {}, "You are not an admin."
+
+    if not bool(getattr(member, "can_promote_members", False)):
+        return False, {}, "You don't have Add New Admins permission."
+
+    return True, _rights_from_admin(member), "admin"
 
 async def _bot_can_promote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     chat = update.effective_chat
@@ -112,14 +122,16 @@ async def promote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not moderation_is_enabled(chat.id):
         return
 
-    if not await is_admin_or_owner(update, context):
-        return await reply_in_topic(msg, "You are not an admin.")
-
-    if not await _actor_can_promote(update, context):
-        return await reply_in_topic(msg, "You need <b>promote admin</b> permission.", parse_mode="HTML")
+    ok, rights, actor_type = await _actor_promote_rights(update, context)
+    if not ok:
+        return await reply_in_topic(msg, html.escape(actor_type), parse_mode="HTML")
 
     if not await _bot_can_promote(update, context):
-        return await reply_in_topic(msg, "Bot needs <b>Add New Admins</b> permission.", parse_mode="HTML")
+        return await reply_in_topic(
+            msg,
+            "Bot needs <b>Add New Admins</b> permission.",
+            parse_mode="HTML",
+        )
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     target_token, title_raw = extract_target_reason(context.args or [], has_reply)
@@ -143,7 +155,7 @@ async def promote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.bot.promote_chat_member,
             chat_id=chat.id,
             user_id=int(target_id),
-            **FULL_ADMIN_RIGHTS,
+            **rights,
         )
 
         title_note = ""
@@ -160,7 +172,8 @@ async def promote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg,
             "<b>Promoted</b>\n"
             f"<b>User:</b> {who}\n"
-            f"<b>Title:</b> <code>{html.escape(title)}</code>"
+            f"<b>Title:</b> <code>{html.escape(title)}</code>\n"
+            f"<b>Mode:</b> <code>{html.escape(actor_type)}</code>"
             f"{title_note}",
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -171,7 +184,6 @@ async def promote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Failed: <code>{html.escape(str(e))}</code>",
             parse_mode="HTML",
         )
-
 
 async def demote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -186,14 +198,16 @@ async def demote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not moderation_is_enabled(chat.id):
         return
 
-    if not await is_admin_or_owner(update, context):
-        return await reply_in_topic(msg, "You are not an admin.")
-
-    if not await _actor_can_promote(update, context):
-        return await reply_in_topic(msg, "You need <b>promote admin</b> permission.", parse_mode="HTML")
+    ok, _, actor_type = await _actor_promote_rights(update, context)
+    if not ok:
+        return await reply_in_topic(msg, html.escape(actor_type), parse_mode="HTML")
 
     if not await _bot_can_promote(update, context):
-        return await reply_in_topic(msg, "Bot needs <b>Add New Admins</b> permission.", parse_mode="HTML")
+        return await reply_in_topic(
+            msg,
+            "Bot needs <b>Add New Admins</b> permission.",
+            parse_mode="HTML",
+        )
 
     has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
     target_token, _ = extract_target_reason(context.args or [], has_reply)
