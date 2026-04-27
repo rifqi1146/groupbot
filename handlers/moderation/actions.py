@@ -42,14 +42,8 @@ FULL_ADMIN_RIGHTS = {
     "can_restrict_members": True,
     "can_change_info": True,
     "can_invite_users": True,
-    "can_post_stories": True,
-    "can_edit_stories": True,
-    "can_delete_stories": True,
-    "can_post_messages": True,
-    "can_edit_messages": True,
     "can_pin_messages": True,
     "can_manage_topics": True,
-    "can_manage_direct_messages": True,
     "can_manage_tags": True,
 }
 
