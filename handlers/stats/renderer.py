@@ -128,7 +128,7 @@ def render_dashboard(stats, net_speed=(0.0, 0.0)):
         f"Deno    : {runtime['deno']}",
         f"yt-dlp  : {runtime['ytdlp']}",
         f"aria2c  : {runtime['aria2c']}",
-        f"python-telegram-bot     : {runtime['ptb']}",
+        f"PTB     : {runtime['ptb']}",
         f"HTTP    : aiohttp {runtime['aiohttp']}",
         f"Core    : Pillow {runtime['pillow']} • psutil {runtime['psutil']} • aiofiles {runtime['aiofiles']}",
     ]
