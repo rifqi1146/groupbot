@@ -65,7 +65,7 @@ COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("settings", setting_cmd, False),
     ("promote", promote_cmd, False),
-    ("denote", demote_cmd, False),
+    ("demote", demote_cmd, False),
     ("backup", backup_cmd, True),
     ("autobackup", autobackup_cmd, True),
     ("restore", restore_cmd, True),
