@@ -4,7 +4,6 @@ import shutil
 import glob
 import html
 import tempfile
-from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,16 +16,9 @@ try:
 except Exception:
     VideosSearch = None
 
-def _find_project_root() -> str:
-    here = Path(__file__).resolve()
-    for parent in (here.parent, *here.parents):
-        if (parent / "data").exists() or (parent / "bot.py").exists():
-            return str(parent)
-    return str(here.parent.parent)
-
-PROJECT_ROOT = _find_project_root()
-COOKIES_PATH = os.path.join(PROJECT_ROOT, "data", "cookies.txt")
-DOWNLOADS_DIR = os.path.join(PROJECT_ROOT, "downloads")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIES_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "cookies.txt"))
+DOWNLOADS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "downloads"))
 DENO_BIN = os.getenv("DENO_BIN") or shutil.which("deno") or "/root/.deno/bin/deno"
 
 def _base_ydl_opts():
@@ -181,6 +173,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise RuntimeError("No matching songs or videos were found.")
         keyboard = []
         text = "<b>🎧 Music Search Results</b>\n\n"
+        user_id = msg.from_user.id if msg.from_user else 0
         for i, entry in enumerate(entries, 1):
             title = entry["title"]
             video_id = entry["id"]
@@ -188,7 +181,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             duration = _format_duration(entry.get("duration"))
             text += f"{i}. <b>{html.escape(title)}</b>\n"
             text += f"   By: {html.escape(uploader)} ({html.escape(duration)})\n\n"
-            keyboard.append([InlineKeyboardButton(f"Select {i}", callback_data=f"music_download:{video_id}")])
+            keyboard.append([InlineKeyboardButton(f"Select {i}", callback_data=f"music_download:{user_id}:{video_id}")])
         await status_msg.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
     except Exception as e:
         await status_msg.edit_text(
@@ -197,11 +190,20 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+    try:
+        _, owner_raw, video_id = query.data.split(":", 2)
+        owner_id = int(owner_raw)
+        video_id = video_id.strip()
+    except Exception:
+        return await query.answer("Invalid music request.", show_alert=True)
+    if query.from_user.id != owner_id:
+        return await query.answer("Not your request.", show_alert=True)
     if not await require_join_or_block(update, context):
         return
-    query = update.callback_query
     await query.answer()
-    video_id = query.data.split(":", 1)[1].strip()
     chat_id = query.message.chat_id
     reply_to_id = query.message.reply_to_message.message_id if query.message.reply_to_message else None
     settings = get_user_settings(query.from_user.id)
