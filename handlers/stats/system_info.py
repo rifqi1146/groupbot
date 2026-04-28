@@ -17,7 +17,7 @@ except Exception:
     psutil = None
 
 NET_SAMPLE_SECONDS = float(os.getenv("STATS_NET_SAMPLE_SECONDS", "1.0"))
-NET_BAR_MBIT = float(os.getenv("STATS_NET_BAR_MBIT") or os.getenv("STATS_NET_BAR_MBPS") or "10000")
+NET_BAR_MBIT = float(os.getenv("STATS_NET_BAR_MBIT") or os.getenv("STATS_NET_BAR_MBPS") or "1000")
 NET_IFACE = os.getenv("STATS_NET_IFACE", "").strip()
 
 def _ignored_iface(name: str) -> bool:
