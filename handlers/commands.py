@@ -33,7 +33,6 @@ from handlers.kang import kang_cmd
 from handlers.setting import setting_cmd
 from handlers.backup import backup_cmd, restore_cmd, autobackup_cmd
 from handlers.manga import manga_cmd
-from handlers.scraper import scraper_cmd
 
 from handlers.caca import (
     meta_query,
@@ -70,7 +69,6 @@ COMMAND_HANDLERS = [
     ("autobackup", autobackup_cmd, True),
     ("restore", restore_cmd, True),
     ("q", q_cmd, False),
-    ("scraper", scraper_cmd, False),
     ("kang", kang_cmd, False),
     ("cookies", cookies_cmd, False),
     ("moderation", moderation_cmd, False),
