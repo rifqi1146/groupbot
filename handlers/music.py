@@ -99,7 +99,7 @@ def _entry_uploader(entry: dict) -> str:
             return str(name)
     return str(entry.get("uploader") or entry.get("channelName") or entry.get("author") or "Unknown")
 
-async def _search_music(search_query: str, limit: int = 5) -> list[dict]:
+async def _search_music(search_query: str, limit: int = 10) -> list[dict]:
     if VideosSearch is None:
         raise RuntimeError("ytSearch module not found. Install yt-search-py or py-yt-search.")
     search = VideosSearch(search_query, limit=limit)
@@ -168,7 +168,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
     )
     try:
-        entries = await _search_music(query, limit=5)
+        entries = await _search_music(query, limit=10)
         if not entries:
             raise RuntimeError("No matching songs or videos were found.")
         keyboard = []
