@@ -1,154 +1,124 @@
-import os
-import json
-import time
-import asyncio
-import subprocess
-from io import BytesIO
-
-from PIL import Image, ImageDraw, ImageFont
-
+import os,json,html,uuid,shutil,asyncio,logging,subprocess
 from telegram import Update
 from telegram.ext import ContextTypes
-
 from utils.config import OWNER_ID
-from utils.fonts import get_font
 
+log=logging.getLogger(__name__)
+TMP_DIR=os.getenv("TMP_DIR","downloads")
+SPEEDTEST_TIMEOUT=int(os.getenv("SPEEDTEST_TIMEOUT","180"))
+SPEEDTEST_IMAGE_TIMEOUT=int(os.getenv("SPEEDTEST_IMAGE_TIMEOUT","45"))
 
-#speedtest
-IMG_W, IMG_H = 900, 520
+def _result_png_url(url:str)->str:
+    url=str(url or "").strip()
+    if not url:
+        raise RuntimeError("Speedtest result URL not found.")
+    url=url.split("#",1)[0].split("?",1)[0].rstrip("/")
+    if not url.endswith(".png"):
+        url=f"{url}.png"
+    return url
 
-#util
-def run_speedtest():
-    p = subprocess.run(
-        [
-            "speedtest",
-            "--accept-license",
-            "--accept-gdpr",
-            "-f", "json"
-        ],
+def run_speedtest()->dict:
+    p=subprocess.run(
+        ["speedtest","--accept-license","--accept-gdpr","-f","json"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
+        timeout=SPEEDTEST_TIMEOUT,
     )
-
-    if p.returncode != 0:
-        raise RuntimeError(f"Speedtest failed: {p.stderr.strip()}")
-
-    out = p.stdout.strip()
-
-    start = out.find("{")
-    end = out.rfind("}") + 1
-
-    if start == -1 or end == -1:
-        raise RuntimeError("Invalid speedtest output (no JSON found)")
-
+    if p.returncode!=0:
+        raise RuntimeError(f"Speedtest failed: {p.stderr.strip() or p.stdout.strip()}")
+    out=(p.stdout or "").strip()
+    start=out.find("{")
+    end=out.rfind("}")+1
+    if start<0 or end<=0:
+        raise RuntimeError("Invalid speedtest output, JSON not found.")
     try:
         return json.loads(out[start:end])
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"JSON parse error: {e}")
+        raise RuntimeError(f"Speedtest JSON parse error: {e}")
 
-def draw_gauge(draw, cx, cy, r, value, max_val, label, unit):
-    start = 135
-    end = 405
-    angle = start + (min(value, max_val) / max_val) * (end - start)
+async def _download_with_aria2c(url:str,out_path:str):
+    aria2c=shutil.which("aria2c")
+    if not aria2c:
+        raise RuntimeError("aria2c is not installed.")
+    os.makedirs(os.path.dirname(out_path) or ".",exist_ok=True)
+    cmd=[
+        aria2c,
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--summary-interval=0",
+        "--console-log-level=warn",
+        "-x","8",
+        "-s","8",
+        "-k","1M",
+        "-o",os.path.basename(out_path),
+        "-d",os.path.dirname(out_path),
+        url,
+    ]
+    proc=await asyncio.create_subprocess_exec(*cmd,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+    try:
+        stdout,stderr=await asyncio.wait_for(proc.communicate(),timeout=SPEEDTEST_IMAGE_TIMEOUT)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        raise RuntimeError("Speedtest image download timeout.")
+    if proc.returncode!=0:
+        err=(stderr.decode(errors="ignore") or stdout.decode(errors="ignore") or f"aria2c exited with code {proc.returncode}").strip()
+        raise RuntimeError(err[-1000:])
+    if not os.path.exists(out_path) or os.path.getsize(out_path)<=0:
+        raise RuntimeError("Downloaded speedtest image is empty.")
 
-    # arc bg
-    draw.arc(
-        [cx-r, cy-r, cx+r, cy+r],
-        start=start, end=end,
-        fill=(60,60,60), width=18
-    )
-    # arc fg
-    draw.arc(
-        [cx-r, cy-r, cx+r, cy+r],
-        start=start, end=angle,
-        fill=(0,170,255), width=18
-    )
+async def _download_result_image(url:str)->str:
+    os.makedirs(TMP_DIR,exist_ok=True)
+    out_path=os.path.join(TMP_DIR,f"speedtest_{uuid.uuid4().hex}.png")
+    last_err=None
+    for attempt in range(1,4):
+        try:
+            await _download_with_aria2c(url,out_path)
+            return out_path
+        except Exception as e:
+            last_err=e
+            log.warning("Speedtest image download failed | attempt=%s url=%s err=%r",attempt,url,e)
+            try:
+                if os.path.exists(out_path):
+                    os.remove(out_path)
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+    raise RuntimeError(f"Failed to download speedtest image: {last_err}")
 
-    draw.text((cx, cy-10), f"{value:.1f}",
-              fill="white", anchor="mm", font=FONT_BIG)
-    draw.text((cx, cy+35), unit,
-              fill=(180,180,180), anchor="mm", font=FONT_UNIT)
-    draw.text((cx, cy+r-10), label,
-              fill=(160,160,160), anchor="mm", font=FONT_LABEL)
-
-#image generator
-def generate_image(data):
-    img = Image.new("RGB", (IMG_W, IMG_H), (18,18,18))
-    draw = ImageDraw.Draw(img)
-
-    # header
-    draw.text((40, 30), "Speedtest",
-              fill="white", font=FONT_TITLE)
-    draw.text((40, 65), "by Ookla",
-              fill=(0,170,255), font=FONT_SMALL)
-
-    ping = data["ping"]["latency"]
-    down = data["download"]["bandwidth"] * 8 / 1e6
-    up   = data["upload"]["bandwidth"] * 8 / 1e6
-    isp  = data["isp"]
-    srv  = data["server"]["location"]
-
-    # ping
-    draw.text((IMG_W-40, 40),
-              f"PING  {ping:.1f} ms",
-              fill="white", anchor="ra", font=FONT_LABEL)
-
-    # gauges
-    draw_gauge(draw, 300, 300, 130, down, 500, "DOWNLOAD", "Mbps")
-    draw_gauge(draw, 600, 300, 130, up,   200, "UPLOAD",   "Mbps")
-
-    # footer
-    draw.text((40, IMG_H-60),
-              f"Server: {srv}",
-              fill=(180,180,180), font=FONT_SMALL)
-    draw.text((40, IMG_H-35),
-              f"Provider: {isp}",
-              fill=(180,180,180), font=FONT_SMALL)
-
-    draw.text((IMG_W-40, IMG_H-35),
-              time.strftime("%Y-%m-%d %H:%M:%S"),
-              fill=(120,120,120), anchor="ra", font=FONT_SMALL)
-
-    bio = BytesIO()
-    bio.name = "speedtest.png"
-    img.save(bio, "PNG")
-    bio.seek(0)
-    return bio
-
-# =========================
-# LOAD FONTS
-# =========================
-FONT_TITLE = get_font("DejaVuSans-Bold.ttf", 34)
-FONT_BIG   = get_font("DejaVuSans-Bold.ttf", 44)
-FONT_UNIT  = get_font("DejaVuSans.ttf", 18)
-FONT_LABEL = get_font("DejaVuSans.ttf", 20)
-FONT_SMALL = get_font("DejaVuSans.ttf", 16)
-
-#cmd speedtest
-async def speedtest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    user = update.effective_user
-
+async def speedtest_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    msg=update.effective_message
+    user=update.effective_user
     if not msg or not user:
         return
-
     if user.id not in OWNER_ID:
         return
-
-    status = await update.message.reply_text("Running Speedtest...")
-
+    status=await msg.reply_text("<b>Running Speedtest...</b>",parse_mode="HTML")
+    image_path=None
     try:
-        data = await asyncio.to_thread(run_speedtest)
-        img = await asyncio.to_thread(generate_image, data)
-
-        await update.message.reply_photo(
-            photo=img,
-            reply_to_message_id=update.message.message_id
-        )
-        await status.delete()
-
+        data=await asyncio.to_thread(run_speedtest)
+        result_url=((data.get("result") or {}).get("url") or "").strip()
+        png_url=_result_png_url(result_url)
+        image_path=await _download_result_image(png_url)
+        with open(image_path,"rb") as f:
+            await msg.reply_photo(photo=f,reply_to_message_id=msg.message_id)
+        try:
+            await status.delete()
+        except Exception:
+            pass
     except Exception as e:
-        await status.edit_text(f"Failed: {e}")
-        
-
+        err=html.escape(str(e) or repr(e))[:3500]
+        try:
+            await status.edit_text(f"<b>Speedtest failed</b>\n\n<code>{err}</code>",parse_mode="HTML")
+        except Exception:
+            pass
+    finally:
+        try:
+            if image_path and os.path.exists(image_path):
+                os.remove(image_path)
+                log.info("Speedtest image deleted | file=%s",image_path)
+        except Exception as e:
+            log.warning("Failed to delete speedtest image | file=%s err=%r",image_path,e)
