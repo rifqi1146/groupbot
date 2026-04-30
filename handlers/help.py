@@ -82,6 +82,7 @@ HELP_TEXT = {
         "• <code>/music</code> — Search music\n"
         "• <code>/q</code> — Create quote sticker\n"
         "• <code>/reminder</code> — Schedule a reminder\n"
+        "• <code>/resi</code> — Track packages, Indonesia expedition only\n"
         "• <code>/ship</code> — Choose a couple\n"
         "• <code>/tr</code> — Translate text between languages\n"
         "• <code>/trlist</code> — List supported languages\n"
@@ -92,8 +93,7 @@ HELP_TEXT = {
 
     "ai": (
         "<b>AI Chat</b>\n\n"
-        "• <code>/ai</code> — Chat with Gemini AI\n"
-        "• <code>/ask</code> — Chat with ChatGPT\n"
+        "• <code>/ask</code> — Chat with Gemini\n"
         "• <code>/groq</code> — Chat with Groq\n"
         "• <code>/caca</code> — Caca Chat Bot\n"
     ),
