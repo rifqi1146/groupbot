@@ -36,6 +36,7 @@ from handlers.manga import manga_cmd
 from handlers.anime import anime_cmd
 from handlers.upscale import upscale_cmd
 from handlers.resi import resi_cmd
+from handlers.fasttelethon import fasttelethon_cmd
 
 from handlers.caca import (
     meta_query,
@@ -67,6 +68,7 @@ COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("upscale", upscale_cmd, False),
     ("settings", setting_cmd, False),
+    ("fasttelethon", fasttelethon_cmd, False),
     ("anime", anime_cmd, False),
     ("promote", promote_cmd, False),
     ("resi", resi_cmd, False),
