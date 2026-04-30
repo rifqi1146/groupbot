@@ -73,19 +73,21 @@ HELP_TEXT = {
 
     "features": (
         "<b>Main Features</b>\n\n"
-        "• <code>/dl</code> — Download videos from supported platforms\n"
+        "• <code>/anime</code> — Search anime\n"
         "• <code>/asupan</code> — Random TikTok content\n"
-        "• <code>/weather</code> — Get weather information\n"
-        "• <code>/music</code> — Search music\n"
+        "• <code>/dl</code> — Download videos from supported platforms\n"
         "• <code>/gsearch</code> — Search on Google\n"
+        "• <code>/kang</code> — Add sticker to your pack\n"
+        "• <code>/kurs</code> — Currency conversion\n"
+        "• <code>/music</code> — Search music\n"
+        "• <code>/q</code> — Create quote sticker\n"
+        "• <code>/reminder</code> — Schedule a reminder\n"
+        "• <code>/ship</code> — Choose a couple\n"
         "• <code>/tr</code> — Translate text between languages\n"
         "• <code>/trlist</code> — List supported languages\n"
-        "• <code>/ship</code> — Choose a couple\n"
-        "• <code>/reminder</code> — Schedule a reminder\n"
+        "• <code>/upscale</code> — Upscale images\n"
         "• <code>/waifu</code> — Get a waifu\n"
-        "• <code>/kurs</code> — Currency conversion\n"
-        "• <code>/q</code> — Create quote sticker\n"
-        "• <code>/kang</code> — Add sticker to your pack\n"
+        "• <code>/weather</code> — Get weather information\n"
     ),
 
     "ai": (
