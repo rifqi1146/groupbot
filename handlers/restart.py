@@ -14,7 +14,7 @@ async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "♻️ <b>Restarting bot...</b>",
+        "<b>Restarting bot...</b>",
         parse_mode="HTML"
     )
 
