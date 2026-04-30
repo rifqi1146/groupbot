@@ -1,4 +1,4 @@
-import os,sys,html,importlib,logging,traceback
+import os,sys,html,importlib,logging,traceback,asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
@@ -115,33 +115,42 @@ async def _refresh_runtime_caches(app):
     except Exception as e:
         log.warning("Reload rag contexts failed | err=%r",e)
 
-async def reload_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
-    user=update.effective_user
-    msg=update.effective_message
-    if not user or user.id not in OWNER_ID or not msg:
-        return
-    app=context.application
-    lock=app.bot_data.setdefault("_reload_lock",__import__("asyncio").Lock())
+async def hot_reload(app):
+    lock=app.bot_data.setdefault("_reload_lock",asyncio.Lock())
     if lock.locked():
-        return await msg.reply_text("<b>Reload already running...</b>",parse_mode="HTML")
+        raise RuntimeError("Reload already running")
     async with lock:
-        status=await msg.reply_text("<b>Reloading modules...</b>",parse_mode="HTML")
         snapshot=_snapshot_handlers(app)
         try:
             await _pre_reload_cleanup(app)
             reloaded=_reload_modules()
             _register_all(app)
             await _refresh_runtime_caches(app)
-            text=(
-                "<b>Reload complete</b>\n\n"
-                f"Modules: <code>{len(reloaded)}</code>\n"
-                f"Handlers: <code>{sum(len(v) for v in app.handlers.values())}</code>\n\n"
-                "<i>Handlers, utils, database, and RAG contexts refreshed.</i>"
-            )
-            await status.edit_text(text,parse_mode="HTML")
-            log.info("Reload complete | modules=%s handlers=%s",len(reloaded),sum(len(v) for v in app.handlers.values()))
-        except Exception as e:
+            handler_count=sum(len(v) for v in app.handlers.values())
+            log.info("Reload complete | modules=%s handlers=%s",len(reloaded),handler_count)
+            return {"modules":len(reloaded),"handlers":handler_count}
+        except Exception:
             _restore_handlers(app,snapshot)
-            err=html.escape("".join(traceback.format_exception_only(type(e),e)).strip())[:3000]
-            await status.edit_text(f"<b>Reload failed</b>\n\n<code>{err}</code>\n\n<i>Old handlers restored.</i>",parse_mode="HTML")
             log.exception("Hot reload failed")
+            raise
+
+def reload_summary_text(result:dict)->str:
+    return (
+        "<b>Reload complete</b>\n\n"
+        f"Modules: <code>{result.get('modules',0)}</code>\n"
+        f"Handlers: <code>{result.get('handlers',0)}</code>\n\n"
+        "<i>Handlers, utils, database, and RAG contexts refreshed.</i>"
+    )
+
+async def reload_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    user=update.effective_user
+    msg=update.effective_message
+    if not user or user.id not in OWNER_ID or not msg:
+        return
+    status=await msg.reply_text("<b>Reloading modules...</b>",parse_mode="HTML")
+    try:
+        result=await hot_reload(context.application)
+        await status.edit_text(reload_summary_text(result),parse_mode="HTML")
+    except Exception as e:
+        err=html.escape("".join(traceback.format_exception_only(type(e),e)).strip())[:3000]
+        await status.edit_text(f"<b>Reload failed</b>\n\n<code>{err}</code>\n\n<i>Old handlers restored.</i>",parse_mode="HTML")

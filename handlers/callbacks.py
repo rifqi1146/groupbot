@@ -6,7 +6,6 @@ from handlers.dl.router import dl_callback, dlask_callback, dlres_callback, dlen
 from handlers.asupan import asupan_callback
 from handlers.helpowner import helpowner_callback
 from handlers.reminder import reminder_cancel_cb
-from handlers.update import update_cb
 from handlers.waifu import waifu_next_cb, waifu_pref_cb
 from handlers.welcome import verify_answer_callback
 from handlers.music import music_callback
@@ -27,7 +26,6 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(waifu_next_cb, pattern=r"^waifu:-?\d+:\d+:next$"))
     app.add_handler(CallbackQueryHandler(waifu_pref_cb, pattern=r"^waifu:-?\d+:\d+:pref$"))
     app.add_handler(CallbackQueryHandler(verify_answer_callback, pattern=r"^verify_ans:"))
-    app.add_handler(CallbackQueryHandler(update_cb, pattern=r"^update_"))
     app.add_handler(CallbackQueryHandler(music_callback, pattern=r"^music_download:"))
     app.add_handler(CallbackQueryHandler(quiz_callback, pattern=r"^quizans:"))
     app.add_handler(CallbackQueryHandler(broadcast_callback, pattern=r"^broadcast:"))
