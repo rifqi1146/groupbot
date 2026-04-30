@@ -35,6 +35,8 @@ from handlers.backup import backup_cmd, restore_cmd, autobackup_cmd
 from handlers.manga import manga_cmd
 from handlers.anime import anime_cmd
 from handlers.upscale import upscale_cmd
+from handlers.resi import resi_cmd
+
 from handlers.caca import (
     meta_query,
     cacaa_cmd,
@@ -67,6 +69,7 @@ COMMAND_HANDLERS = [
     ("settings", setting_cmd, False),
     ("anime", anime_cmd, False),
     ("promote", promote_cmd, False),
+    ("resi", resi_cmd, False),
     ("demote", demote_cmd, False),
     ("backup", backup_cmd, True),
     ("autobackup", autobackup_cmd, True),
