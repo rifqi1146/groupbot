@@ -20,7 +20,7 @@ DEFAULT_ASUPAN_KEYWORDS = [
     "itatay0ow_",
     "shrk_dar",
     "mieaiyamsatu",
-    'usrnme2009",
+    "usrnme2009",
     "z4h_ra06",
     "iyaininovajuga",
     "titikcrewett",
