@@ -1,34 +1,34 @@
-Bot ini adalah bot Telegram multifungsi yang mendukung download media, AI chat, pencarian, translate, sticker, anime, music, upscale image, utility jaringan, reminder, dan pengaturan grup.
+Bot ini adalah bot Telegram multifungsi yang bisa bantu banyak hal, mulai dari download media, AI chat, cari info, translate, bikin sticker, cari anime/music, upscale gambar, cek jaringan, reminder, sampai ngatur fitur grup. ✨
 
 Fitur utama bot:
-- /dl untuk download video dari platform yang didukung
-- /music untuk mencari dan download musik
-- /anime untuk mencari anime
-- /upscale untuk meningkatkan kualitas gambar
-- /asupan untuk random konten TikTok
-- /weather untuk cek cuaca
-- /gsearch untuk pencarian Google
-- /tr dan /trlist untuk translate dan melihat daftar bahasa
-- /q dan /kang untuk fitur sticker
-- /waifu, /ship, /kurs, dan /reminder untuk fitur tambahan
+- ⬇️ /dl buat download video dari platform yang didukung
+- 🎵 /music buat cari dan download musik
+- 🎬 /anime buat cari anime
+- 🖼️ /upscale buat ningkatin kualitas gambar
+- 🍜 /asupan buat random konten TikTok
+- 🌤️ /weather buat cek cuaca
+- 🔎 /gsearch buat cari sesuatu di Google
+- 🌍 /tr dan /trlist buat translate dan lihat daftar bahasa
+- 🖼️ /q dan /kang buat fitur sticker
+- 💝 /waifu, /ship, /kurs, dan /reminder buat fitur tambahan lain
 
 Fitur AI:
-- /ai untuk Gemini AI
-- /ask untuk ChatGPT
-- /groq untuk Groq
-- /caca untuk Caca Chat Bot
+- 🤖 /ask buat ngobrol pakai Gemini
+- ⚡ /groq buat ngobrol pakai Groq AI
+- 🍌 /caca buat ngobrol sama Caca Chat Bot
 
 Fitur utility:
-- /ping untuk cek respon bot
-- /stats untuk statistik bot dan sistem
-- /ip untuk lookup IP
-- /net untuk informasi jaringan
-- /domain dan /whoisdomain untuk informasi domain
+- 🏓 /ping buat cek respon bot
+- 📊 /stats buat lihat statistik bot dan sistem
+- 🌐 /ip buat cek info IP
+- 🧭 /net buat lihat info jaringan
+- 🏷️ /domain dan /whoisdomain buat cek info domain
 
 Fitur pengaturan grup:
-- /asupann, /autodel, /autodl, /cacaa, /nsfw, dan /wlc untuk mengatur fitur grup
-- /mode untuk mengubah persona Caca, khusus premium
+- ⚙️ /asupann, /autodel, /autodl, /cacaa, /nsfw, dan /wlc buat ngatur fitur grup
+- 🎭 /mode buat ganti persona Caca, khusus user premium
 
-Bot juga memiliki kebijakan privasi. Riwayat command seperti user ID, username, command yang dipakai, dan timestamp dapat disimpan untuk pengembangan, maintenance, dan peningkatan layanan. Jangan mengirim password, nomor identitas, atau data sensitif ke bot.
+Privasi:
+Bot bisa menyimpan riwayat command seperti user ID, username, command yang dipakai, dan waktu penggunaan. Data ini dipakai buat pengembangan, maintenance, dan ningkatin layanan bot. Jangan kirim password, nomor identitas, token, atau data sensitif lain ke bot ya. 🔐
 
-Untuk daftar fitur lengkap, gunakan /help.
+Buat lihat daftar fitur lengkap, tinggal ketik /help.
