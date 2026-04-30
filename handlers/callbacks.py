@@ -26,7 +26,7 @@ def register_callbacks(app):
     app.add_handler(CallbackQueryHandler(waifu_next_cb, pattern=r"^waifu:-?\d+:\d+:next$"))
     app.add_handler(CallbackQueryHandler(waifu_pref_cb, pattern=r"^waifu:-?\d+:\d+:pref$"))
     app.add_handler(CallbackQueryHandler(verify_answer_callback, pattern=r"^verify_ans:"))
-    app.add_handler(CallbackQueryHandler(music_callback, pattern=r"^music_download:"))
+    app.add_handler(CallbackQueryHandler(music_callback, pattern=r"^music_(download|page|cancel):"))
     app.add_handler(CallbackQueryHandler(quiz_callback, pattern=r"^quizans:"))
     app.add_handler(CallbackQueryHandler(broadcast_callback, pattern=r"^broadcast:"))
     app.add_handler(CallbackQueryHandler(setting_callback, pattern=r"^setting:"))
