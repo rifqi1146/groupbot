@@ -23,17 +23,19 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<i>Administrative & system-level controls</i>\n\n"
     
         "<b>System Management</b>\n"
-        "• <code>/update</code> — Update system Bot.\n"
-        "• <code>/speedtest</code> — Run server speed test.\n"
-        "• <code>/broadcast</code> — Announcement.\n"
         "• <code>/autodel</code> — Manage auto delete asupan settings.\n"
-        "• <code>/wlc</code> — Configure welcome message.\n"
-        "• <code>/restart</code> — Restart the bot.\n\n"
+        "• <code>/broadcast</code> — Announcement.\n"
+        "• <code>/fasttelethon</code> — Enable/disable FastTelethon upload.\n"
+        "• <code>/reload</code> — Hot reload handlers, utils, database, and RAG.\n"
+        "• <code>/restart</code> — Restart the bot.\n"
+        "• <code>/speedtest</code> — Run server speed test.\n"
+        "• <code>/update</code> — Update system Bot.\n"
+        "• <code>/wlc</code> — Configure welcome message.\n\n"
     
         "<b>Access & Billing</b>\n"
+        "• <code>/addsudo</code> — Add sudo user.\n"
         "• <code>/cookies</code> — Update cookies via Telegram.\n"
         "• <code>/premium</code> — Manage premium users.\n"
-        "• <code>/addsudo</code> — Add sudo user.\n"
         "• <code>/rmsudo</code> — Remove sudo user.\n"
         "• <code>/sudolist</code> — List sudo users.\n\n"
     
@@ -41,12 +43,12 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/asupann</code> — Manage asupan.\n\n"
     
         "<b>Backup System</b>\n"
+        "• <code>/autobackup</code> — Enable/disable auto backup.\n"
         "• <code>/backup</code> — Create data backup.\n"
-        "• <code>/restore</code> — Restore from backup file.\n"
-        "• <code>/autobackup</code> — Enable/disable auto backup.\n\n"
+        "• <code>/restore</code> — Restore from backup file.\n\n"
     
         "<b>Caca Settings</b>\n"
-        "• <code>/cacaa</code> — enable/disable/list/status.\n"
+        "• <code>/cacaa</code> — Enable/disable/list/status.\n"
     )
 
     await msg.reply_text(
