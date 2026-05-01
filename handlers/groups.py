@@ -11,6 +11,19 @@ _MAX_MSG_LEN = 3800
 def _chat_sort_key(item):
     return (item.get("title") or "").lower()
 
+def _is_supergroup_id(chat_id):
+    return str(chat_id).startswith("-100")
+
+def _unique_supergroup_ids(group_ids):
+    seen = set()
+    result = []
+    for gid in group_ids:
+        if not _is_supergroup_id(gid) or gid in seen:
+            continue
+        seen.add(gid)
+        result.append(gid)
+    return result
+
 async def _reply_chunks(msg, lines):
     chunk = []
     size = 0
@@ -32,12 +45,11 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
     if not msg or not user or user.id not in OWNER_ID:
         return
-    group_ids = _load_groups()
+    group_ids = _unique_supergroup_ids(_load_groups())
     if not group_ids:
         return await msg.reply_text("📭 <b>No groups recorded yet.</b>", parse_mode="HTML")
     public_groups = []
     private_groups = []
-    skipped = 0
     for gid in group_ids:
         try:
             chat = await bot.get_chat(gid)
@@ -49,7 +61,6 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 private_groups.append(item)
         except Exception as e:
-            skipped += 1
             log.warning("Failed to fetch group info | group_id=%s error=%s", gid, e)
     public_groups.sort(key=_chat_sort_key)
     private_groups.sort(key=_chat_sort_key)
