@@ -1,12 +1,16 @@
+import asyncio
 import html
 import logging
 from telegram import Update
+from telegram.error import RetryAfter
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
 from database.groups_db import _db_init, _load_groups
 
 log = logging.getLogger(__name__)
 _MAX_MSG_LEN = 3800
+_GET_CHAT_DELAY = 0.25
+_GET_CHAT_RETRIES = 3
 
 def _chat_sort_key(item):
     return (item.get("title") or "").lower()
@@ -20,7 +24,7 @@ def _normalize_chat_id(chat_id):
 def _is_legacy_private_group_id(chat_id):
     return str(chat_id).strip().startswith("-5")
 
-def _unique_supergroup_ids(group_ids):
+def _unique_group_ids(group_ids):
     seen = set()
     result = []
     for raw_gid in group_ids:
@@ -36,6 +40,22 @@ def _unique_supergroup_ids(group_ids):
         seen.add(gid)
         result.append(gid)
     return result
+
+async def _safe_get_chat(bot, gid):
+    for attempt in range(1, _GET_CHAT_RETRIES + 1):
+        try:
+            chat = await bot.get_chat(gid)
+            await asyncio.sleep(_GET_CHAT_DELAY)
+            return chat
+        except RetryAfter as e:
+            wait_time = int(getattr(e, "retry_after", 1)) + 1
+            log.warning("Get chat rate limited | group_id=%s wait=%ss attempt=%s/%s", gid, wait_time, attempt, _GET_CHAT_RETRIES)
+            await asyncio.sleep(wait_time)
+        except Exception as e:
+            log.warning("Failed to fetch group info | group_id=%s error=%s", gid, e)
+            return None
+    log.warning("Failed to fetch group info after retries | group_id=%s", gid)
+    return None
 
 async def _reply_chunks(msg, lines):
     chunk = []
@@ -58,23 +78,22 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
     if not msg or not user or user.id not in OWNER_ID:
         return
-    group_ids = _unique_supergroup_ids(_load_groups())
+    group_ids = _unique_group_ids(_load_groups())
     if not group_ids:
         return await msg.reply_text("📭 <b>No groups recorded yet.</b>", parse_mode="HTML")
     public_groups = []
     private_groups = []
     for gid in group_ids:
-        try:
-            chat = await bot.get_chat(gid)
-            title = html.escape((chat.title or "Unknown").strip() or "Unknown")
-            username = (getattr(chat, "username", None) or "").strip()
-            item = {"id": gid, "title": title, "username": username}
-            if username:
-                public_groups.append(item)
-            else:
-                private_groups.append(item)
-        except Exception as e:
-            log.warning("Failed to fetch group info | group_id=%s error=%s", gid, e)
+        chat = await _safe_get_chat(bot, gid)
+        if not chat:
+            continue
+        title = html.escape((chat.title or "Unknown").strip() or "Unknown")
+        username = (getattr(chat, "username", None) or "").strip()
+        item = {"id": gid, "title": title, "username": username}
+        if username:
+            public_groups.append(item)
+        else:
+            private_groups.append(item)
     public_groups.sort(key=_chat_sort_key)
     private_groups.sort(key=_chat_sort_key)
     total_valid = len(public_groups) + len(private_groups)
