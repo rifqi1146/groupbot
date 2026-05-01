@@ -30,8 +30,13 @@ def _is_gemini_quota_error(status: Optional[int], text: str) -> bool:
     blob = f"{status or ''} {text or ''}".lower()
     keys = [
         "429",
+        "503",
         "quota",
         "resource_exhausted",
+        "unavailable",
+        "high demand",
+        "experiencing high demand",
+        "try again later",
         "rate limit",
         "rate_limit",
         "too many requests",
