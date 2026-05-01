@@ -13,7 +13,7 @@ log=logging.getLogger(__name__)
 
 BLACKLIST_TEXT="<b>You have been blacklisted.</b>\n\nYou cannot use this bot."
 GROUP_BLACKLIST_TEXT=(
-    "🚫 <b>Bot Disabled in This Group</b>\n\n"
+    "<b>Bot Disabled in This Group</b>\n\n"
     "To prevent spam, this bot has been disabled in this group.\n"
     "Please contact {owners} to reactivate it."
 )
