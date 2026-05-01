@@ -1,11 +1,9 @@
 # Commands
 BOT_COMMANDS = {
-    "start","help","menu","helpowner","ask","weather","ping",
-    "enablensfw","disablensfw","nsfwlist","speedtest","ip",
-    "whoisdomain","domain","dl","stats","tr","gsearch",
-    "enableasupan","disableasupan","asupanlist","asupan",
-    "wlc","restart","ai","groq","nsfw","autodel",
-    "ship","reminder","meta","waifu","asupann","caca",
-    "cacaa","asupann","kurs","autodel","autodl","nsfw",
-    "mode","settings","upscale","anime",
+    "start","help","menu","settings",
+    "anime","asupan","dl","gsearch","kang","kurs","music","nobg","q",
+    "reminder","ship","tr","trlist","upscale","waifu","weather",
+    "ask","groq","caca",
+    "ping","stats","ip","net","domain","whoisdomain",
+    "asupann","autodel","autodl","mode","cacaa","nsfw","wlc",
 }
