@@ -9,7 +9,7 @@ TMP_DIR=os.getenv("TMP_DIR","downloads")
 NEOXR_NOBG_API=os.getenv("NEOXR_NOBG_API","https://api.neoxr.eu/api/nobg").strip()
 TMPFILES_UPLOAD_API=os.getenv("TMPFILES_UPLOAD_API","https://tmpfiles.org/api/v1/upload").strip()
 NOBG_MAX_SIZE=int(os.getenv("NOBG_MAX_SIZE",str(10*1024*1024)))
-NOBG_TIMEOUT=int(os.getenv("NOBG_TIMEOUT","120"))
+NOBG_TIMEOUT=int(os.getenv("NOBG_TIMEOUT","240"))
 
 async def _shared_http_session():
     session=get_http_session()
