@@ -80,6 +80,7 @@ HELP_TEXT = {
         "• <code>/kang</code> — Add sticker to your pack\n"
         "• <code>/kurs</code> — Currency conversion\n"
         "• <code>/music</code> — Search music\n"
+        "• <code>/nobg</code> — Remove image background\n"
         "• <code>/q</code> — Create quote sticker\n"
         "• <code>/reminder</code> — Schedule a reminder\n"
         "• <code>/resi</code> — Track packages, Indonesia expedition only\n"
