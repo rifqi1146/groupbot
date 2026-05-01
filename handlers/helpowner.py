@@ -25,6 +25,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>System Management</b>\n"
         "• <code>/autodel</code> — Manage auto delete asupan settings.\n"
         "• <code>/broadcast</code> — Announcement.\n"
+        "• <code>/blacklist</code> — Manage blacklisted users.\n"
         "• <code>/fasttelethon</code> — Enable/disable FastTelethon upload.\n"
         "• <code>/reload</code> — Hot reload handlers, utils, database, and RAG.\n"
         "• <code>/restart</code> — Restart the bot.\n"

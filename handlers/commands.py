@@ -39,6 +39,7 @@ from handlers.resi import resi_cmd
 from handlers.fasttelethon import fasttelethon_cmd
 from handlers.reload import reload_cmd
 from handlers.nobg import nobg_cmd
+from handlers.blacklist import blacklist_cmd
 
 from handlers.caca import (
     meta_query,
@@ -70,6 +71,7 @@ COMMAND_HANDLERS = [
     ("start", start_cmd, True),
     ("upscale", upscale_cmd, False),
     ("nobg", nobg_cmd, False),
+    ("blacklist", blacklist_cmd, False),
     ("reload", reload_cmd, False),
     ("settings", setting_cmd, False),
     ("fasttelethon", fasttelethon_cmd, False),

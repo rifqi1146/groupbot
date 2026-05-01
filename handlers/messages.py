@@ -12,7 +12,7 @@ from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
 from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
-
+from handlers.blacklist import blacklist_message_gate
 
 async def ai_reply_router(update, context):
     msg = update.message
@@ -60,6 +60,11 @@ async def ai_reply_router(update, context):
 
 
 def register_messages(app):
+    app.add_handler(
+        MessageHandler(filters.ALL, blacklist_message_gate),
+        group=-99,
+    )
+    
     app.add_handler(
         MessageHandler(filters.ALL, collect_chat),
         group=0,

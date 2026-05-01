@@ -13,8 +13,13 @@ from handlers.quiz import quiz_callback
 from handlers.broadcast import broadcast_callback
 from handlers.setting import setting_callback
 from handlers.manga import manga_callback
+from handlers.blacklist import blacklist_callback_gate
 
 def register_callbacks(app):
+    app.add_handler(
+        CallbackQueryHandler(blacklist_callback_gate, pattern=r".*"),
+        group=-99,
+    )
     app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
     app.add_handler(CallbackQueryHandler(gsearch_callback, pattern=r"^gsearch:"))
     app.add_handler(CallbackQueryHandler(dlask_callback, pattern=r"^dlask:"))

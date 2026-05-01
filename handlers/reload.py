@@ -90,6 +90,11 @@ async def _refresh_runtime_caches(app):
     except Exception as e:
         log.warning("Reload welcome cache failed | err=%r",e)
     try:
+        from database.blacklist_db import init as blacklist_init
+        blacklist_init()
+    except Exception as e:
+        log.warning("Reload blacklist db failed | err=%r",e)
+    try:
         from handlers.asupan import load_asupan_groups,load_autodel_groups
         load_asupan_groups()
         load_autodel_groups()
