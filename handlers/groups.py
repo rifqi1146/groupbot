@@ -1,12 +1,30 @@
 import html
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
 from database.groups_db import _db_init, _load_groups
 
+log = logging.getLogger(__name__)
+_MAX_MSG_LEN = 3800
+
 def _chat_sort_key(item):
-    title = (item.get("title") or "").lower()
-    return title
+    return (item.get("title") or "").lower()
+
+async def _reply_chunks(msg, lines):
+    chunk = []
+    size = 0
+    for line in lines:
+        add_size = len(line) + (1 if chunk else 0)
+        if chunk and size + add_size > _MAX_MSG_LEN:
+            await msg.reply_text("\n".join(chunk), parse_mode="HTML", disable_web_page_preview=True)
+            chunk = [line]
+            size = len(line)
+        else:
+            chunk.append(line)
+            size += add_size
+    if chunk:
+        await msg.reply_text("\n".join(chunk), parse_mode="HTML", disable_web_page_preview=True)
 
 async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -30,9 +48,9 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 public_groups.append(item)
             else:
                 private_groups.append(item)
-        except Exception:
+        except Exception as e:
             skipped += 1
-            continue
+            log.warning("Failed to fetch group info | group_id=%s error=%s", gid, e)
     public_groups.sort(key=_chat_sort_key)
     private_groups.sort(key=_chat_sort_key)
     total_valid = len(public_groups) + len(private_groups)
@@ -41,27 +59,25 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📭 <b>No active groups found.</b>\n\n<i>Saved entries exist, but the bot can no longer access them.</i>",
             parse_mode="HTML"
         )
-    lines = [f"📋 <b>Current Bot Groups</b> — <b>{total_valid}</b>"]
+    lines = [
+        "👥 <b>Current Bot Groups</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"📊 <b>Total Active:</b> <code>{total_valid}</code>",
+        f"🔗 <b>Public:</b> <code>{len(public_groups)}</code>",
+        f"🔒 <b>Private / Hidden:</b> <code>{len(private_groups)}</code>"
+    ]
     if public_groups:
-        lines.append(f"\n<b>🔗 Public Groups</b> — <b>{len(public_groups)}</b>")
-        for item in public_groups:
-            link = f"https://t.me/{html.escape(item['username'])}"
-            lines.append(f"• <a href=\"{link}\">{item['title']}</a>\n  <code>{item['id']}</code>")
+        lines += ["", "🔗 <b>Public Groups</b>", "━━━━━━━━━━━━━━━━━━━━"]
+        for i, item in enumerate(public_groups, 1):
+            link = f"https://t.me/{html.escape(item['username'], quote=True)}"
+            lines.append(f"{i}. 🌐 <a href=\"{link}\">{item['title']}</a>\n   🆔 <code>{item['id']}</code>")
     if private_groups:
-        lines.append(f"\n<b>🏷️ Private / Hidden Groups</b> — <b>{len(private_groups)}</b>")
-        for item in private_groups:
-            lines.append(f"• {item['title']}\n  <code>{item['id']}</code>")
-    if skipped:
-        lines.append(f"\n<i>Skipped inaccessible groups: {skipped}</i>")
-    text = "\n".join(lines)
-    chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)]
-    for i, chunk in enumerate(chunks):
-        if i == 0:
-            await msg.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
-        else:
-            await msg.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+        lines += ["", "🔒 <b>Private / Hidden Groups</b>", "━━━━━━━━━━━━━━━━━━━━"]
+        for i, item in enumerate(private_groups, 1):
+            lines.append(f"{i}. 🏷️ <b>{item['title']}</b>\n   🆔 <code>{item['id']}</code>")
+    await _reply_chunks(msg, lines)
 
 try:
     _db_init()
 except Exception:
-    pass
+    log.exception("Failed to initialize groups database")
