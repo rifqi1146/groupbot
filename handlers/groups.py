@@ -11,14 +11,27 @@ _MAX_MSG_LEN = 3800
 def _chat_sort_key(item):
     return (item.get("title") or "").lower()
 
-def _is_supergroup_id(chat_id):
-    return str(chat_id).startswith("-100")
+def _normalize_chat_id(chat_id):
+    try:
+        return int(str(chat_id).strip())
+    except (TypeError, ValueError):
+        return None
+
+def _is_legacy_private_group_id(chat_id):
+    return str(chat_id).strip().startswith("-5")
 
 def _unique_supergroup_ids(group_ids):
     seen = set()
     result = []
-    for gid in group_ids:
-        if not _is_supergroup_id(gid) or gid in seen:
+    for raw_gid in group_ids:
+        gid = _normalize_chat_id(raw_gid)
+        if gid is None:
+            log.warning("Invalid group id skipped | raw_group_id=%r", raw_gid)
+            continue
+        if _is_legacy_private_group_id(gid):
+            log.info("Legacy private group id skipped | group_id=%s", gid)
+            continue
+        if gid in seen:
             continue
         seen.add(gid)
         result.append(gid)
