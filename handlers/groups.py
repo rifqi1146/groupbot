@@ -103,17 +103,17 @@ async def groups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
     lines = [
-        "👥 <b>Current Bot Groups</b>",
+        "<b>Current Bot Groups</b>",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"📊 <b>Total Active:</b> <code>{total_valid}</code>",
-        f"🔗 <b>Public:</b> <code>{len(public_groups)}</code>",
-        f"🔒 <b>Private / Hidden:</b> <code>{len(private_groups)}</code>"
+        f"<b>Total Active:</b> <code>{total_valid}</code>",
+        f"<b>Public:</b> <code>{len(public_groups)}</code>",
+        f"<b>Private / Hidden:</b> <code>{len(private_groups)}</code>"
     ]
     if public_groups:
         lines += ["", "🔗 <b>Public Groups</b>", "━━━━━━━━━━━━━━━━━━━━"]
         for i, item in enumerate(public_groups, 1):
             link = f"https://t.me/{html.escape(item['username'], quote=True)}"
-            lines.append(f"{i}. 🌐 <a href=\"{link}\">{item['title']}</a>\n   🆔 <code>{item['id']}</code>")
+            lines.append(f"{i}. 🔗 <a href=\"{link}\">{item['title']}</a>\n   🆔 <code>{item['id']}</code>")
     if private_groups:
         lines += ["", "🔒 <b>Private / Hidden Groups</b>", "━━━━━━━━━━━━━━━━━━━━"]
         for i, item in enumerate(private_groups, 1):
