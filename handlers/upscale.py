@@ -241,7 +241,7 @@ async def upscale_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
         output_path=os.path.join(TMP_DIR,f"{mode}_{uuid.uuid4().hex}{ext}")
         await _download_with_aria2c(download_url,output_path)
         with open(output_path,"rb") as f:
-            await msg.reply_photo(photo=f,caption=f"<b>{html.escape(title)} result</b>",parse_mode="HTML",reply_to_message_id=msg.reply_to_message.message_id)
+            await msg.reply_document(document=f,filename="upscale.png",caption="<b>Remove background result</b>",parse_mode="HTML",reply_to_message_id=msg.reply_to_message.message_id)
         try:
             await status.delete()
         except Exception:
