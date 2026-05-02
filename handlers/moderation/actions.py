@@ -116,20 +116,20 @@ async def _actor_can_manage_tags(update: Update, context: ContextTypes.DEFAULT_T
     user = update.effective_user
     chat = update.effective_chat
     if not user or not chat:
-        return False, "Invalid update."
+        return False, {}, "Invalid update."
     if is_owner(user.id) or sudo_is(user.id):
-        return True, "owner"
+        return True, {}, "owner"
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
     except Exception as e:
-        return False, str(e)
+        return False, {}, str(e)
     if member.status == "creator":
-        return True, "creator"
+        return True, {}, "creator"
     if member.status != "administrator":
-        return False, "You are not an admin."
+        return False, {}, "You are not an admin."
     if not bool(getattr(member, "can_manage_tags", False)):
-        return False, "You don't have Manage Tags permission."
-    return True, "admin"
+        return False, {}, "You don't have Manage Tags permission."
+    return True, {}, "admin"
 
 async def _bot_can_manage_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     chat = update.effective_chat
@@ -318,10 +318,10 @@ async def tag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not moderation_is_enabled(chat.id):
         return
 
-    ok, actor_type = await _actor_can_manage_tags(update, context)
+    ok, _, actor_type = await _actor_can_manage_tags(update, context)
     if not ok:
         return await reply_in_topic(msg, html.escape(actor_type), parse_mode="HTML")
-
+    
     if not await _bot_can_manage_tags(update, context):
         return await reply_in_topic(
             msg,
@@ -388,10 +388,10 @@ async def untag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not moderation_is_enabled(chat.id):
         return
 
-    ok, actor_type = await _actor_can_manage_tags(update, context)
+    ok, _, actor_type = await _actor_can_manage_tags(update, context)
     if not ok:
         return await reply_in_topic(msg, html.escape(actor_type), parse_mode="HTML")
-
+    
     if not await _bot_can_manage_tags(update, context):
         return await reply_in_topic(
             msg,
