@@ -83,6 +83,7 @@ HELP_TEXT = {
         "• <code>/music</code> — Search music\n"
         "• <code>/nobg</code> — Remove image background\n"
         "• <code>/q</code> — Create quote sticker\n"
+        "• <code>/quoteanime</code> — Random anime quotes\n"
         "• <code>/reminder</code> — Schedule a reminder\n"
         "• <code>/resi</code> — Track packages, Indonesia expedition only\n"
         "• <code>/ship</code> — Choose a couple\n"
