@@ -16,10 +16,7 @@ def dl_keyboard(dl_id: str):
 def yt_engine_keyboard(dl_id: str):
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("Use yt-dlp", callback_data=f"dlengine:{dl_id}:ytdlp"),
-                InlineKeyboardButton("Use Sonzai API", callback_data=f"dlengine:{dl_id}:sonzai"),
-            ],
+            [InlineKeyboardButton("Use yt-dlp", callback_data=f"dlengine:{dl_id}:ytdlp")],
             [InlineKeyboardButton("Cancel", callback_data=f"dl:{dl_id}:cancel")],
         ]
     )

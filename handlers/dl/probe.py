@@ -5,7 +5,6 @@ import json
 import logging
 from urllib.parse import urlparse
 from .constants import COOKIES_PATH
-from .youtube.main import sonzai_get_resolutions
 
 log = logging.getLogger(__name__)
 
@@ -16,11 +15,6 @@ YTDLP_RESOLUTION_DOMAINS = (
     "xhamster.com",
     "xnxx.com",
     "xvideos.com",
-)
-
-SONZAI_RESOLUTION_DOMAINS = (
-    "youtube.com",
-    "youtu.be",
 )
 
 def _host(url: str) -> str:
@@ -38,15 +32,11 @@ def supports_ytdlp_resolution(url: str) -> bool:
     host = _host(url)
     return any(_host_match(host, d) for d in YTDLP_RESOLUTION_DOMAINS)
 
-def supports_sonzai_resolution(url: str) -> bool:
-    host = _host(url)
-    return any(_host_match(host, d) for d in SONZAI_RESOLUTION_DOMAINS)
-
 def supports_resolution_picker(url: str) -> bool:
-    return supports_ytdlp_resolution(url) or supports_sonzai_resolution(url)
+    return supports_ytdlp_resolution(url)
 
 def supports_both_resolution_engines(url: str) -> bool:
-    return supports_ytdlp_resolution(url) and supports_sonzai_resolution(url)
+    return False
 
 def _format_size(num: int) -> str:
     try:
@@ -248,51 +238,14 @@ def _probe_resolutions_sync(url: str) -> list[dict]:
     return out
 
 async def get_resolutions(url: str, engine: str | None = None) -> list[dict]:
-    chosen = (engine or "").strip().lower()
-
-    if chosen == "sonzai":
-        if not supports_sonzai_resolution(url):
-            return []
-        try:
-            res = await sonzai_get_resolutions(url)
-            log.info("Sonzai probe heights | %s", [x.get("height") for x in res or []])
-            return res
-        except Exception as e:
-            log.warning("Sonzai probe failed | url=%s err=%r", url, e)
-            return []
-
-    if chosen == "ytdlp":
-        if not supports_ytdlp_resolution(url):
-            return []
-        return await asyncio.to_thread(_probe_resolutions_sync, url)
-
-    if supports_sonzai_resolution(url) and not supports_ytdlp_resolution(url):
-        try:
-            res = await sonzai_get_resolutions(url)
-            log.info("Sonzai probe heights | %s", [x.get("height") for x in res or []])
-            return res
-        except Exception as e:
-            log.warning("Sonzai probe failed | url=%s err=%r", url, e)
-            return []
-
-    if supports_ytdlp_resolution(url) and not supports_sonzai_resolution(url):
-        return await asyncio.to_thread(_probe_resolutions_sync, url)
-
-    if supports_sonzai_resolution(url):
-        try:
-            res = await sonzai_get_resolutions(url)
-            if res:
-                log.info("Sonzai probe heights | %s", [x.get("height") for x in res or []])
-                return res
-        except Exception as e:
-            log.warning("Sonzai probe failed, fallback yt-dlp | url=%s err=%r", url, e)
-
-    if supports_ytdlp_resolution(url):
-        try:
-            res = await asyncio.to_thread(_probe_resolutions_sync, url)
-            if res:
-                return res
-        except Exception as e:
-            log.warning("yt-dlp probe failed | url=%s err=%r", url, e)
-
-    return []
+    chosen = (engine or "ytdlp").strip().lower()
+    if chosen != "ytdlp":
+        log.warning("Unsupported resolution engine ignored | url=%s engine=%s", url, chosen)
+    if not supports_ytdlp_resolution(url):
+        return []
+    try:
+        res = await asyncio.to_thread(_probe_resolutions_sync, url)
+        return res or []
+    except Exception as e:
+        log.warning("yt-dlp probe failed | url=%s err=%r", url, e)
+        return []

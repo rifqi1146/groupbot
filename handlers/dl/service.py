@@ -12,7 +12,7 @@ from .constants import TMP_DIR, MAX_TG_SIZE
 from .utils import detect_media_type
 from .ytdlp import ytdlp_download
 from .instagram.main import is_instagram_url, instagram_api_download
-from .youtube.main import is_youtube_url, sonzai_youtube_download
+from .youtube.main import is_youtube_url
 from .facebook.main import is_facebook_url, facebook_download
 from .threads.main import is_threads_url, threads_download
 from .twitter.main import is_x_url, twitter_download
@@ -414,31 +414,12 @@ async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, for
     if is_threads_url(raw_url):
         return await threads_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
     if is_youtube_url(raw_url):
-        chosen_engine = (engine or "").strip().lower()
-        if chosen_engine == "sonzai":
-            return await sonzai_youtube_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id)
-        if chosen_engine == "ytdlp":
-            return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
-        yt_error = None
-        try:
-            await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>Trying yt-dlp...</b>")
-            result = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
-            file_path = result.get("path") if isinstance(result, dict) else result
-            if not file_path:
-                raise RuntimeError("yt-dlp returned no file")
-            return result
-        except Exception as e:
-            yt_error = str(e) or repr(e)
-            log.warning("yt-dlp YouTube download failed, falling back to Sonzai | url=%s err=%r", raw_url, e)
-            await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text="<b>yt-dlp failed</b>\n\n<i>Fallback to Sonzai API...</i>")
-            try:
-                result = await sonzai_youtube_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id)
-                file_path = result.get("path") if isinstance(result, dict) else result
-                if not file_path:
-                    raise RuntimeError("Sonzai returned no file")
-                return result
-            except Exception as fallback_error:
-                log.warning("Sonzai YouTube fallback failed | url=%s err=%r", raw_url, fallback_error)
-                raise RuntimeError(f"yt-dlp: {yt_error}\nSonzai: {fallback_error}") from fallback_error
+        if (engine or "").strip().lower() not in ("", "ytdlp"):
+            log.warning("Unsupported YouTube engine ignored | url=%s engine=%s", raw_url, engine)
+        result = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+        file_path = result.get("path") if isinstance(result, dict) else result
+        if not file_path:
+            raise RuntimeError("yt-dlp returned no file")
+        return result
     return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
     

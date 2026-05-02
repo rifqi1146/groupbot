@@ -14,8 +14,8 @@ from .constants import TMP_DIR, DL_FORMATS, PREMIUM_ONLY_DOMAINS, AUTO_DOWNLOAD_
 from .state import DL_CACHE
 from database.download_db import load_auto_dl, save_auto_dl, is_premium_user, is_premium_required
 from .utils import normalize_url, is_invalid_video
-from .keyboards import dl_keyboard, yt_engine_keyboard, res_keyboard, autodl_detect_keyboard
-from .probe import get_resolutions, supports_resolution_picker, supports_both_resolution_engines, supports_ytdlp_resolution, supports_sonzai_resolution
+from .keyboards import dl_keyboard, res_keyboard, autodl_detect_keyboard
+from .probe import get_resolutions, supports_resolution_picker, supports_ytdlp_resolution
 from .tiktok.main import is_tiktok, douyin_download, tiktok_download
 from .service import download_non_tiktok, send_downloaded_media
 from database.user_settings_db import get_user_settings
@@ -148,7 +148,7 @@ async def _show_resolution_picker(context, message, dl_id: str, data: dict, engi
                 fmt_key="video",
                 format_id=_format_id_for_engine(engine, picked_height, picked),
                 has_audio=bool(picked.get("has_audio")),
-                label=f"Video ({picked_height}p)",
+                label=f"{picked_height}p",
                 engine=engine,
             )
 
@@ -161,25 +161,10 @@ async def _process_choice(context, message, dl_id: str, data: dict, choice: str,
     url = data["url"]
     if choice == "video" and supports_resolution_picker(url):
         DL_CACHE[dl_id]["fmt_key"] = "video"
-        settings = get_user_settings(user_id)
-        default_engine = str(settings.get("youtube_download_engine") or "ytdlp").lower()
-
-        if supports_both_resolution_engines(url):
-            picked_engine = default_engine if default_engine in ("sonzai", "ytdlp") else "ytdlp"
-            log.info("Resolution engine selected | url=%s engine=%s default=%s", url, picked_engine, default_engine)
-            await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
-            return await _show_resolution_picker(context, message, dl_id, data, engine=picked_engine)
-
         if supports_ytdlp_resolution(url):
             log.info("Resolution engine selected | url=%s engine=ytdlp", url)
             await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
             return await _show_resolution_picker(context, message, dl_id, data, engine="ytdlp")
-
-        if supports_sonzai_resolution(url):
-            log.info("Resolution engine selected | url=%s engine=sonzai", url)
-            await message.edit_text("<b>Fetching video formats...</b>", parse_mode="HTML")
-            return await _show_resolution_picker(context, message, dl_id, data, engine="sonzai")
-
     DL_CACHE.pop(dl_id, None)
     return await _start_dl_task(context=context, message=message, data=data, fmt_key=choice, format_id=None, has_audio=False)
 
@@ -396,18 +381,16 @@ async def dlengine_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     q = update.callback_query
     await q.answer()
-    _, dl_id, engine = q.data.split(":", 2)
+    _, dl_id, _engine = q.data.split(":", 2)
     data = DL_CACHE.get(dl_id)
     if not data:
         return await q.edit_message_text("Request expired")
     if q.from_user.id != data["user"]:
         return await q.answer("This is not your request", show_alert=True)
-    if engine not in ("ytdlp", "sonzai"):
-        return await q.edit_message_text("Invalid engine selection")
-    data["engine"] = engine
-    log.info("Engine callback selected | url=%s engine=%s", data.get("url"), engine)
+    data["engine"] = "ytdlp"
+    log.info("Engine callback selected | url=%s engine=ytdlp", data.get("url"))
     await q.edit_message_text("<b>Fetching video formats...</b>", parse_mode="HTML")
-    return await _show_resolution_picker(context, q.message, dl_id, data, engine=engine)
+    return await _show_resolution_picker(context, q.message, dl_id, data, engine="ytdlp")
 
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update, context):
@@ -466,7 +449,7 @@ async def dlres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fmt_key="video",
         format_id=_format_id_for_engine(engine, height, picked),
         has_audio=bool(picked.get("has_audio")),
-        label=f"Video ({height}p)",
+        label=f"{height}p",
         engine=engine,
     )
 

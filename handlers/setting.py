@@ -5,7 +5,6 @@ from database.user_settings_db import (
     set_force_autodl,
     set_autodl_format,
     set_youtube_resolution,
-    set_youtube_download_engine,
     set_music_format,
 )
 
@@ -23,13 +22,6 @@ def _fmt_autodl_format(v: str) -> str:
 def _fmt_res(v: int) -> str:
     v = int(v or 0)
     return "Ask" if v == 0 else f"{v}p"
-
-def _fmt_yt_engine(v: str) -> str:
-    mapping = {
-        "sonzai": "Sonzai API",
-        "ytdlp": "yt-dlp",
-    }
-    return mapping.get(str(v).lower(), "Sonzai API")
 
 def _fmt_music(v: str) -> str:
     mapping = {
@@ -51,7 +43,6 @@ def _settings_text(user_id: int) -> str:
         f"<b>AutoDL in all groups:</b> <code>{_fmt_bool(s['force_autodl'])}</code>\n"
         f"<b>Default downloader format:</b> <code>{_fmt_autodl_format(s['autodl_format'])}</code>\n"
         f"<b>YouTube resolution:</b> <code>{_fmt_res(s['youtube_resolution'])}</code>\n"
-        f"<b>YouTube engine:</b> <code>{_fmt_yt_engine(s['youtube_download_engine'])}</code>\n"
         f"<b>Music output format:</b> <code>{_fmt_music(s['music_format'])}</code>"
     )
 
@@ -84,12 +75,6 @@ def _main_keyboard(user_id: int, source: str = "direct") -> InlineKeyboardMarkup
             InlineKeyboardButton(
                 f"YouTube Resolution: {_fmt_res(s['youtube_resolution'])}",
                 callback_data=_cb(user_id, source, "menu", "youtube_resolution"),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                f"YouTube Engine: {_fmt_yt_engine(s['youtube_download_engine'])}",
-                callback_data=_cb(user_id, source, "menu", "youtube_download_engine"),
             )
         ],
         [
@@ -133,21 +118,6 @@ def _youtube_resolution_keyboard(user_id: int, source: str = "direct") -> Inline
         [
             InlineKeyboardButton(label(720), callback_data=_cb(user_id, source, "set", "youtube_resolution", 720)),
             InlineKeyboardButton(label(1080), callback_data=_cb(user_id, source, "set", "youtube_resolution", 1080)),
-        ],
-        [
-            InlineKeyboardButton("Back", callback_data=_cb(user_id, source, "menu", "main"))
-        ],
-    ])
-
-def _youtube_download_engine_keyboard(user_id: int, source: str = "direct") -> InlineKeyboardMarkup:
-    s = get_user_settings(user_id)
-    current = str(s["youtube_download_engine"]).lower()
-    def label(v: str, t: str) -> str:
-        return f"• {t}" if current == v else t
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(label("sonzai", "Sonzai API"), callback_data=_cb(user_id, source, "set", "youtube_download_engine", "sonzai")),
-            InlineKeyboardButton(label("ytdlp", "yt-dlp"), callback_data=_cb(user_id, source, "set", "youtube_download_engine", "ytdlp")),
         ],
         [
             InlineKeyboardButton("Back", callback_data=_cb(user_id, source, "menu", "main"))
@@ -235,12 +205,6 @@ async def setting_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
                 reply_markup=_youtube_resolution_keyboard(owner_id, source),
             )
-        if key == "youtube_download_engine":
-            return await q.message.edit_text(
-                _settings_text(owner_id),
-                parse_mode="HTML",
-                reply_markup=_youtube_download_engine_keyboard(owner_id, source),
-            )
         if key == "music_format":
             return await q.message.edit_text(
                 _settings_text(owner_id),
@@ -259,8 +223,6 @@ async def setting_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 set_youtube_resolution(owner_id, int(value))
             except Exception:
                 set_youtube_resolution(owner_id, 0)
-        elif key == "youtube_download_engine":
-            set_youtube_download_engine(owner_id, value)
         elif key == "music_format":
             set_music_format(owner_id, value)
         else:
