@@ -23,6 +23,7 @@ from handlers.music import music_cmd
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd, net_cmd
 from handlers.nobg import nobg_cmd
 from handlers.nsfw import nsfw_cmd
+from handlers.susunkata import susunkata_cmd
 from handlers.ping import ping_cmd
 from handlers.premium import premium_cmd
 from handlers.quiz import quiz_cmd
@@ -127,6 +128,7 @@ COMMAND_HANDLERS = [
     ("restore", restore_cmd, True),
     ("resi", resi_cmd, False),
     ("rmsudo", rmsudo_cmd, False),
+    ("susunkata", susunkata_cmd, False),
     ("settings", setting_cmd, False),
     ("ship", ship_cmd, True),
     ("speedtest", speedtest_cmd, False),

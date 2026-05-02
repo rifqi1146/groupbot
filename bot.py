@@ -87,6 +87,7 @@ async def post_init(app):
             ("kang", "Add sticker to pack"),
             ("ship", "Choose couple"),
             ("quoteanime", "Random quote"),
+            ("susunkata", "Play word arrangement game"),
             ("stats", "System statistics"),
             ("dl", "Download video"),
             ("manga", "Read Manga"),
