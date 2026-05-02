@@ -17,6 +17,7 @@ DEFAULT_ASUPAN_KEYWORDS = [
     "notmeyy._",
     "ssnappy1",
     "vbynad_ia",
+    "anglcin",
     "jeeyaniwhs",
     "nazilaa0_",
     "princessvionaa",
