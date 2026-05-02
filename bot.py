@@ -75,6 +75,7 @@ async def post_init(app):
     try:
         await app.bot.set_my_commands([
             ("start", "Check bot status"),
+            ("aidetect", "Detect AI-generated image"),
             ("donate", "Support bot"),
             ("help", "Show help menu"),
             ("settings", "User setting"),

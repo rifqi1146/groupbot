@@ -42,6 +42,7 @@ from handlers.upscale import upscale_cmd
 from handlers.waifu import waifu_cmd
 from handlers.weather import weather_cmd
 from handlers.welcome import wlc_cmd, start_verify_pm
+from handlers.aiimagedetector import aiimagedetector_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -74,6 +75,7 @@ from handlers.moderation import (
 COMMAND_HANDLERS = [
     ("addsudo", addsudo_cmd, False),
     ("anime", anime_cmd, False),
+    ("aidetect", aiimagedetector_cmd, False),
     ("ask", ai_cmd, False),
     ("asupan", asupan_cmd, False),
     ("asupann", asupann_cmd, False),
