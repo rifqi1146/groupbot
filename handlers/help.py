@@ -75,6 +75,7 @@ HELP_TEXT = {
         "<b>Main Features</b>\n\n"
         "• <code>/anime</code> — Search anime\n"
         "• <code>/aidetect</code> — Detect AI-generated images\n"
+        "• <code>/aitext</code> — Detect AI-generated text\n"
         "• <code>/asupan</code> — Random TikTok content\n"
         "• <code>/dl</code> — Download videos from supported platforms\n"
         "• <code>/gsearch</code> — Search on Google\n"

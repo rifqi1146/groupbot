@@ -18,6 +18,7 @@ from handlers.helpowner import helpowner_cmd
 from handlers.kang import kang_cmd
 from handlers.kurs import kurs_cmd
 from handlers.manga import manga_cmd
+from handlers.aitext import aitext_cmd
 from handlers.music import music_cmd
 from handlers.networking import whoisdomain_cmd, ip_cmd, domain_cmd, net_cmd
 from handlers.nobg import nobg_cmd
@@ -74,6 +75,7 @@ from handlers.moderation import (
 
 COMMAND_HANDLERS = [
     ("addsudo", addsudo_cmd, False),
+    ("aitext", aitext_cmd, False),
     ("anime", anime_cmd, False),
     ("aidetect", aiimagedetector_cmd, False),
     ("ask", ai_cmd, False),
