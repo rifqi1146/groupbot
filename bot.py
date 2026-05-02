@@ -79,7 +79,7 @@ async def post_init(app):
             ("help", "Show help menu"),
             ("settings", "User setting"),
             ("nobg", "Remove background"),
-            ("upscale", "Upscale image")
+            ("upscale", "Upscale image"),
             ("quiz", "random soal"),
             ("ping", "Check latency"),
             ("kang", "Add sticker to pack"),
