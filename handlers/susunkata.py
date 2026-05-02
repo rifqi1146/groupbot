@@ -92,19 +92,33 @@ async def susunkata_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await msg.reply_text("Question data is empty.", reply_to_message_id=msg.message_id)
 
     answer = _normalize_answer(data.get("jawaban"))
+    raw_answer = str(data.get("jawaban") or "").strip()
+    question = str(data.get("pertanyaan") or "").strip()
+    tipe = str(data.get("tipe") or "").strip()
+    
     if not answer:
         return await msg.reply_text("Answer data is empty.", reply_to_message_id=msg.message_id)
-
+    
     sent = await msg.reply_text(
         _format_question(data),
         parse_mode="HTML",
         reply_to_message_id=msg.message_id,
     )
+    
+    log.info(
+        "Susunkata game created | chat_id=%s message_id=%s type=%s question=%s answer=%s",
+        chat.id,
+        sent.message_id,
+        tipe or "-",
+        question or "-",
+        raw_answer or answer,
+    )
+    
     SUSUNKATA_GAMES[_game_key(chat.id, sent.message_id)] = {
         "answer": answer,
-        "raw_answer": str(data.get("jawaban") or "").strip(),
-        "question": str(data.get("pertanyaan") or "").strip(),
-        "type": str(data.get("tipe") or "").strip(),
+        "raw_answer": raw_answer,
+        "question": question,
+        "type": tipe,
         "created_at": time.time(),
         "creator_id": msg.from_user.id if msg.from_user else 0,
     }
