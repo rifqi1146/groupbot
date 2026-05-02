@@ -9,6 +9,8 @@ __all__ = [
     "moderation_cmd",
     "ban_cmd",
     "unban_cmd",
+    "tag_cmd",
+    "untag_cmd",
     "mute_cmd",
     "unmute_cmd",
     "kick_cmd",
