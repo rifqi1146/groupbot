@@ -108,6 +108,72 @@ async def _bot_can_promote(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception:
         return False
 
+def _clean_member_tag(raw: str | None) -> str:
+    tag = re.sub(r"\s+", " ", (raw or "").strip())
+    return tag[:16]
+
+async def _actor_can_manage_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or not chat:
+        return False, "Invalid update."
+    if is_owner(user.id) or sudo_is(user.id):
+        return True, "owner"
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+    except Exception as e:
+        return False, str(e)
+    if member.status == "creator":
+        return True, "creator"
+    if member.status != "administrator":
+        return False, "You are not an admin."
+    if not bool(getattr(member, "can_manage_tags", False)):
+        return False, "You don't have Manage Tags permission."
+    return True, "admin"
+
+async def _bot_can_manage_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    chat = update.effective_chat
+    if not chat:
+        return False
+    try:
+        me = await context.bot.get_me()
+        member = await context.bot.get_chat_member(chat.id, me.id)
+        if member.status == "creator":
+            return True
+        return member.status == "administrator" and bool(getattr(member, "can_manage_tags", False))
+    except Exception:
+        return False
+
+async def _target_can_be_tagged(update: Update, context: ContextTypes.DEFAULT_TYPE, target_id: int) -> bool:
+    chat = update.effective_chat
+    if not chat:
+        return False
+    try:
+        member = await context.bot.get_chat_member(chat.id, int(target_id))
+        return member.status in ("member", "restricted")
+    except Exception:
+        return True
+
+async def _set_chat_member_tag(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, tag: str):
+    method = getattr(context.bot, "set_chat_member_tag", None)
+    if method:
+        return await _call_supported_kwargs(
+            method,
+            chat_id=chat_id,
+            user_id=int(user_id),
+            tag=tag,
+        )
+    post = getattr(context.bot, "_post", None)
+    if not post:
+        raise RuntimeError("setChatMemberTag is not supported by your python-telegram-bot version.")
+    return await post(
+        "setChatMemberTag",
+        data={
+            "chat_id": chat_id,
+            "user_id": int(user_id),
+            "tag": tag,
+        },
+    )
 
 async def promote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -242,6 +308,133 @@ async def demote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
+async def tag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    chat = update.effective_chat
+    if not msg or not chat:
+        return
+    if chat.type not in ("group", "supergroup"):
+        return
+    if not moderation_is_enabled(chat.id):
+        return
+
+    ok, actor_type = await _actor_can_manage_tags(update, context)
+    if not ok:
+        return await reply_in_topic(msg, html.escape(actor_type), parse_mode="HTML")
+
+    if not await _bot_can_manage_tags(update, context):
+        return await reply_in_topic(
+            msg,
+            "Bot needs <b>Manage Tags</b> permission.",
+            parse_mode="HTML",
+        )
+
+    has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
+    target_token, tag_raw = extract_target_reason(context.args or [], has_reply)
+    target_id, who = await _resolve_target_display(update, context, target_token)
+
+    if not target_id:
+        return await reply_in_topic(
+            msg,
+            "Reply to a user or use:\n"
+            "<code>/tag title</code>\n"
+            "<code>/tag user_id title</code>\n"
+            "<code>/tag @username title</code>",
+            parse_mode="HTML",
+        )
+
+    tag = _clean_member_tag(tag_raw)
+    if not tag:
+        return await reply_in_topic(
+            msg,
+            "Use:\n"
+            "<code>/tag title</code>\n"
+            "<code>/tag user_id title</code>\n"
+            "<code>/tag @username title</code>",
+            parse_mode="HTML",
+        )
+
+    if not await _target_can_be_tagged(update, context, int(target_id)):
+        return await reply_in_topic(
+            msg,
+            "Only regular members can receive member tags.",
+            parse_mode="HTML",
+        )
+
+    try:
+        await _set_chat_member_tag(context, chat.id, int(target_id), tag)
+        return await reply_in_topic(
+            msg,
+            "<b>Member Tagged</b>\n"
+            f"<b>User:</b> {who}\n"
+            f"<b>Tag:</b> <code>{html.escape(tag)}</code>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        return await reply_in_topic(
+            msg,
+            f"Failed: <code>{html.escape(str(e))}</code>",
+            parse_mode="HTML",
+        )
+        
+async def untag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    chat = update.effective_chat
+    if not msg or not chat:
+        return
+    if chat.type not in ("group", "supergroup"):
+        return
+    if not moderation_is_enabled(chat.id):
+        return
+
+    ok, actor_type = await _actor_can_manage_tags(update, context)
+    if not ok:
+        return await reply_in_topic(msg, html.escape(actor_type), parse_mode="HTML")
+
+    if not await _bot_can_manage_tags(update, context):
+        return await reply_in_topic(
+            msg,
+            "Bot needs <b>Manage Tags</b> permission.",
+            parse_mode="HTML",
+        )
+
+    has_reply = bool(msg.reply_to_message and msg.reply_to_message.from_user)
+    target_token, _ = extract_target_reason(context.args or [], has_reply)
+    target_id, who = await _resolve_target_display(update, context, target_token)
+
+    if not target_id:
+        return await reply_in_topic(
+            msg,
+            "Reply to a user or use:\n"
+            "<code>/untag user_id</code>\n"
+            "<code>/untag @username</code>",
+            parse_mode="HTML",
+        )
+
+    if not await _target_can_be_tagged(update, context, int(target_id)):
+        return await reply_in_topic(
+            msg,
+            "Only regular members can have member tags removed.",
+            parse_mode="HTML",
+        )
+
+    try:
+        await _set_chat_member_tag(context, chat.id, int(target_id), "")
+        return await reply_in_topic(
+            msg,
+            "<b>Member Tag Removed</b>\n"
+            f"<b>User:</b> {who}",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        return await reply_in_topic(
+            msg,
+            f"Failed: <code>{html.escape(str(e))}</code>",
+            parse_mode="HTML",
+        )
+        
 async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
