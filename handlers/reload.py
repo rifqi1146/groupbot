@@ -96,11 +96,11 @@ async def _refresh_caca_cache():
     except Exception as e:
         log.warning("Reload caca memory failed | err=%r",e)
 
-async def _refresh_ai_memory_cache():
+async def _refresh_gemini_memory_cache():
     try:
-        from utils import ai_memory
-        await ai_memory.init()
-        await ai_memory.cleanup()
+        from utils import gemini_memory
+        await gemini_memory.init()
+        await gemini_memory.cleanup()
         log.info("Reload Gemini memory refreshed")
     except Exception as e:
         log.warning("Reload Gemini memory failed | err=%r",e)
@@ -147,7 +147,7 @@ async def _refresh_runtime_caches(app):
     except Exception as e:
         log.warning("Reload premium cache failed | err=%r",e)
     await _refresh_caca_cache()
-    await _refresh_ai_memory_cache()
+    await _refresh_gemini_memory_cache()
     try:
         from rag.loader import load_local_contexts
         contexts=load_local_contexts()

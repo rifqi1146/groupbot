@@ -1,90 +1,103 @@
-import re
-import os
-import uuid
-import base64
-import shutil
-import asyncio
-import random
-import html
-import logging
-import mimetypes
-import subprocess
+import re,os,uuid,base64,shutil,asyncio,random,html,logging,mimetypes,subprocess,aiohttp
 from typing import Optional
-import aiohttp
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
 from handlers.gsearch import google_search
-from utils.text import split_message, sanitize_ai_output
+from utils.text import split_message,sanitize_ai_output
 from .caca_prompt import PERSONAS
 from utils.http import get_http_session
 from database import caca_db
 from utils import caca_memory
-from utils.config import CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_AUTH_TOKEN, CLOUDFLARE_MODEL
+from utils.config import CLOUDFLARE_ACCOUNT_ID,CLOUDFLARE_AUTH_TOKEN,CLOUDFLARE_MODEL
 
-logger = logging.getLogger(__name__)
-CLOUDFLARE_TIMEOUT = int(os.getenv("CLOUDFLARE_TIMEOUT", "60"))
-TMP_DIR = os.getenv("TMP_DIR", "downloads")
-CACA_IMAGE_MAX_SIZE = int(os.getenv("CACA_IMAGE_MAX_SIZE", str(8 * 1024 * 1024)))
-_EMOS = ["🌸", "💖", "🧸", "🎀", "🌟", "💫"]
-_URL_RE = re.compile(r"(https?://[^\s'\"<>]+)", re.I)
+logger=logging.getLogger(__name__)
+CLOUDFLARE_TIMEOUT=int(os.getenv("CLOUDFLARE_TIMEOUT","60"))
+TMP_DIR=os.getenv("TMP_DIR","downloads")
+CACA_IMAGE_MAX_SIZE=int(os.getenv("CACA_IMAGE_MAX_SIZE",str(5*1024*1024)))
+_EMOS=["🌸","💖","🧸","🎀","🌟","💫"]
+_URL_RE=re.compile(r"(https?://[^\s'\"<>]+)",re.I)
 
 def _emo():
     return random.choice(_EMOS)
 
-def _parse_html(html_text: str) -> Optional[str]:
-    soup = BeautifulSoup(html_text, "html.parser")
-    for t in soup(["script", "style", "iframe", "noscript"]):
+def _parse_html(html_text:str)->Optional[str]:
+    soup=BeautifulSoup(html_text,"html.parser")
+    for t in soup(["script","style","iframe","noscript"]):
         t.decompose()
-    ps = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.text) > 30]
+    ps=[p.get_text(" ",strip=True) for p in soup.find_all("p") if len(p.text)>30]
     return ("\n\n".join(ps))[:12000] or None
 
 def _cleanup_memory():
     try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(caca_memory.cleanup())
+        asyncio.get_event_loop().create_task(caca_memory.cleanup())
     except Exception as e:
-        logger.warning("Failed to schedule Caca memory cleanup | err=%r", e)
+        logger.warning("Failed to schedule Caca memory cleanup | err=%r",e)
 
-async def _typing_loop(bot, chat_id, stop: asyncio.Event):
+async def _typing_loop(bot,chat_id,stop:asyncio.Event):
     try:
         while not stop.is_set():
-            await bot.send_chat_action(chat_id, "typing")
+            await bot.send_chat_action(chat_id,"typing")
             await asyncio.sleep(4)
     except Exception as e:
-        logger.debug("Caca typing loop stopped | err=%r", e)
+        logger.debug("Caca typing loop stopped | err=%r",e)
 
-def _normalize_caca_output(text: str) -> str:
-    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"\n[ \t]+\n", "\n\n", text)
-    lines = [line.strip() for line in text.split("\n")]
-    merged = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
+def _normalize_caca_output(text:str)->str:
+    text=(text or "").replace("\r\n","\n").replace("\r","\n")
+    text=re.sub(r"\n[ \t]+\n","\n\n",text)
+    lines=[line.strip() for line in text.split("\n")]
+    merged=[]
+    i=0
+    while i<len(lines):
+        line=lines[i]
         if not line:
-            i += 1
+            i+=1
             continue
-        if i + 1 < len(lines) and lines[i + 1]:
-            current = line
-            nxt = lines[i + 1]
-            if len(current) <= 35:
+        if i+1<len(lines) and lines[i+1]:
+            current=line
+            nxt=lines[i+1]
+            if len(current)<=35:
                 merged.append(f"{current} {nxt}".strip())
-                i += 2
+                i+=2
                 continue
         merged.append(line)
-        i += 1
-    text = "\n".join(merged)
-    text = re.sub(r"\n{2,}", "\n", text)
-    text = re.sub(r"[ \t]{2,}", " ", text)
+        i+=1
+    text="\n".join(merged)
+    text=re.sub(r"\n{2,}","\n",text)
+    text=re.sub(r"[ \t]{2,}"," ",text)
     return text.strip()
 
-def _is_image_mime(mime: str) -> bool:
+def _strip_thinking_leak(text:str)->str:
+    text=str(text or "").strip()
+    text=re.sub(r"(?is)<think>.*?</think>","",text).strip()
+    text=re.sub(r"(?is)<thinking>.*?</thinking>","",text).strip()
+    leak=any(k in text.lower() for k in (
+        "wait, looking at","looking at the context","let me ","i should ","the user wants",
+        "as caca","actually,","or more","this feels right","let me revise"
+    ))
+    if leak:
+        quoted=re.findall(r"[\"“]([^\"”]{8,2500})[\"”]",text,flags=re.S)
+        if quoted:
+            return quoted[-1].strip()
+        lines=[]
+        for line in text.splitlines():
+            low=line.lower().strip()
+            if not low:
+                continue
+            if low.startswith(("wait,","actually,","let me","the user","i should","looking at","or more","this feels")):
+                continue
+            if "as caca" in low or "the rules say" in low:
+                continue
+            lines.append(line)
+        text="\n".join(lines).strip()
+    return text
+
+def _is_image_mime(mime:str)->bool:
     return str(mime or "").lower().startswith("image/")
 
-def _guess_ext(mime: str, fallback: str = ".jpg") -> str:
-    mime = str(mime or "").lower()
+def _guess_ext(mime:str,fallback:str=".jpg")->str:
+    mime=str(mime or "").lower()
     if "png" in mime:
         return ".png"
     if "webp" in mime:
@@ -93,149 +106,145 @@ def _guess_ext(mime: str, fallback: str = ".jpg") -> str:
         return ".jpg"
     return fallback
 
-def _guess_content_type(path: str) -> str:
-    mime, _ = mimetypes.guess_type(path)
-    mime = str(mime or "").lower()
+def _guess_content_type(path:str)->str:
+    mime,_=mimetypes.guess_type(path)
+    mime=str(mime or "").lower()
     if mime.startswith("image/"):
         return mime
-    ext = os.path.splitext(path)[1].lower()
-    if ext in (".jpg", ".jpeg"):
+    ext=os.path.splitext(path)[1].lower()
+    if ext in (".jpg",".jpeg"):
         return "image/jpeg"
-    if ext == ".png":
+    if ext==".png":
         return "image/png"
-    if ext == ".webp":
+    if ext==".webp":
         return "image/webp"
     return "image/jpeg"
 
-def _tmp_path(prefix: str, ext: str = ".jpg") -> str:
-    ext = ext if str(ext or "").startswith(".") else f".{ext}"
-    os.makedirs(TMP_DIR, exist_ok=True)
-    return os.path.join(TMP_DIR, f"{prefix}_{uuid.uuid4().hex}{ext}")
+def _tmp_path(prefix:str,ext:str=".jpg")->str:
+    ext=ext if str(ext or "").startswith(".") else f".{ext}"
+    os.makedirs(TMP_DIR,exist_ok=True)
+    return os.path.join(TMP_DIR,f"{prefix}_{uuid.uuid4().hex}{ext}")
 
-def _convert_image_to_jpg(src_path: str) -> str:
+def _convert_image_to_jpg(src_path:str)->str:
     if not shutil.which("ffmpeg"):
         raise RuntimeError("FFmpeg is required to process images.")
-    out_path = _tmp_path("caca_vision", ".jpg")
-    result = subprocess.run(
-        ["ffmpeg", "-y", "-i", src_path, "-frames:v", "1", "-q:v", "3", out_path],
+    out_path=_tmp_path("caca_vision",".jpg")
+    result=subprocess.run(
+        ["ffmpeg","-y","-i",src_path,"-frames:v","1","-q:v","3",out_path],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    if result.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
+    if result.returncode!=0 or not os.path.exists(out_path) or os.path.getsize(out_path)<=0:
         raise RuntimeError("Failed to convert image to JPG.")
     return out_path
 
-def _image_to_data_url(path: str, mime: str = "image/jpeg") -> str:
+def _image_to_data_url(path:str,mime:str="image/jpeg")->str:
     if not path or not os.path.exists(path):
         raise RuntimeError("Image file does not exist.")
-    size = os.path.getsize(path)
-    if size <= 0:
+    size=os.path.getsize(path)
+    if size<=0:
         raise RuntimeError("Image file is empty.")
-    if size > CACA_IMAGE_MAX_SIZE:
-        raise RuntimeError(f"Image is too large. Max size is {CACA_IMAGE_MAX_SIZE // 1024 // 1024}MB.")
-    with open(path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("utf-8")
+    if size>CACA_IMAGE_MAX_SIZE:
+        raise RuntimeError(f"Image is too large. Max size is {CACA_IMAGE_MAX_SIZE//1024//1024}MB.")
+    with open(path,"rb") as f:
+        encoded=base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{encoded}"
 
-async def _download_visual_from_message(bot, source_msg):
+async def _download_visual_from_message(bot,source_msg):
     if not source_msg:
-        return None, None
-    os.makedirs(TMP_DIR, exist_ok=True)
+        return None,None
+    os.makedirs(TMP_DIR,exist_ok=True)
     if source_msg.photo:
-        photo = source_msg.photo[-1]
-        tg_file = await bot.get_file(photo.file_id)
-        path = _tmp_path("caca_vision", ".jpg")
+        tg_file=await bot.get_file(source_msg.photo[-1].file_id)
+        path=_tmp_path("caca_vision",".jpg")
         await tg_file.download_to_drive(path)
-        return path, "image/jpeg"
+        return path,"image/jpeg"
     if source_msg.document:
-        doc = source_msg.document
+        doc=source_msg.document
         if not _is_image_mime(doc.mime_type):
-            return None, None
-        if doc.file_size and doc.file_size > CACA_IMAGE_MAX_SIZE:
-            raise RuntimeError(f"Image is too large. Max size is {CACA_IMAGE_MAX_SIZE // 1024 // 1024}MB.")
-        tg_file = await bot.get_file(doc.file_id)
-        ext = os.path.splitext(doc.file_name or "")[1] or _guess_ext(doc.mime_type)
-        path = _tmp_path("caca_vision", ext)
+            return None,None
+        if doc.file_size and doc.file_size>CACA_IMAGE_MAX_SIZE:
+            raise RuntimeError(f"Image is too large. Max size is {CACA_IMAGE_MAX_SIZE//1024//1024}MB.")
+        tg_file=await bot.get_file(doc.file_id)
+        ext=os.path.splitext(doc.file_name or "")[1] or _guess_ext(doc.mime_type)
+        path=_tmp_path("caca_vision",ext)
         await tg_file.download_to_drive(path)
-        return path, doc.mime_type or _guess_content_type(path)
+        return path,doc.mime_type or _guess_content_type(path)
     if source_msg.sticker:
-        sticker = source_msg.sticker
+        sticker=source_msg.sticker
         if sticker.is_animated or sticker.is_video:
             raise RuntimeError("Animated/video stickers are not supported yet. Use a static sticker.")
-        tg_file = await bot.get_file(sticker.file_id)
-        path = _tmp_path("caca_vision", ".webp")
+        tg_file=await bot.get_file(sticker.file_id)
+        path=_tmp_path("caca_vision",".webp")
         await tg_file.download_to_drive(path)
-        return path, "image/webp"
-    return None, None
+        return path,"image/webp"
+    return None,None
 
-async def _extract_visual_data_url(bot, msg):
-    image_path = None
-    converted_path = None
+async def _extract_visual_data_url(bot,msg):
+    image_path=None
+    converted_path=None
     try:
-        image_path, image_mime = await _download_visual_from_message(bot, msg)
+        image_path,image_mime=await _download_visual_from_message(bot,msg)
         if not image_path and msg.reply_to_message:
-            image_path, image_mime = await _download_visual_from_message(bot, msg.reply_to_message)
+            image_path,image_mime=await _download_visual_from_message(bot,msg.reply_to_message)
         if not image_path:
-            return None, None, None
-        converted_path = await asyncio.to_thread(_convert_image_to_jpg, image_path)
-        data_url = await asyncio.to_thread(_image_to_data_url, converted_path, "image/jpeg")
-        return data_url, image_path, converted_path
+            return None,None,None
+        converted_path=await asyncio.to_thread(_convert_image_to_jpg,image_path)
+        data_url=await asyncio.to_thread(_image_to_data_url,converted_path,"image/jpeg")
+        return data_url,image_path,converted_path
     except Exception:
-        for path in (image_path, converted_path):
+        for path in (image_path,converted_path):
             try:
                 if path and os.path.exists(path):
                     os.remove(path)
             except Exception as e:
-                logger.warning("Failed to cleanup Caca vision temp after extract error | file=%s err=%r", path, e)
+                logger.warning("Failed to cleanup Caca vision temp after extract error | file=%s err=%r",path,e)
         raise
 
-def _build_user_content(prompt: str, image_data_url: str | None = None):
-    prompt = (prompt or "").strip() or "Jelaskan isi gambar ini."
+def _build_user_content(prompt:str,image_data_url:str|None=None):
+    prompt=(prompt or "").strip() or "Jelaskan isi gambar ini."
     if not image_data_url:
         return prompt
     return [
-        {"type": "image_url", "image_url": {"url": image_data_url}},
-        {"type": "text", "text": prompt},
+        {"type":"image_url","image_url":{"url":image_data_url}},
+        {"type":"text","text":prompt},
     ]
 
-def _memory_prompt(prompt: str, has_image: bool) -> str:
-    prompt = (prompt or "").strip() or "Jelaskan isi gambar ini."
-    if has_image:
-        return f"{prompt}\n[User sent an image or static sticker.]"
-    return prompt
+def _memory_prompt(prompt:str,has_image:bool)->str:
+    prompt=(prompt or "").strip() or "Jelaskan isi gambar ini."
+    return f"{prompt}\n[User sent an image or static sticker.]" if has_image else prompt
 
 def _cf_credentials():
-    pairs = []
-    seen = set()
-    raw = [(CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_AUTH_TOKEN)]
-    for i in range(2, 11):
-        raw.append((os.getenv(f"CLOUDFLARE_ACCOUNT_ID_{i}", ""), os.getenv(f"CLOUDFLARE_AUTH_TOKEN_{i}", "")))
-    for account_id, token in raw:
-        account_id = (account_id or "").strip()
-        token = (token or "").strip()
+    pairs=[]
+    seen=set()
+    raw=[(CLOUDFLARE_ACCOUNT_ID,CLOUDFLARE_AUTH_TOKEN)]
+    for i in range(2,11):
+        raw.append((os.getenv(f"CLOUDFLARE_ACCOUNT_ID_{i}",""),os.getenv(f"CLOUDFLARE_AUTH_TOKEN_{i}","")))
+    for account_id,token in raw:
+        account_id=(account_id or "").strip()
+        token=(token or "").strip()
         if not account_id or not token:
             continue
-        key = (account_id, token)
+        key=(account_id,token)
         if key in seen:
             continue
         seen.add(key)
-        pairs.append({"account_id": account_id, "token": token})
+        pairs.append({"account_id":account_id,"token":token})
     return pairs
 
-def _cf_extract_error(data, status: int) -> str:
-    if isinstance(data, dict):
-        errors = data.get("errors")
-        if isinstance(errors, list) and errors:
-            first = errors[0] or {}
-            msg = first.get("message")
+def _cf_extract_error(data,status:int)->str:
+    if isinstance(data,dict):
+        errors=data.get("errors")
+        if isinstance(errors,list) and errors:
+            msg=(errors[0] or {}).get("message")
             if msg:
                 return str(msg)
         if data.get("error"):
             return str(data.get("error"))
     return f"Cloudflare HTTP {status}"
 
-def _is_cf_quota_error(message: str) -> bool:
-    text = (message or "").lower()
+def _is_cf_quota_error(message:str)->bool:
+    text=(message or "").lower()
     return (
         "daily free allocation" in text
         or "used up your daily free allocation" in text
@@ -245,172 +254,174 @@ def _is_cf_quota_error(message: str) -> bool:
         or "rate limit" in text
     )
 
-async def _cloudflare_chat(messages: list[dict]):
-    creds = _cf_credentials()
+def _coerce_cf_content(value):
+    if isinstance(value,str):
+        return value
+    if isinstance(value,list):
+        parts=[]
+        for item in value:
+            if isinstance(item,dict):
+                text=item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+            elif item:
+                parts.append(str(item))
+        return "\n".join(parts).strip()
+    if value:
+        return str(value)
+    return ""
+
+def _extract_cf_raw(data:dict):
+    result=data.get("result") or {}
+    raw=result.get("response") or result.get("output_text") or result.get("text")
+    if raw:
+        return _coerce_cf_content(raw)
+    choices=result.get("choices")
+    if isinstance(choices,list) and choices:
+        msg=(choices[0] or {}).get("message") or {}
+        return _coerce_cf_content(msg.get("content"))
+    return ""
+
+async def _cloudflare_chat(messages:list[dict]):
+    creds=_cf_credentials()
     if not creds:
         raise RuntimeError("CLOUDFLARE credentials belum diset")
-    session = await get_http_session()
-    errors = []
-    last_quota_error = None
-    for idx, cred in enumerate(creds, start=1):
-        account_id = cred["account_id"]
-        token = cred["token"]
+    session=await get_http_session()
+    errors=[]
+    last_quota_error=None
+    payload={
+        "messages":messages,
+        "temperature":0.9,
+        "max_completion_tokens":1024,
+        "chat_template_kwargs":{"thinking":False,"enable_thinking":False,"clear_thinking":True},
+    }
+    for idx,cred in enumerate(creds,start=1):
+        account_id=cred["account_id"]
+        token=cred["token"]
         try:
             async with session.post(
                 f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{CLOUDFLARE_MODEL}",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "messages": messages,
-                    "temperature": 0.9,
-                    "max_completion_tokens": 1024,
-                    "chat_template_kwargs": {
-                        "thinking": False,
-                        "enable_thinking": False,
-                        "clear_thinking": True,
-                    },
-                },
+                headers={"Authorization":f"Bearer {token}"},
+                json=payload,
                 timeout=aiohttp.ClientTimeout(total=CLOUDFLARE_TIMEOUT),
             ) as r:
-                data = await r.json(content_type=None)
-                if r.status >= 400:
-                    err = _cf_extract_error(data, r.status)
-                    raise RuntimeError(err)
-                if isinstance(data, dict) and data.get("success") is False:
-                    err = _cf_extract_error(data, r.status)
-                    raise RuntimeError(err)
-                result = data.get("result") or {}
-                raw = (
-                    result.get("response")
-                    or result.get("output_text")
-                    or result.get("text")
-                    or (
-                        result.get("choices", [{}])[0].get("message", {}).get("content")
-                        if isinstance(result.get("choices"), list) and result.get("choices")
-                        else None
-                    )
-                )
+                data=await r.json(content_type=None)
+                if r.status>=400:
+                    raise RuntimeError(_cf_extract_error(data,r.status))
+                if isinstance(data,dict) and data.get("success") is False:
+                    raise RuntimeError(_cf_extract_error(data,r.status))
+                raw=_extract_cf_raw(data)
                 if not raw:
                     raise RuntimeError(f"Unexpected Cloudflare response: {data}")
-                logger.info("Cloudflare success | key_index=%s account_id=%s", idx, account_id)
+                logger.info("Cloudflare success | key_index=%s account_id=%s",idx,account_id)
                 return raw
         except Exception as e:
-            err = str(e)
+            err=str(e)
             errors.append(f"key#{idx}: {err}")
             if _is_cf_quota_error(err):
-                last_quota_error = err
-                logger.warning("Cloudflare quota hit | key_index=%s account_id=%s err=%s", idx, account_id, err)
+                last_quota_error=err
+                logger.warning("Cloudflare quota hit | key_index=%s account_id=%s err=%s",idx,account_id,err)
                 continue
-            logger.warning("Cloudflare request failed | key_index=%s account_id=%s err=%s", idx, account_id, err)
+            logger.warning("Cloudflare request failed | key_index=%s account_id=%s err=%s",idx,account_id,err)
             continue
-    if last_quota_error and all(_is_cf_quota_error(x.split(": ", 1)[-1]) for x in errors):
-        raise RuntimeError("Semua API key Cloudflare kena limit harian.")
-    raise RuntimeError("Cloudflare failed: " + " | ".join(errors[-3:]))
+    if last_quota_error and all(_is_cf_quota_error(x.split(": ",1)[-1]) for x in errors):
+        raise RuntimeError("Semua API key Cloudflare terkena limit harian.")
+    raise RuntimeError("Cloudflare failed: "+" | ".join(errors[-3:]))
 
-async def meta_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await require_join_or_block(update, context):
+async def meta_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    if not await require_join_or_block(update,context):
         return
     _cleanup_memory()
-    msg = update.message
+    msg=update.message
     if not msg or not msg.from_user:
         return
-    user_id = msg.from_user.id
-    chat = update.effective_chat
-    em = _emo()
-    if chat and chat.type in ("group", "supergroup"):
-        groups = await caca_db.load_groups()
+    user_id=msg.from_user.id
+    chat=update.effective_chat
+    em=_emo()
+    if chat and chat.type in ("group","supergroup"):
+        groups=await caca_db.load_groups()
         if chat.id not in groups:
-            return await msg.reply_text("<b>Caca tidak tersedia di grup ini</b>", parse_mode="HTML")
-    prompt = ""
-    use_search = False
-    image_path = None
-    converted_path = None
-    image_data_url = None
-    stop = None
-    typing = None
+            return await msg.reply_text("<b>Caca tidak tersedia di grup ini</b>",parse_mode="HTML")
+    prompt=""
+    use_search=False
+    fresh_session=False
+    image_path=None
+    converted_path=None
+    image_data_url=None
+    stop=None
+    typing=None
     try:
         if msg.text and msg.text.startswith("/caca"):
-            if context.args and context.args[0].lower() == "search":
-                use_search = True
-                prompt = " ".join(context.args[1:]).strip()
+            if context.args and context.args[0].lower()=="search":
+                use_search=True
+                prompt=" ".join(context.args[1:]).strip()
             else:
-                prompt = " ".join(context.args).strip()
-                await caca_memory.clear(user_id)
-                await caca_memory.clear_last_message_id(user_id)
-            image_data_url, image_path, converted_path = await _extract_visual_data_url(context.bot, msg)
-            if not prompt.strip() and not image_data_url:
+                fresh_session=True
+                prompt=" ".join(context.args).strip()
+            image_data_url,image_path,converted_path=await _extract_visual_data_url(context.bot,msg)
+            if not prompt and not image_data_url:
                 return await msg.reply_text(
                     f"{em} Pake gini:\n/caca <teks>\n/caca search <teks>\natau reply gambar/sticker pake /caca <pertanyaan>"
                 )
         elif msg.reply_to_message:
-            history = await caca_memory.get_history(user_id)
+            history=await caca_memory.get_history(user_id)
             if not history:
                 return await msg.reply_text("😒 Gue ga inget ngobrol sama lu.\nKetik /caca dulu.")
-            prompt = (msg.text or msg.caption or "").strip()
-            image_data_url, image_path, converted_path = await _extract_visual_data_url(context.bot, msg)
+            prompt=(msg.text or msg.caption or "").strip()
+            image_data_url,image_path,converted_path=await _extract_visual_data_url(context.bot,msg)
         if not prompt and not image_data_url:
             return
-        stop = asyncio.Event()
-        typing = asyncio.create_task(_typing_loop(context.bot, chat.id, stop))
-        search_context = ""
+        stop=asyncio.Event()
+        typing=asyncio.create_task(_typing_loop(context.bot,chat.id,stop))
+        search_context=""
         if use_search:
             try:
-                ok, results = await google_search(prompt, limit=5)
+                ok,results=await google_search(prompt,limit=5)
                 if ok and results:
-                    lines = []
-                    for r in results:
-                        lines.append(f"- {r['title']}\n  {r['snippet']}\n  Sumber: {r['link']}")
-                    search_context = (
-                        "Ini hasil search, pake buat nambah konteks, anggap ini adalah sumber terbaru."
-                        "Jawab tetap sebagai Caca.\n\n" + "\n\n".join(lines)
-                    )
+                    lines=[f"- {r['title']}\n  {r['snippet']}\n  Sumber: {r['link']}" for r in results]
+                    search_context="Ini hasil search, pake buat nambah konteks, anggap ini adalah sumber terbaru. Jawab tetap sebagai Caca.\n\n"+"\n\n".join(lines)
                 elif not ok:
-                    logger.warning("Google Search failed | query=%r err=%r", prompt, results)
+                    logger.warning("Google Search failed | query=%r err=%r",prompt,results)
             except Exception as e:
-                logger.error("Google Search unexpected error | query=%r err=%r", prompt, e, exc_info=True)
-        history = await caca_memory.get_history(user_id)
-        mode = caca_db.get_mode(user_id)
-        system_prompt = PERSONAS.get(mode, PERSONAS["default"])
-        user_prompt = f"{search_context}\n\n{prompt}" if search_context else prompt
-        messages = [{"role": "system", "content": system_prompt}] + history + [{
-            "role": "user",
-            "content": _build_user_content(user_prompt, image_data_url),
-        }]
-        raw = await _cloudflare_chat(messages)
-        history += [
-            {"role": "user", "content": _memory_prompt(prompt, bool(image_data_url))},
-            {"role": "assistant", "content": raw},
+                logger.error("Google Search unexpected error | query=%r err=%r",prompt,e,exc_info=True)
+        history=[] if fresh_session else await caca_memory.get_history(user_id)
+        mode=caca_db.get_mode(user_id)
+        system_prompt=PERSONAS.get(mode,PERSONAS["default"])
+        user_prompt=f"{search_context}\n\n{prompt}" if search_context else prompt
+        messages=[{"role":"system","content":system_prompt}]+history+[{"role":"user","content":_build_user_content(user_prompt,image_data_url)}]
+        raw=await _cloudflare_chat(messages)
+        cleaned=_normalize_caca_output(sanitize_ai_output(_strip_thinking_leak(raw)))
+        history+=[
+            {"role":"user","content":_memory_prompt(prompt,bool(image_data_url))},
+            {"role":"assistant","content":cleaned},
         ]
-        await caca_memory.set_history(user_id, history)
-        stop.set()
-        typing.cancel()
-        cleaned = _normalize_caca_output(sanitize_ai_output(raw))
-        chunks = split_message(cleaned, 4000)
-        sent = None
-        for i, chunk in enumerate(chunks):
-            if i == 0:
-                sent = await msg.reply_text(chunk, parse_mode="HTML")
-            else:
-                await msg.reply_text(chunk, parse_mode="HTML")
+        await caca_memory.set_history(user_id,history)
+        if stop:
+            stop.set()
+        if typing:
+            typing.cancel()
+        chunks=split_message(cleaned,4000)
+        sent=None
+        for chunk in chunks:
+            sent=await msg.reply_text(chunk,parse_mode="HTML")
         if sent:
-            await caca_memory.set_last_message_id(user_id, sent.message_id)
+            await caca_memory.set_last_message_id(user_id,sent.message_id)
     except Exception as e:
         if stop:
             stop.set()
         if typing:
             typing.cancel()
-        await caca_memory.clear(user_id)
-        await caca_memory.clear_last_message_id(user_id)
         await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
     finally:
-        for path in (image_path, converted_path):
+        for path in (image_path,converted_path):
             try:
                 if path and os.path.exists(path):
                     os.remove(path)
-                    logger.info("Caca vision temp deleted | file=%s", path)
+                    logger.info("Caca vision temp deleted | file=%s",path)
             except Exception as e:
-                logger.warning("Failed to delete Caca vision temp | file=%s err=%r", path, e)
+                logger.warning("Failed to delete Caca vision temp | file=%s err=%r",path,e)
 
 def init_background():
-    loop = asyncio.get_event_loop()
+    loop=asyncio.get_event_loop()
     loop.create_task(caca_memory.init())
     loop.create_task(caca_db.init())
