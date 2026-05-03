@@ -263,7 +263,11 @@ async def _cloudflare_chat(messages: list[dict]):
                     "messages": messages,
                     "temperature": 0.9,
                     "max_completion_tokens": 1024,
-                    "chat_template_kwargs": {"enable_thinking": False, "clear_thinking": True},
+                    "chat_template_kwargs": {
+                        "thinking": False,
+                        "enable_thinking": False,
+                        "clear_thinking": True,
+                    },
                 },
                 timeout=aiohttp.ClientTimeout(total=CLOUDFLARE_TIMEOUT),
             ) as r:
