@@ -19,21 +19,36 @@ from handlers.groq import groq_query
 from utils.groq_memory import get_last_message_id as groq_db_get_last_message_id
 from utils.groq_memory import has_last_message_id as groq_db_has_last_message_id
 
+AI_REPLY_FILTER = (
+    filters.REPLY
+    & (
+        filters.TEXT
+        | filters.PHOTO
+        | filters.Document.IMAGE
+        | filters.Sticker.STATIC
+    )
+    & ~filters.COMMAND
+)
+
 async def ai_reply_router(update, context):
     msg = update.message
-    if not msg or not msg.reply_to_message:
+    if not msg or not msg.reply_to_message or not msg.from_user:
         return
     user_id = msg.from_user.id
     reply_mid = msg.reply_to_message.message_id
+
     groq_mid = await groq_db_get_last_message_id(user_id)
     if groq_mid == reply_mid:
         return await groq_query(update, context)
+
     meta_mid = await meta_db_get_last_message_id(user_id)
     if meta_mid == reply_mid:
         return await meta_query(update, context)
+
     ai_mid = await ai_db_get_last_message_id(user_id)
     if ai_mid == reply_mid:
         return await ai_cmd(update, context)
+
     if await groq_db_has_last_message_id(reply_mid):
         return await msg.reply_text(
             "😒 Lu siapa?\n"
@@ -41,6 +56,7 @@ async def ai_reply_router(update, context):
             "Ketik /groq dulu.",
             parse_mode="HTML"
         )
+
     if await ai_db_has_last_message_id(reply_mid):
         return await msg.reply_text(
             "😒 Lu siapa?\n"
@@ -48,6 +64,7 @@ async def ai_reply_router(update, context):
             "Ketik /ask dulu.",
             parse_mode="HTML"
         )
+
     if await meta_db_has_last_message_id(reply_mid):
         return await msg.reply_text(
             "😒 Lu siapa?\n"
@@ -67,7 +84,7 @@ def register_messages(app):
         group=-3,
     )
     app.add_handler(
-        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, ai_reply_router),
+        MessageHandler(AI_REPLY_FILTER, ai_reply_router),
         group=-2,
     )
     app.add_handler(
