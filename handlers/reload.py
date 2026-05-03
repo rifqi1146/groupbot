@@ -1,4 +1,10 @@
-import os,sys,html,importlib,logging,traceback,asyncio
+import os
+import sys
+import html
+import importlib
+import logging
+import traceback
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.config import OWNER_ID
@@ -76,6 +82,36 @@ def _register_all(app):
     register_messages(app)
     register_callbacks(app)
 
+async def _refresh_caca_cache():
+    try:
+        from database import caca_db
+        await caca_db.init()
+        log.info("Reload caca DB/cache refreshed")
+    except Exception as e:
+        log.warning("Reload caca DB/cache failed | err=%r",e)
+    try:
+        from utils import caca_memory
+        await caca_memory.init()
+        log.info("Reload caca memory refreshed")
+    except Exception as e:
+        log.warning("Reload caca memory failed | err=%r",e)
+
+async def _refresh_ai_memory_cache():
+    try:
+        from utils import ai_memory
+        await ai_memory.init()
+        await ai_memory.cleanup()
+        log.info("Reload Gemini memory refreshed")
+    except Exception as e:
+        log.warning("Reload Gemini memory failed | err=%r",e)
+    try:
+        from utils import groq_memory
+        await groq_memory.init()
+        await groq_memory.cleanup()
+        log.info("Reload Groq memory refreshed")
+    except Exception as e:
+        log.warning("Reload Groq memory failed | err=%r",e)
+
 async def _refresh_runtime_caches(app):
     try:
         from dotenv import load_dotenv
@@ -110,6 +146,8 @@ async def _refresh_runtime_caches(app):
         premium.init()
     except Exception as e:
         log.warning("Reload premium cache failed | err=%r",e)
+    await _refresh_caca_cache()
+    await _refresh_ai_memory_cache()
     try:
         from rag.loader import load_local_contexts
         contexts=load_local_contexts()
@@ -144,7 +182,7 @@ def reload_summary_text(result:dict)->str:
         "<b>Reload complete</b>\n\n"
         f"Modules: <code>{result.get('modules',0)}</code>\n"
         f"Handlers: <code>{result.get('handlers',0)}</code>\n\n"
-        "<i>Handlers, utils, database, and RAG contexts refreshed.</i>"
+        "<i>Handlers, utils, database, AI memory, and RAG contexts refreshed.</i>"
     )
 
 async def reload_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
