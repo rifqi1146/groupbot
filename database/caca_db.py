@@ -1,13 +1,13 @@
 import time
 import asyncio
-import sqlite3 
+import logging
 
 from database.db import db_session
 
+log = logging.getLogger(__name__)
+
 CACA_DB_PATH = "data/caca.sqlite3"
-
 _MODE_CACHE: dict[int, str] = {}
-
 
 def _caca_db_init():
     with db_session(CACA_DB_PATH) as con:
@@ -38,25 +38,28 @@ def _caca_db_init():
         )
         con.commit()
 
-
 def _caca_db_load_modes() -> dict[int, str]:
     with db_session(CACA_DB_PATH) as con:
-        cur = con.execute("SELECT user_id, mode FROM caca_mode")
-        rows = cur.fetchall()
-        out = {}
-        for uid, mode in rows:
-            try:
-                out[int(uid)] = str(mode)
-            except Exception:
-                pass
-        return out
+        rows = con.execute("SELECT user_id, mode FROM caca_mode").fetchall()
+    out = {}
+    for uid, mode in rows:
+        try:
+            out[int(uid)] = str(mode)
+        except (TypeError, ValueError) as e:
+            log.warning("Invalid Caca mode row skipped | user_id=%r mode=%r err=%r", uid, mode, e)
+    return out
 
+def _rollback(con, label: str):
+    try:
+        con.execute("ROLLBACK")
+    except Exception as e:
+        log.warning("%s rollback failed | err=%r", label, e)
 
 def _caca_db_save_modes(modes: dict[int, str]):
     with db_session(CACA_DB_PATH) as con:
         try:
             con.execute("BEGIN")
-            keys = list(modes.keys())
+            keys = [int(uid) for uid in modes.keys()]
             if not keys:
                 con.execute("DELETE FROM caca_mode")
             else:
@@ -75,16 +78,11 @@ def _caca_db_save_modes(modes: dict[int, str]):
             )
             con.execute("COMMIT")
         except Exception:
-            try:
-                con.execute("ROLLBACK")
-            except Exception:
-                pass
+            _rollback(con, "Caca save modes")
             raise
 
-
 def _caca_db_upsert_mode(user_id: int, mode: str):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
+    with db_session(CACA_DB_PATH) as con:
         now = time.time()
         con.execute(
             """
@@ -94,26 +92,32 @@ def _caca_db_upsert_mode(user_id: int, mode: str):
               mode=excluded.mode,
               updated_at=excluded.updated_at
             """,
-            (user_id, mode, now),
+            (int(user_id), str(mode), now),
         )
         con.commit()
-    except Exception:
-        raise
-    finally:
-        con.close()
 
+def _caca_db_remove_mode(user_id: int):
+    with db_session(CACA_DB_PATH) as con:
+        con.execute("DELETE FROM caca_mode WHERE user_id = ?", (int(user_id),))
+        con.commit()
 
 def _caca_db_load_groups() -> set[int]:
     with db_session(CACA_DB_PATH) as con:
-        cur = con.execute("SELECT chat_id FROM caca_groups")
-        rows = cur.fetchall()
-        return {int(r[0]) for r in rows if r and r[0] is not None}
-
+        rows = con.execute("SELECT chat_id FROM caca_groups").fetchall()
+    groups = set()
+    for row in rows:
+        try:
+            if row and row[0] is not None:
+                groups.add(int(row[0]))
+        except (TypeError, ValueError) as e:
+            log.warning("Invalid Caca group row skipped | row=%r err=%r", row, e)
+    return groups
 
 def _caca_db_save_groups(groups: set[int]):
     with db_session(CACA_DB_PATH) as con:
         try:
             con.execute("BEGIN")
+            groups = {int(gid) for gid in groups}
             if not groups:
                 con.execute("DELETE FROM caca_groups")
             else:
@@ -126,73 +130,63 @@ def _caca_db_save_groups(groups: set[int]):
             )
             con.execute("COMMIT")
         except Exception:
-            try:
-                con.execute("ROLLBACK")
-            except Exception:
-                pass
+            _rollback(con, "Caca save groups")
             raise
 
-
 def _caca_db_add_group(chat_id: int):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
+    with db_session(CACA_DB_PATH) as con:
         now = time.time()
-        con.execute("INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)", (int(chat_id), now))
+        con.execute(
+            "INSERT OR IGNORE INTO caca_groups (chat_id, added_at) VALUES (?, ?)",
+            (int(chat_id), now),
+        )
         con.commit()
-    finally:
-        con.close()
-
 
 def _caca_db_remove_group(chat_id: int):
-    con = sqlite3.connect(CACA_DB_PATH)
-    try:
+    with db_session(CACA_DB_PATH) as con:
         con.execute("DELETE FROM caca_groups WHERE chat_id = ?", (int(chat_id),))
         con.commit()
-    finally:
-        con.close()
-
 
 async def init():
     await asyncio.to_thread(_caca_db_init)
     await reload_modes()
 
-
 async def reload_modes():
     global _MODE_CACHE
     try:
         _MODE_CACHE = await asyncio.to_thread(_caca_db_load_modes)
-    except Exception:
+        log.info("Loaded Caca modes: %s users", len(_MODE_CACHE))
+    except Exception as e:
         _MODE_CACHE = {}
-
+        log.warning("Failed to load Caca modes | err=%r", e)
 
 def get_mode(user_id: int) -> str:
     return _MODE_CACHE.get(int(user_id), "default")
 
-
 async def set_mode(user_id: int, mode: str):
-    _MODE_CACHE[int(user_id)] = str(mode)
-    await asyncio.to_thread(_caca_db_upsert_mode, int(user_id), str(mode))
+    user_id = int(user_id)
+    mode = str(mode)
+    _MODE_CACHE[user_id] = mode
+    await asyncio.to_thread(_caca_db_upsert_mode, user_id, mode)
 
-
-def remove_mode(user_id: int):
-    _MODE_CACHE.pop(int(user_id), None)
-    _caca_db_save_modes(_MODE_CACHE)
-
+async def remove_mode(user_id: int):
+    user_id = int(user_id)
+    _MODE_CACHE.pop(user_id, None)
+    await asyncio.to_thread(_caca_db_remove_mode, user_id)
 
 async def load_groups() -> set[int]:
     try:
-        return await asyncio.to_thread(_caca_db_load_groups)
-    except Exception:
+        groups = await asyncio.to_thread(_caca_db_load_groups)
+        return groups
+    except Exception as e:
+        log.warning("Failed to load Caca groups | err=%r", e)
         return set()
-
 
 async def save_groups(groups: set[int]):
     await asyncio.to_thread(_caca_db_save_groups, groups)
 
-
 async def add_group(chat_id: int):
     await asyncio.to_thread(_caca_db_add_group, chat_id)
-
 
 async def remove_group(chat_id: int):
     await asyncio.to_thread(_caca_db_remove_group, chat_id)

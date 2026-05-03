@@ -4,353 +4,360 @@ import html
 import time
 import logging
 import subprocess
-import json
 import asyncio
-from telegram import InputMediaPhoto, InputMediaVideo
+from telegram import InputMediaPhoto,InputMediaVideo
 from telegram.error import RetryAfter
-from .constants import TMP_DIR, MAX_TG_SIZE
+from .constants import TMP_DIR,MAX_TG_SIZE
 from .utils import detect_media_type
 from .ytdlp import ytdlp_download
-from .instagram.main import is_instagram_url, instagram_api_download
+from .instagram.main import is_instagram_url,instagram_api_download
 from .youtube.main import is_youtube_url
-from .facebook.main import is_facebook_url, facebook_download
-from .threads.main import is_threads_url, threads_download
-from .twitter.main import is_x_url, twitter_download
-from .reddit.main import is_reddit_url, reddit_download
-from .pinterest.main import is_pinterest_url, pinterest_download
-from .remux import video_meta, make_video_thumbnail
+from .facebook.main import is_facebook_url,facebook_download
+from .threads.main import is_threads_url,threads_download
+from .twitter.main import is_x_url,twitter_download
+from .reddit.main import is_reddit_url,reddit_download
+from .pinterest.main import is_pinterest_url,pinterest_download
+from .remux import video_meta,make_video_thumbnail
 from .mtproto_uploader import try_send_video_via_mtproto
 
-log = logging.getLogger(__name__)
+log=logging.getLogger(__name__)
+_SEND_SEMAPHORES={}
+_CHAT_SLOWMODE_UNTIL={}
+_LAST_SEND_AT={}
+_MAX_PARALLEL_SENDS_PER_CHAT=10
+_MIN_GAP_PER_CHAT=0.3
+_ALBUM_CHUNK_SIZE=10
+_ALBUM_CHUNK_COOLDOWN=5
 
-_SEND_SEMAPHORES = {}
-_CHAT_SLOWMODE_UNTIL = {}
-_LAST_SEND_AT = {}
-_MAX_PARALLEL_SENDS_PER_CHAT = 10
-_MIN_GAP_PER_CHAT = 0.3
-_ALBUM_CHUNK_SIZE = 10
-_ALBUM_CHUNK_COOLDOWN = 5
-
-async def reencode_mp3(src_path: str) -> str:
-    fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
+async def reencode_mp3(src_path:str)->str:
+    fixed_path=f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
     def _run():
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", src_path, "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", fixed_path],
+        result=subprocess.run(
+            ["ffmpeg","-y","-i",src_path,"-vn","-acodec","libmp3lame","-ab","192k","-ar","44100",fixed_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        if result.returncode != 0:
+        if result.returncode!=0:
             raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
-        if not os.path.exists(fixed_path):
+        if not os.path.exists(fixed_path) or os.path.getsize(fixed_path)<=0:
             raise RuntimeError("FFmpeg re-encode failed")
         return fixed_path
     return await asyncio.to_thread(_run)
 
-def _clean_caption_from_path(path: str) -> str:
-    raw_name = os.path.splitext(os.path.basename(path))[0]
-    parts = raw_name.split("_", 1)
-    if len(parts) == 2 and len(parts[0]) >= 10 and all(c in "0123456789abcdef" for c in parts[0].lower()):
-        text = parts[1]
+def _clean_caption_from_path(path:str)->str:
+    raw_name=os.path.splitext(os.path.basename(path))[0]
+    parts=raw_name.split("_",1)
+    if len(parts)==2 and len(parts[0])>=10 and all(c in "0123456789abcdef" for c in parts[0].lower()):
+        text=parts[1]
     else:
-        text = raw_name
+        text=raw_name
     return text.strip() or "Media"
 
-def _build_safe_caption(title: str, bot_name: str, max_len: int = 1024) -> str:
-    clean_title = (title or "Media").strip()
-    safe_bot = html.escape(bot_name or "Bot")
-    suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
-    prefix = "<blockquote expandable>🎬 "
-    closing = "</blockquote>"
-    full = f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
-    if len(full) <= max_len:
+def _build_safe_caption(title:str,bot_name:str,max_len:int=1024)->str:
+    clean_title=(title or "Media").strip()
+    safe_bot=html.escape(bot_name or "Bot")
+    suffix=f"\n\n🪄 <i>Powered by {safe_bot}</i>"
+    prefix="<blockquote expandable>🎬 "
+    closing="</blockquote>"
+    full=f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
+    if len(full)<=max_len:
         return full
-    allowed = max_len - len(prefix) - len(closing) - len(suffix) - 3
-    if allowed < 1:
-        allowed = 1
-    short_title = clean_title[:allowed].rstrip() + "..."
+    allowed=max_len-len(prefix)-len(closing)-len(suffix)-3
+    if allowed<1:
+        allowed=1
+    short_title=clean_title[:allowed].rstrip()+"..."
     return f"{prefix}{html.escape(short_title)}{closing}{suffix}"
 
-def _build_safe_photo_caption(title: str, bot_name: str, max_len: int = 1024) -> str:
-    clean_title = (title or "Image").strip()
-    safe_bot = html.escape(bot_name or "Bot")
-    suffix = f"\n\n🪄 <i>Powered by {safe_bot}</i>"
-    prefix = "<blockquote expandable>🖼️ "
-    closing = "</blockquote>"
-    full = f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
-    if len(full) <= max_len:
+def _build_safe_photo_caption(title:str,bot_name:str,max_len:int=1024)->str:
+    clean_title=(title or "Image").strip()
+    safe_bot=html.escape(bot_name or "Bot")
+    suffix=f"\n\n🪄 <i>Powered by {safe_bot}</i>"
+    prefix="<blockquote expandable>🖼️ "
+    closing="</blockquote>"
+    full=f"{prefix}{html.escape(clean_title)}{closing}{suffix}"
+    if len(full)<=max_len:
         return full
-    allowed = max_len - len(prefix) - len(closing) - len(suffix) - 3
-    if allowed < 1:
-        allowed = 1
-    short_title = clean_title[:allowed].rstrip() + "..."
+    allowed=max_len-len(prefix)-len(closing)-len(suffix)-3
+    if allowed<1:
+        allowed=1
+    short_title=clean_title[:allowed].rstrip()+"..."
     return f"{prefix}{html.escape(short_title)}{closing}{suffix}"
 
-def _is_reply_not_found_error(exc: Exception) -> bool:
-    text = (str(exc) or "").lower()
-    keys = ("replied message not found", "message to be replied not found", "reply message not found", "reply_to_message_id")
+def _is_reply_not_found_error(exc:Exception)->bool:
+    text=(str(exc) or "").lower()
+    keys=("replied message not found","message to be replied not found","reply message not found","reply_to_message_id")
     return any(k in text for k in keys)
 
 def _get_chat_semaphore(chat_id):
-    sem = _SEND_SEMAPHORES.get(chat_id)
+    sem=_SEND_SEMAPHORES.get(chat_id)
     if sem is None:
-        sem = asyncio.Semaphore(_MAX_PARALLEL_SENDS_PER_CHAT)
-        _SEND_SEMAPHORES[chat_id] = sem
+        sem=asyncio.Semaphore(_MAX_PARALLEL_SENDS_PER_CHAT)
+        _SEND_SEMAPHORES[chat_id]=sem
     return sem
 
-async def _wait_send_slot(chat_id: int):
-    now = time.monotonic()
-    slow_until = _CHAT_SLOWMODE_UNTIL.get(chat_id, 0.0)
-    if slow_until > now:
-        await asyncio.sleep(slow_until - now)
-    last_at = _LAST_SEND_AT.get(chat_id, 0.0)
-    wait_gap = _MIN_GAP_PER_CHAT - (time.monotonic() - last_at)
-    if wait_gap > 0:
+async def _wait_send_slot(chat_id:int):
+    now=time.monotonic()
+    slow_until=_CHAT_SLOWMODE_UNTIL.get(chat_id,0.0)
+    if slow_until>now:
+        await asyncio.sleep(slow_until-now)
+    last_at=_LAST_SEND_AT.get(chat_id,0.0)
+    wait_gap=_MIN_GAP_PER_CHAT-(time.monotonic()-last_at)
+    if wait_gap>0:
         await asyncio.sleep(wait_gap)
 
-def _mark_sent(chat_id: int):
-    _LAST_SEND_AT[chat_id] = time.monotonic()
+def _mark_sent(chat_id:int):
+    _LAST_SEND_AT[chat_id]=time.monotonic()
 
-def _apply_retry_after(chat_id: int, retry_after: int):
-    until = time.monotonic() + max(int(retry_after), 1) + 1
-    prev = _CHAT_SLOWMODE_UNTIL.get(chat_id, 0.0)
-    _CHAT_SLOWMODE_UNTIL[chat_id] = max(prev, until)
+def _apply_retry_after(chat_id:int,retry_after:int):
+    until=time.monotonic()+max(int(retry_after),1)+1
+    prev=_CHAT_SLOWMODE_UNTIL.get(chat_id,0.0)
+    _CHAT_SLOWMODE_UNTIL[chat_id]=max(prev,until)
 
-async def _guarded_api_call(rate_key: int, func, *args, **kwargs):
-    sem = _get_chat_semaphore(rate_key)
+async def _guarded_api_call(rate_key:int,func,*args,**kwargs):
+    sem=_get_chat_semaphore(rate_key)
     async with sem:
         while True:
             await _wait_send_slot(rate_key)
             try:
-                started = time.monotonic()
-                result = await func(*args, **kwargs)
-                elapsed = time.monotonic() - started
+                started=time.monotonic()
+                result=await func(*args,**kwargs)
+                elapsed=time.monotonic()-started
                 _mark_sent(rate_key)
-                log.info(
-                    "Telegram send done | chat_id=%s func=%s elapsed=%.2fs",
-                    rate_key,
-                    getattr(func, "__name__", str(func)),
-                    elapsed,
-                )
+                log.info("Telegram send done | chat_id=%s func=%s elapsed=%.2fs",rate_key,getattr(func,"__name__",str(func)),elapsed)
                 return result
             except RetryAfter as e:
-                retry_after = int(getattr(e, "retry_after", 3))
-                _apply_retry_after(rate_key, retry_after)
-                log.warning("RetryAfter | chat_id=%s wait=%s", rate_key, retry_after)
-                await asyncio.sleep(retry_after + 1)
+                retry_after=int(getattr(e,"retry_after",3))
+                _apply_retry_after(rate_key,retry_after)
+                log.warning("RetryAfter | chat_id=%s wait=%s",rate_key,retry_after)
+                await asyncio.sleep(retry_after+1)
 
-async def _get_bot_name(bot) -> str:
-    cached = getattr(bot, "_cached_first_name", None)
+async def _get_bot_name(bot)->str:
+    cached=getattr(bot,"_cached_first_name",None)
     if cached:
         return cached
-    me = await bot.get_me()
-    name = me.first_name or "Bot"
-    setattr(bot, "_cached_first_name", name)
+    me=await bot.get_me()
+    name=me.first_name or "Bot"
+    setattr(bot,"_cached_first_name",name)
     return name
 
-async def _safe_edit_status(bot, chat_id, message_id, text: str):
+async def _safe_edit_status(bot,chat_id,message_id,text:str):
     try:
-        await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
+        await bot.edit_message_text(chat_id=chat_id,message_id=message_id,text=text,parse_mode="HTML")
     except RetryAfter as e:
-        retry_after = int(getattr(e, "retry_after", 3))
-        _apply_retry_after(chat_id, retry_after)
-        log.warning("RetryAfter while editing status | chat_id=%s wait=%s", chat_id, retry_after)
+        retry_after=int(getattr(e,"retry_after",3))
+        _apply_retry_after(chat_id,retry_after)
+        log.warning("RetryAfter while editing status | chat_id=%s wait=%s",chat_id,retry_after)
     except Exception as e:
         if "message is not modified" in (str(e) or "").lower():
             return
-        log.warning("Failed to edit status message | chat_id=%s message_id=%s err=%s", chat_id, message_id, e)
+        log.warning("Failed to edit status message | chat_id=%s message_id=%s err=%s",chat_id,message_id,e)
 
-async def _set_uploading_status(bot, chat_id, status_msg_id, kind: str):
-    label = {"audio": "🎵 <b>Uploading audio...</b>", "video": "🎬 <b>Uploading video...</b>", "photo": "🖼️ <b>Uploading photo...</b>", "album": "🖼️ <b>Uploading album...</b>"}.get(kind, "<b>Uploading...</b>")
-    action = {"audio": "upload_audio", "video": "upload_video", "photo": "upload_photo", "album": "upload_photo"}.get(kind, "typing")
-    await _safe_edit_status(bot=bot, chat_id=chat_id, message_id=status_msg_id, text=label)
+async def _set_uploading_status(bot,chat_id,status_msg_id,kind:str):
+    label={
+        "audio":"🎵 <b>Uploading audio...</b>",
+        "video":"🎬 <b>Uploading video...</b>",
+        "photo":"🖼️ <b>Uploading photo...</b>",
+        "album":"🖼️ <b>Uploading album...</b>",
+    }.get(kind,"<b>Uploading...</b>")
+    action={
+        "audio":"upload_audio",
+        "video":"upload_video",
+        "photo":"upload_photo",
+        "album":"upload_photo",
+    }.get(kind,"typing")
+    await _safe_edit_status(bot=bot,chat_id=chat_id,message_id=status_msg_id,text=label)
     try:
-        await bot.send_chat_action(chat_id=chat_id, action=action)
+        await bot.send_chat_action(chat_id=chat_id,action=action)
     except RetryAfter as e:
-        retry_after = int(getattr(e, "retry_after", 3))
-        _apply_retry_after(chat_id, retry_after)
-        log.warning("RetryAfter while sending chat action | chat_id=%s wait=%s", chat_id, retry_after)
+        retry_after=int(getattr(e,"retry_after",3))
+        _apply_retry_after(chat_id,retry_after)
+        log.warning("RetryAfter while sending chat action | chat_id=%s wait=%s",chat_id,retry_after)
     except Exception as e:
-        log.warning("Failed to send chat action | chat_id=%s action=%s err=%s", chat_id, action, e)
+        log.warning("Failed to send chat action | chat_id=%s action=%s err=%s",chat_id,action,e)
 
-async def _send_media_group_with_fallback(bot, chat_id, media, reply_to=None, message_thread_id=None):
+def _safe_seek(handle,label:str,chat_id):
+    if not handle or not hasattr(handle,"seek"):
+        return
+    try:
+        handle.seek(0)
+    except Exception as e:
+        log.warning("Failed to seek %s file handle | chat_id=%s err=%r",label,chat_id,e)
+
+def _safe_close(handle,label:str,chat_id):
+    if not handle:
+        return
+    try:
+        handle.close()
+    except Exception as e:
+        log.warning("Failed to close %s file handle | chat_id=%s err=%r",label,chat_id,e)
+
+async def _delete_file(path:str|None,label:str):
+    if not path:
+        return
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            log.info("Delete %s file %s successfully",label,os.path.basename(path))
+    except Exception as e:
+        log.warning("Failed to delete %s file | path=%s err=%r",label,path,e)
+
+async def _send_media_group_with_fallback(bot,chat_id,media,reply_to=None,message_thread_id=None):
     while True:
         try:
-            return await _guarded_api_call(chat_id, bot.send_media_group, chat_id=chat_id, media=media, reply_to_message_id=reply_to, message_thread_id=message_thread_id)
+            return await _guarded_api_call(chat_id,bot.send_media_group,chat_id=chat_id,media=media,reply_to_message_id=reply_to,message_thread_id=message_thread_id)
         except Exception as e:
             if reply_to and _is_reply_not_found_error(e):
-                reply_to = None
+                reply_to=None
                 continue
-            log.exception("Failed to send media group | chat_id=%s", chat_id)
+            log.exception("Failed to send media group | chat_id=%s",chat_id)
             raise
 
-async def _send_photo_with_fallback(bot, chat_id, photo, caption, reply_to=None, message_thread_id=None):
+async def _send_photo_with_fallback(bot,chat_id,photo,caption,reply_to=None,message_thread_id=None):
     try:
-        return await _guarded_api_call(chat_id, bot.send_photo, chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
+        return await _guarded_api_call(chat_id,bot.send_photo,chat_id=chat_id,photo=photo,caption=caption,parse_mode="HTML",reply_to_message_id=reply_to,message_thread_id=message_thread_id,disable_notification=True)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await _guarded_api_call(chat_id, bot.send_photo, chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML", message_thread_id=message_thread_id, disable_notification=True)
-        log.exception("Failed to send photo | chat_id=%s", chat_id)
+            return await _guarded_api_call(chat_id,bot.send_photo,chat_id=chat_id,photo=photo,caption=caption,parse_mode="HTML",message_thread_id=message_thread_id,disable_notification=True)
+        log.exception("Failed to send photo | chat_id=%s",chat_id)
         raise
 
-async def _send_video_with_fallback(bot, chat_id, video, caption, reply_to=None, message_thread_id=None, supports_streaming=True, duration=None, width=None, height=None, thumbnail=None):
-    kwargs = {
-        "chat_id": chat_id,
-        "video": video,
-        "caption": caption,
-        "parse_mode": "HTML",
-        "supports_streaming": supports_streaming,
-        "reply_to_message_id": reply_to,
-        "message_thread_id": message_thread_id,
-        "disable_notification": True,
+async def _send_video_with_fallback(bot,chat_id,video,caption,reply_to=None,message_thread_id=None,supports_streaming=True,duration=None,width=None,height=None,thumbnail=None):
+    kwargs={
+        "chat_id":chat_id,
+        "video":video,
+        "caption":caption,
+        "parse_mode":"HTML",
+        "supports_streaming":supports_streaming,
+        "reply_to_message_id":reply_to,
+        "message_thread_id":message_thread_id,
+        "disable_notification":True,
     }
     if duration:
-        kwargs["duration"] = int(duration)
+        kwargs["duration"]=int(duration)
     if width:
-        kwargs["width"] = int(width)
+        kwargs["width"]=int(width)
     if height:
-        kwargs["height"] = int(height)
+        kwargs["height"]=int(height)
     if thumbnail:
-        kwargs["thumbnail"] = thumbnail
-
+        kwargs["thumbnail"]=thumbnail
     try:
-        return await _guarded_api_call(chat_id, bot.send_video, **kwargs)
+        return await _guarded_api_call(chat_id,bot.send_video,**kwargs)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            try:
-                if hasattr(video, "seek"):
-                    video.seek(0)
-                if hasattr(thumbnail, "seek"):
-                    thumbnail.seek(0)
-            except Exception:
-                pass
-            kwargs.pop("reply_to_message_id", None)
-            return await _guarded_api_call(chat_id, bot.send_video, **kwargs)
-        log.exception("Failed to send video | chat_id=%s", chat_id)
+            _safe_seek(video,"video",chat_id)
+            _safe_seek(thumbnail,"thumbnail",chat_id)
+            kwargs.pop("reply_to_message_id",None)
+            return await _guarded_api_call(chat_id,bot.send_video,**kwargs)
+        log.exception("Failed to send video | chat_id=%s",chat_id)
         raise
 
-async def _send_audio_with_fallback(bot, chat_id, audio, title, performer, filename, reply_to=None, message_thread_id=None):
+async def _send_audio_with_fallback(bot,chat_id,audio,title,performer,filename,reply_to=None,message_thread_id=None):
     try:
-        return await _guarded_api_call(chat_id, bot.send_audio, chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, reply_to_message_id=reply_to, message_thread_id=message_thread_id, disable_notification=True)
+        return await _guarded_api_call(chat_id,bot.send_audio,chat_id=chat_id,audio=audio,title=title,performer=performer,filename=filename,reply_to_message_id=reply_to,message_thread_id=message_thread_id,disable_notification=True)
     except Exception as e:
         if reply_to and _is_reply_not_found_error(e):
-            return await _guarded_api_call(chat_id, bot.send_audio, chat_id=chat_id, audio=audio, title=title, performer=performer, filename=filename, message_thread_id=message_thread_id, disable_notification=True)
-        log.exception("Failed to send audio | chat_id=%s", chat_id)
+            return await _guarded_api_call(chat_id,bot.send_audio,chat_id=chat_id,audio=audio,title=title,performer=performer,filename=filename,message_thread_id=message_thread_id,disable_notification=True)
+        log.exception("Failed to send audio | chat_id=%s",chat_id)
         raise
 
-async def _cleanup_album_files(items: list[dict]):
+async def _cleanup_album_files(items:list[dict]):
     for item in items:
-        p = item.get("path")
-        try:
-            if p and os.path.exists(p):
-                os.remove(p)
-                log.info("Delete download file %s successfully", os.path.basename(p))
-        except Exception as e:
-            log.warning("Failed to remove album temp file | path=%s err=%s", p, e)
+        await _delete_file(item.get("path"),"download")
 
-async def _cleanup_single_file(path: str | None):
-    try:
-        if path and os.path.exists(path):
-            os.remove(path)
-            log.info("Delete download file %s successfully", os.path.basename(path))
-    except Exception as e:
-        log.warning("Failed to remove temp file | path=%s err=%s", path, e)
+async def _cleanup_single_file(path:str|None):
+    await _delete_file(path,"download")
 
-async def _send_media_group_result(bot, chat_id, reply_to, result: dict, message_thread_id=None):
-    items = result.get("items") or []
+async def _send_media_group_result(bot,chat_id,reply_to,result:dict,message_thread_id=None):
+    items=result.get("items") or []
     if not items:
         raise RuntimeError("Album result kosong")
-    title = (result.get("title") or "Media").strip() or "Media"
-    bot_name = await _get_bot_name(bot)
-    caption = _build_safe_photo_caption(title, bot_name)
-    chunk_size = _ALBUM_CHUNK_SIZE
-    cooldown = _ALBUM_CHUNK_COOLDOWN
-    chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
-    for idx, chunk in enumerate(chunks):
-        media = []
-        handles = []
+    title=(result.get("title") or "Media").strip() or "Media"
+    bot_name=await _get_bot_name(bot)
+    caption=_build_safe_photo_caption(title,bot_name)
+    chunks=[items[i:i+_ALBUM_CHUNK_SIZE] for i in range(0,len(items),_ALBUM_CHUNK_SIZE)]
+    for idx,chunk in enumerate(chunks):
+        media=[]
+        handles=[]
         try:
-            for i, item in enumerate(chunk):
-                file_path = item.get("path")
-                media_url = str(item.get("url") or "").strip()
-                media_type = str(item.get("type") or "").strip().lower()
-                is_first = idx == 0 and i == 0
-                item_caption = caption if is_first else None
-                item_parse_mode = "HTML" if is_first else None
+            for i,item in enumerate(chunk):
+                file_path=item.get("path")
+                media_url=str(item.get("url") or "").strip()
+                media_type=str(item.get("type") or "").strip().lower()
+                is_first=idx==0 and i==0
+                item_caption=caption if is_first else None
+                item_parse_mode="HTML" if is_first else None
                 if file_path and os.path.exists(file_path):
-                    detected = detect_media_type(file_path)
-                    fh = open(file_path, "rb")
-                    handles.append(fh)
-                    if detected == "video":
-                        media.append(InputMediaVideo(media=fh, caption=item_caption, parse_mode=item_parse_mode, supports_streaming=True))
+                    detected=detect_media_type(file_path)
+                    fh=open(file_path,"rb")
+                    handles.append((fh,os.path.basename(file_path)))
+                    if detected=="video":
+                        media.append(InputMediaVideo(media=fh,caption=item_caption,parse_mode=item_parse_mode,supports_streaming=True))
                     else:
-                        media.append(InputMediaPhoto(media=fh, caption=item_caption, parse_mode=item_parse_mode))
+                        media.append(InputMediaPhoto(media=fh,caption=item_caption,parse_mode=item_parse_mode))
                     continue
                 if media_url:
-                    if media_type == "video":
-                        media.append(InputMediaVideo(media=media_url, caption=item_caption, parse_mode=item_parse_mode, supports_streaming=True))
+                    if media_type=="video":
+                        media.append(InputMediaVideo(media=media_url,caption=item_caption,parse_mode=item_parse_mode,supports_streaming=True))
                     else:
-                        media.append(InputMediaPhoto(media=media_url, caption=item_caption, parse_mode=item_parse_mode))
+                        media.append(InputMediaPhoto(media=media_url,caption=item_caption,parse_mode=item_parse_mode))
                     continue
-                log.warning("Skipping media group item because file/url is missing | chat_id=%s item=%s", chat_id, item)
+                log.warning("Skipping media group item because file/url is missing | chat_id=%s item=%s",chat_id,item)
             if not media:
-                log.warning("No valid media items to send in chunk | chat_id=%s chunk_index=%s", chat_id, idx)
+                log.warning("No valid media items to send in chunk | chat_id=%s chunk_index=%s",chat_id,idx)
                 continue
-            await _send_media_group_with_fallback(bot=bot, chat_id=chat_id, media=media, reply_to=reply_to if idx == 0 else None, message_thread_id=message_thread_id)
-            if idx < len(chunks) - 1 and cooldown > 0:
-                await asyncio.sleep(cooldown)
+            await _send_media_group_with_fallback(bot=bot,chat_id=chat_id,media=media,reply_to=reply_to if idx==0 else None,message_thread_id=message_thread_id)
+            if idx<len(chunks)-1 and _ALBUM_CHUNK_COOLDOWN>0:
+                await asyncio.sleep(_ALBUM_CHUNK_COOLDOWN)
         finally:
-            for fh in handles:
-                try:
-                    fh.close()
-                except Exception as e:
-                    log.warning("Failed to close media file handle | chat_id=%s err=%s", chat_id, e)
+            for fh,name in handles:
+                _safe_close(fh,f"album media {name}",chat_id)
 
-async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt_key, message_thread_id=None):
-    if isinstance(path, dict) and path.get("items"):
-        items = path.get("items") or []
-        first = items[0] if items else {}
-        first_path = first.get("path")
-        first_type = str(first.get("type") or "").strip().lower()
+async def send_downloaded_media(bot,chat_id,reply_to,status_msg_id,path,fmt_key,message_thread_id=None):
+    if isinstance(path,dict) and path.get("items"):
+        items=path.get("items") or []
+        first=items[0] if items else {}
+        first_path=first.get("path")
+        first_type=str(first.get("type") or "").strip().lower()
         if first_path and os.path.exists(first_path):
-            first_type = detect_media_type(first_path)
-        await _set_uploading_status(bot, chat_id, status_msg_id, "album" if len(items) > 1 else ("video" if first_type == "video" else "photo"))
+            first_type=detect_media_type(first_path)
+        await _set_uploading_status(bot,chat_id,status_msg_id,"album" if len(items)>1 else ("video" if first_type=="video" else "photo"))
         try:
-            await _send_media_group_result(bot=bot, chat_id=chat_id, reply_to=reply_to, result=path, message_thread_id=message_thread_id)
+            await _send_media_group_result(bot=bot,chat_id=chat_id,reply_to=reply_to,result=path,message_thread_id=message_thread_id)
         finally:
             await _cleanup_album_files(items)
         return
 
-    meta = path if isinstance(path, dict) else {"path": path, "title": None}
-    file_path = meta.get("path")
-    original_title = (meta.get("title") or "").strip()
+    meta=path if isinstance(path,dict) else {"path":path,"title":None}
+    file_path=meta.get("path")
+    original_title=(meta.get("title") or "").strip()
     if not file_path or not os.path.exists(file_path):
         raise RuntimeError("Download gagal")
-    if os.path.getsize(file_path) > MAX_TG_SIZE:
+    if os.path.getsize(file_path)>MAX_TG_SIZE:
         raise RuntimeError("File exceeds 2GB. Please choose a lower resolution.")
-    bot_name = await _get_bot_name(bot)
-    caption_text = original_title or _clean_caption_from_path(file_path)
-    media_type = detect_media_type(file_path)
-    fixed_audio = None
+    bot_name=await _get_bot_name(bot)
+    caption_text=original_title or _clean_caption_from_path(file_path)
+    media_type=detect_media_type(file_path)
+    fixed_audio=None
     try:
-        if fmt_key == "mp3":
-            await _set_uploading_status(bot, chat_id, status_msg_id, "audio")
-            fixed_audio = await reencode_mp3(file_path)
-            await _send_audio_with_fallback(bot=bot, chat_id=chat_id, audio=fixed_audio, title=caption_text[:64], performer=bot_name, filename=f"{caption_text[:50]}.mp3", reply_to=reply_to, message_thread_id=message_thread_id)
+        if fmt_key=="mp3":
+            await _set_uploading_status(bot,chat_id,status_msg_id,"audio")
+            fixed_audio=await reencode_mp3(file_path)
+            await _send_audio_with_fallback(bot=bot,chat_id=chat_id,audio=fixed_audio,title=caption_text[:64],performer=bot_name,filename=f"{caption_text[:50]}.mp3",reply_to=reply_to,message_thread_id=message_thread_id)
             return
-        if media_type == "photo":
-            await _set_uploading_status(bot, chat_id, status_msg_id, "photo")
-            await _send_photo_with_fallback(bot=bot, chat_id=chat_id, photo=file_path, caption=_build_safe_photo_caption(caption_text, bot_name), reply_to=reply_to, message_thread_id=message_thread_id)
+        if media_type=="photo":
+            await _set_uploading_status(bot,chat_id,status_msg_id,"photo")
+            await _send_photo_with_fallback(bot=bot,chat_id=chat_id,photo=file_path,caption=_build_safe_photo_caption(caption_text,bot_name),reply_to=reply_to,message_thread_id=message_thread_id)
             return
-        if media_type == "video":
-            await _set_uploading_status(bot, chat_id, status_msg_id, "video")
-            thumb_path = None
-            video_fh = None
-            thumb_fh = None
+        if media_type=="video":
+            await _set_uploading_status(bot,chat_id,status_msg_id,"video")
+            thumb_path=None
+            video_fh=None
+            thumb_fh=None
             try:
-                meta_video = await asyncio.to_thread(video_meta, file_path)
-                thumb_path = await asyncio.to_thread(make_video_thumbnail, file_path)
-                caption = _build_safe_caption(caption_text, bot_name)
-                sent = await try_send_video_via_mtproto(
+                meta_video=await asyncio.to_thread(video_meta,file_path)
+                thumb_path=await asyncio.to_thread(make_video_thumbnail,file_path)
+                caption=_build_safe_caption(caption_text,bot_name)
+                sent=await try_send_video_via_mtproto(
                     bot=bot,
                     chat_id=chat_id,
                     status_msg_id=status_msg_id,
@@ -365,8 +372,8 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
                 )
                 if sent:
                     return
-                video_fh = open(file_path, "rb")
-                thumb_fh = open(thumb_path, "rb") if thumb_path else None
+                video_fh=open(file_path,"rb")
+                thumb_fh=open(thumb_path,"rb") if thumb_path and os.path.exists(thumb_path) else None
                 await _send_video_with_fallback(
                     bot=bot,
                     chat_id=chat_id,
@@ -381,51 +388,38 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
                     thumbnail=thumb_fh,
                 )
             finally:
-                for fh in (video_fh, thumb_fh):
-                    try:
-                        if fh:
-                            fh.close()
-                    except Exception:
-                        pass
-                try:
-                    if thumb_path and os.path.exists(thumb_path):
-                        os.remove(thumb_path)
-                except Exception:
-                    pass
+                _safe_close(video_fh,"video",chat_id)
+                _safe_close(thumb_fh,"thumbnail",chat_id)
+                await _delete_file(thumb_path,"thumbnail")
             return
         raise RuntimeError("Media tidak didukung")
     finally:
-        if fixed_audio and os.path.exists(fixed_audio):
-            try:
-                os.remove(fixed_audio)
-                log.info("Delete temp audio file %s successfully", os.path.basename(fixed_audio))
-            except Exception as e:
-                log.warning("Failed to remove temporary re-encoded mp3 | path=%s err=%s", fixed_audio, e)
+        if fixed_audio:
+            await _delete_file(fixed_audio,"temp audio")
         await _cleanup_single_file(file_path)
-        
-async def download_non_tiktok(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id: str | None, has_audio: bool, engine: str | None = None):
+
+async def download_non_tiktok(raw_url,fmt_key,bot,chat_id,status_msg_id,format_id:str|None,has_audio:bool,engine:str|None=None):
     if is_instagram_url(raw_url):
         try:
-            return await instagram_api_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id)
+            return await instagram_api_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id)
         except Exception as e:
-            log.warning("Instagram API download failed, falling back to yt-dlp | url=%s err=%r", raw_url, e)
+            log.warning("Instagram API download failed, falling back to yt-dlp | url=%s err=%r",raw_url,e)
     if is_pinterest_url(raw_url):
-        return await pinterest_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await pinterest_download(raw_url,fmt_key,bot,chat_id,status_msg_id,format_id=format_id,has_audio=has_audio)
     if is_facebook_url(raw_url):
-        return await facebook_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await facebook_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio)
     if is_reddit_url(raw_url):
-        return await reddit_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await reddit_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio)
     if is_x_url(raw_url):
-        return await twitter_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await twitter_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio)
     if is_threads_url(raw_url):
-        return await threads_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await threads_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio)
     if is_youtube_url(raw_url):
-        if (engine or "").strip().lower() not in ("", "ytdlp"):
-            log.warning("Unsupported YouTube engine ignored | url=%s engine=%s", raw_url, engine)
-        result = await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
-        file_path = result.get("path") if isinstance(result, dict) else result
+        if (engine or "").strip().lower() not in ("","ytdlp"):
+            log.warning("Unsupported YouTube engine ignored | url=%s engine=%s",raw_url,engine)
+        result=await ytdlp_download(raw_url,fmt_key,bot,chat_id,status_msg_id,format_id=format_id,has_audio=has_audio)
+        file_path=result.get("path") if isinstance(result,dict) else result
         if not file_path:
             raise RuntimeError("yt-dlp returned no file")
         return result
-    return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
-    
+    return await ytdlp_download(raw_url,fmt_key,bot,chat_id,status_msg_id,format_id=format_id,has_audio=has_audio)
