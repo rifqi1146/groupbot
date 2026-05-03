@@ -38,6 +38,18 @@ def _format_size(num:int|float)->str:
         value/=1024
     return f"{value:.1f} GB"
 
+def _format_eta(seconds:int|float)->str:
+    seconds=int(max(float(seconds or 0),0))
+    if seconds<=0:
+        return "-"
+    h,rem=divmod(seconds,3600)
+    m,s=divmod(rem,60)
+    if h:
+        return f"{h}h {m}m {s}s"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+    
 def _progress_interval(file_size:int)->float:
     return _PROGRESS_SMALL_INTERVAL if file_size<_PROGRESS_SMALL_LIMIT else _PROGRESS_LARGE_INTERVAL
 
@@ -141,9 +153,26 @@ async def _safe_edit_upload(bot,chat_id,message_id,current,total,started,label="
             percent=(current/total*100) if total else 0
             elapsed=max(time.monotonic()-started,0.001)
             speed=current/elapsed
-            text=f"<b>{label}...</b>\n\n<code>{progress_bar(percent)}</code>\n<code>{_format_size(current)}/{_format_size(total)}</code>\n<code>Speed: {_format_size(speed)}/s</code>"
+            remaining=max((total-current),0)
+            eta=(remaining/speed) if speed>0 and total else 0
+            text=(
+                f"<b>{label}...</b>\n\n"
+                f"<code>{progress_bar(percent)}</code>\n"
+                f"<code>{_format_size(current)}/{_format_size(total)}</code>\n"
+                f"<code>Speed: {_format_size(speed)}/s</code>\n"
+                f"<code>ETA: {_format_eta(eta)}</code>"
+            )
             await bot.edit_message_text(chat_id=chat_id,message_id=message_id,text=text,parse_mode="HTML")
-            log.info("MTProto upload progress | chat_id=%s %.1f%% %s/%s speed=%s/s label=%s",chat_id,percent,_format_size(current),_format_size(total),_format_size(speed),label)
+            log.info(
+                "MTProto upload progress | chat_id=%s %.1f%% %s/%s speed=%s/s eta=%s label=%s",
+                chat_id,
+                percent,
+                _format_size(current),
+                _format_size(total),
+                _format_size(speed),
+                _format_eta(eta),
+                label,
+            )
         except RetryAfter as e:
             wait=int(getattr(e,"retry_after",1))
             log.warning("MTProto progress RetryAfter | chat_id=%s wait=%s",chat_id,wait)
