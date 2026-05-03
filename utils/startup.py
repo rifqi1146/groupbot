@@ -7,6 +7,7 @@ from handlers.asupan import (
     load_autodel_groups,
 )
 from utils.config import LOG_CHAT_ID
+from utils import gemini_memory, groq_memory
 from handlers import welcome
 from handlers.nsfw import nsfw_db_init
 from handlers.backup import start_auto_backup
@@ -80,6 +81,20 @@ async def startup_tasks(app):
         log.info("✓ Caca background initialized")
     except Exception:
         log.exception("Caca init failed")
+
+    try:
+        await gemini_memory.init()
+        await gemini_memory.cleanup()
+        log.info("✓ Gemini memory DB initialized")
+    except Exception:
+        log.exception("Gemini memory DB init failed")
+
+    try:
+        await groq_memory.init()
+        await groq_memory.cleanup()
+        log.info("✓ Groq memory DB initialized")
+    except Exception:
+        log.exception("Groq memory DB init failed")
 
     try:
         start_auto_backup(app)

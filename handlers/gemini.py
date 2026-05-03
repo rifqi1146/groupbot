@@ -12,11 +12,9 @@ from utils.http import get_http_session
 from rag.retriever import retrieve_context
 from rag.loader import load_local_contexts
 from .groq import ask_groq_text
+from utils import gemini_memory
 
 LOCAL_CONTEXTS = load_local_contexts()
-
-AI_MEMORY = {}
-_AI_ACTIVE_USERS = {}
 
 async def _typing_loop(bot, chat_id, stop: asyncio.Event):
     try:
@@ -59,11 +57,11 @@ def _ai_history_to_groq(history: list) -> list:
     return out
 
 async def build_ai_prompt(user_id: int, user_prompt: str) -> str:
-    history = AI_MEMORY.get(user_id, {"history": []})["history"]
+    history = await gemini_memory.get_history(user_id)
     lines = []
     for h in history:
-        lines.append(f"User: {h['user']}")
-        lines.append(f"AI: {h['ai']}")
+        lines.append(f"User: {h.get('user') or ''}")
+        lines.append(f"AI: {h.get('ai') or ''}")
     try:
         contexts = await retrieve_context(user_prompt, LOCAL_CONTEXTS, top_k=3)
     except Exception:
@@ -142,15 +140,16 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = ""
     if msg.text and msg.text.startswith("/ask"):
         prompt = " ".join(context.args) if context.args else ""
-        AI_MEMORY.pop(user_id, None)
-        _AI_ACTIVE_USERS.pop(user_id, None)
+        await gemini_memory.clear(user_id)
         if not prompt:
             return await msg.reply_text(
                 "Contoh:\n"
                 "/ask apa itu relativitas?"
             )
     elif msg.reply_to_message:
-        if user_id not in _AI_ACTIVE_USERS:
+        reply_mid = msg.reply_to_message.message_id
+        active_mid = await gemini_memory.get_last_message_id(user_id)
+        if not active_mid or int(active_mid) != int(reply_mid):
             return await msg.reply_text(
                 "😒 Lu siapa?\n"
                 "Gue belum ngobrol sama lu.\n"
@@ -167,7 +166,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ok, raw, status = await ask_ai_gemini(final_prompt)
         if not ok:
             if _is_gemini_quota_error(status, raw):
-                history = AI_MEMORY.get(user_id, {"history": []})["history"]
+                history = await gemini_memory.get_history(user_id)
                 groq_history = _ai_history_to_groq(history)
                 raw = await ask_groq_text(
                     prompt=prompt,
@@ -181,15 +180,11 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stop.set()
         typing.cancel()
         sent = await msg.reply_text(chunks[0], parse_mode="HTML")
-        _AI_ACTIVE_USERS[user_id] = sent.message_id
         for part in chunks[1:]:
             await msg.reply_text(part, parse_mode="HTML")
-        history = AI_MEMORY.get(user_id, {"history": []})["history"]
-        history.append({"user": prompt, "ai": clean})
-        AI_MEMORY[user_id] = {"history": history}
+        await gemini_memory.append_turn(user_id, prompt, clean, sent.message_id)
     except Exception as e:
         stop.set()
         typing.cancel()
-        AI_MEMORY.pop(user_id, None)
-        _AI_ACTIVE_USERS.pop(user_id, None)
+        await gemini_memory.clear(user_id)
         await msg.reply_text(f"❌ Error: {html.escape(str(e))}")

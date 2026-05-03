@@ -12,6 +12,7 @@ from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
 from rag.retriever import retrieve_context
 from rag.loader import load_local_contexts
+from utils import groq_memory
 
 from utils.text import split_message, sanitize_ai_output
 from utils.config import (
@@ -24,9 +25,6 @@ from utils.config import (
 from utils.http import get_http_session
 
 LOCAL_CONTEXTS = load_local_contexts()
-
-GROQ_MEMORY = {}
-_GROQ_ACTIVE_USERS = {}
 
 SYSTEM_PROMPT = (
     "Jawab selalu menggunakan Bahasa Indonesia yang santai.\n"
@@ -184,8 +182,7 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             prompt = " ".join(context.args).strip()
 
-        GROQ_MEMORY.pop(user_id, None)
-        _GROQ_ACTIVE_USERS.pop(user_id, None)
+        await groq_memory.clear(user_id)
 
         if not prompt:
             return await msg.reply_text(
@@ -195,7 +192,9 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif msg.reply_to_message:
-        if user_id not in _GROQ_ACTIVE_USERS:
+        reply_mid = msg.reply_to_message.message_id
+        active_mid = await groq_memory.get_last_message_id(user_id)
+        if not active_mid or int(active_mid) != int(reply_mid):
             return await msg.reply_text("😒 Ketik /groq dulu.")
         prompt = (msg.text or "").strip()
 
@@ -209,19 +208,13 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     typing = asyncio.create_task(_typing_loop(context.bot, chat_id, stop))
 
     try:
-        history = GROQ_MEMORY.get(user_id, {"history": []})["history"]
+        history = await groq_memory.get_history(user_id)
 
         raw = await ask_groq_text(
             prompt=prompt,
             history=history,
             use_search=use_search,
         )
-
-        history += [
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": raw},
-        ]
-        GROQ_MEMORY[user_id] = {"history": history}
 
         stop.set()
         typing.cancel()
@@ -236,12 +229,18 @@ async def groq_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.reply_text(chunk, parse_mode="HTML")
 
         if sent:
-            _GROQ_ACTIVE_USERS[user_id] = sent.message_id
+            await groq_memory.append_messages(
+                user_id,
+                [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": raw},
+                ],
+                sent.message_id,
+            )
 
     except Exception as e:
         stop.set()
         typing.cancel()
-        GROQ_MEMORY.pop(user_id, None)
-        _GROQ_ACTIVE_USERS.pop(user_id, None)
+        await groq_memory.clear(user_id)
         print("[GROQ ERROR]", e, flush=True)
         await msg.reply_text(f"{em} ❌ Error: {html.escape(str(e))}")

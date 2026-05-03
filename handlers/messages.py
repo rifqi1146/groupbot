@@ -5,8 +5,6 @@ from handlers.caca import meta_query
 from handlers.collector import collect_chat
 from handlers.delete import reply_del_handler
 from handlers.dl.router import auto_dl_detect
-from handlers.gemini import ai_cmd, _AI_ACTIVE_USERS
-from handlers.groq import groq_query, _GROQ_ACTIVE_USERS
 from handlers.prefix_dollar import dollar_router
 from handlers.susunkata import susunkata_answer_handler
 from handlers.welcome import welcome_handler, welcome_chat_member_handler
@@ -14,6 +12,12 @@ from utils.caca_memory import get_last_message_id as meta_db_get_last_message_id
 from utils.caca_memory import has_last_message_id as meta_db_has_last_message_id
 from utils.logger import log_commands
 from utils.user_collector import user_collector
+from handlers.gemini import ai_cmd
+from utils.gemini_memory import get_last_message_id as ai_db_get_last_message_id
+from utils.gemini_memory import has_last_message_id as ai_db_has_last_message_id
+from handlers.groq import groq_query
+from utils.groq_memory import get_last_message_id as groq_db_get_last_message_id
+from utils.groq_memory import has_last_message_id as groq_db_has_last_message_id
 
 async def ai_reply_router(update, context):
     msg = update.message
@@ -21,21 +25,23 @@ async def ai_reply_router(update, context):
         return
     user_id = msg.from_user.id
     reply_mid = msg.reply_to_message.message_id
-    if _GROQ_ACTIVE_USERS.get(user_id) == reply_mid:
+    groq_mid = await groq_db_get_last_message_id(user_id)
+    if groq_mid == reply_mid:
         return await groq_query(update, context)
     meta_mid = await meta_db_get_last_message_id(user_id)
     if meta_mid == reply_mid:
         return await meta_query(update, context)
-    if _AI_ACTIVE_USERS.get(user_id) == reply_mid:
+    ai_mid = await ai_db_get_last_message_id(user_id)
+    if ai_mid == reply_mid:
         return await ai_cmd(update, context)
-    if reply_mid in _GROQ_ACTIVE_USERS.values():
+    if await groq_db_has_last_message_id(reply_mid):
         return await msg.reply_text(
             "😒 Lu siapa?\n"
             "Gue belum ngobrol sama lu.\n"
             "Ketik /groq dulu.",
             parse_mode="HTML"
         )
-    if reply_mid in _AI_ACTIVE_USERS.values():
+    if await ai_db_has_last_message_id(reply_mid):
         return await msg.reply_text(
             "😒 Lu siapa?\n"
             "Gue belum ngobrol sama lu.\n"
