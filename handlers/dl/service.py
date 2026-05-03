@@ -31,14 +31,20 @@ _MIN_GAP_PER_CHAT = 0.3
 _ALBUM_CHUNK_SIZE = 10
 _ALBUM_CHUNK_COOLDOWN = 5
 
-def reencode_mp3(src_path: str) -> str:
+async def reencode_mp3(src_path: str) -> str:
     fixed_path = f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
-    result = subprocess.run(["ffmpeg", "-y", "-i", src_path, "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", fixed_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
-    if not os.path.exists(fixed_path):
-        raise RuntimeError("FFmpeg re-encode failed")
-    return fixed_path
+    def _run():
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", src_path, "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", fixed_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg re-encode failed with exit code {result.returncode}")
+        if not os.path.exists(fixed_path):
+            raise RuntimeError("FFmpeg re-encode failed")
+        return fixed_path
+    return await asyncio.to_thread(_run)
 
 def _clean_caption_from_path(path: str) -> str:
     raw_name = os.path.splitext(os.path.basename(path))[0]
@@ -328,7 +334,7 @@ async def send_downloaded_media(bot, chat_id, reply_to, status_msg_id, path, fmt
     try:
         if fmt_key == "mp3":
             await _set_uploading_status(bot, chat_id, status_msg_id, "audio")
-            fixed_audio = reencode_mp3(file_path)
+            fixed_audio = await reencode_mp3(file_path)
             await _send_audio_with_fallback(bot=bot, chat_id=chat_id, audio=fixed_audio, title=caption_text[:64], performer=bot_name, filename=f"{caption_text[:50]}.mp3", reply_to=reply_to, message_thread_id=message_thread_id)
             return
         if media_type == "photo":
