@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import socket
 import logging
 from telegram import Update
@@ -19,6 +20,64 @@ LOCAL_BOT_API_HOST = os.getenv("LOCAL_BOT_API_HOST", "127.0.0.1")
 LOCAL_BOT_API_PORT = int(os.getenv("LOCAL_BOT_API_PORT", "8081"))
 PREFER_LOCAL_BOT_API = os.getenv("PREFER_LOCAL_BOT_API", "1").strip().lower() not in ("0", "false", "no")
 
+BOT_COMMANDS = [
+    ("start", "Check bot status"),
+    ("aidetect", "Detect AI-generated image"),
+    ("aitext", "Detect AI-generated text"),
+    ("donate", "Support bot"),
+    ("help", "Show help menu"),
+    ("settings", "User settings"),
+    ("nobg", "Remove background"),
+    ("upscale", "Upscale image"),
+    ("quiz", "Random quiz"),
+    ("ping", "Check latency"),
+    ("kang", "Add sticker to pack"),
+    ("ship", "Choose couple"),
+    ("quoteanime", "Random anime quote"),
+    ("susunkata", "Play word arrangement game"),
+    ("stats", "System statistics"),
+    ("dl", "Download video"),
+    ("manga", "Read manga"),
+    ("ask", "Ask Gemini AI"),
+    ("music", "Search music"),
+    ("caca", "Chat with Caca"),
+    ("groq", "Ask Groq AI"),
+    ("gsearch", "Google search"),
+    ("asupan", "Random asupan"),
+    ("tr", "Translate text"),
+]
+
+class TokenRedactFilter(logging.Filter):
+    TOKEN_RE = re.compile(r"/bot\d+:[A-Za-z0-9_-]+")
+    TOKEN_TEXT_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
+
+    def _clean_text(self, text: str) -> str:
+        text = self.TOKEN_RE.sub("/bot<redacted>", text)
+        text = self.TOKEN_TEXT_RE.sub("<bot-token-redacted>", text)
+        return text
+
+    def _clean_arg(self, value):
+        if isinstance(value, str):
+            return self._clean_text(value)
+        return value
+
+    def filter(self, record):
+        if isinstance(record.msg, str):
+            record.msg = self._clean_text(record.msg)
+
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    key: self._clean_arg(value)
+                    for key, value in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(self._clean_arg(arg) for arg in record.args)
+            else:
+                record.args = self._clean_arg(record.args)
+
+        return True
+
 class EmojiFormatter(logging.Formatter):
     EMOJI = {
         logging.INFO: "➜",
@@ -29,16 +88,37 @@ class EmojiFormatter(logging.Formatter):
 
     def format(self, record):
         emoji = self.EMOJI.get(record.levelno, "•")
-        record.msg = f"{emoji} {record.msg}"
+        msg = str(record.msg)
+        if not msg.startswith(("➜", "⚠️", "❌", "💥", "•")):
+            record.msg = f"{emoji} {msg}"
         return super().format(record)
 
 def setup_logger():
     handler = logging.StreamHandler()
+    handler.addFilter(TokenRedactFilter())
     handler.setFormatter(EmojiFormatter("[%(asctime)s] %(message)s", "%H:%M:%S"))
+
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.handlers.clear()
     root.addHandler(handler)
+
+    for name in (
+        "httpx",
+        "httpcore",
+        "telegram",
+        "telegram.ext",
+        "telegram.request",
+        "telegram.vendor",
+        "apscheduler",
+        "telethon",
+        "telethon.network",
+        "telethon.network.mtprotosender",
+        "telethon.network.connection",
+        "telethon.client",
+        "telethon.client.uploads",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 log = logging.getLogger(__name__)
 
@@ -54,61 +134,36 @@ async def post_init(app):
 
     try:
         await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        log.warning(f"Failed to clear webhook/pending updates: {e}")
+    except Exception:
+        log.exception("Failed to clear webhook/pending updates")
 
     try:
         me = await app.bot.get_me()
         BOT_USERNAME = (me.username or "").lower()
         if BOT_USERNAME:
-            log.info(f"✓ Bot username loaded: @{BOT_USERNAME}")
+            log.info("✓ Bot username loaded: @%s", BOT_USERNAME)
         else:
             log.info("✓ Bot username loaded")
-    except Exception as e:
-        log.warning(f"Failed to get bot username: {e}")
+    except Exception:
+        log.exception("Failed to get bot username")
 
     try:
         await warmup_mtproto_uploader(app)
-    except Exception as e:
-        log.warning(f"Failed to warmup MTProto uploader: {e}")
+    except Exception:
+        log.exception("Failed to warmup MTProto uploader")
 
     try:
-        await app.bot.set_my_commands([
-            ("start", "Check bot status"),
-            ("aidetect", "Detect AI-generated image"),
-            ("aitext", "Detect AI-generated text"),
-            ("donate", "Support bot"),
-            ("help", "Show help menu"),
-            ("settings", "User setting"),
-            ("nobg", "Remove background"),
-            ("upscale", "Upscale image"),
-            ("quiz", "random soal"),
-            ("ping", "Check latency"),
-            ("kang", "Add sticker to pack"),
-            ("ship", "Choose couple"),
-            ("quoteanime", "Random quote"),
-            ("susunkata", "Play word arrangement game"),
-            ("stats", "System statistics"),
-            ("dl", "Download video"),
-            ("manga", "Read Manga"),
-            ("ask", "Ask Gemini AI"),
-            ("music", "Search music"),
-            ("caca", "Chat sama caca 😍"),
-            ("groq", "Ask Groq AI"),
-            ("gsearch", "Google search"),
-            ("asupan", "Asupan 😋"),
-            ("tr", "Translate text"),
-        ])
+        await app.bot.set_my_commands(BOT_COMMANDS)
         log.info("✓ Bot commands set")
-    except Exception as e:
-        log.warning(f"Failed to set bot commands: {e}")
+    except Exception:
+        log.exception("Failed to set bot commands")
 
     try:
         cmds = await app.bot.get_my_commands()
         app.bot_data["commands"] = cmds
-        log.info("✓ Cached bot commands: " + ", ".join(c.command for c in cmds))
-    except Exception as e:
-        log.warning(f"Failed to cache bot commands: {e}")
+        log.info("✓ Cached bot commands: %s", ", ".join(c.command for c in cmds))
+    except Exception:
+        log.exception("Failed to cache bot commands")
 
     await startup_tasks(app)
     log.info("✓ Startup tasks executed")
@@ -116,8 +171,8 @@ async def post_init(app):
 async def post_shutdown(app):
     try:
         await shutdown_mtproto_uploader(app)
-    except Exception as e:
-        log.warning(f"Failed to shutdown MTProto uploader: {e}")
+    except Exception:
+        log.exception("Failed to shutdown MTProto uploader")
 
     await close_http_session()
     log.info("HTTP session closed")
@@ -139,7 +194,7 @@ def _build_application():
 
     if PREFER_LOCAL_BOT_API and _local_bot_api_available(LOCAL_BOT_API_HOST, LOCAL_BOT_API_PORT):
         base = f"http://{LOCAL_BOT_API_HOST}:{LOCAL_BOT_API_PORT}"
-        log.info(f"✓ Using local Telegram Bot API at {base}")
+        log.info("✓ Using local Telegram Bot API at %s", base)
         builder = builder.base_url(f"{base}/bot").base_file_url(f"{base}/file/bot")
     else:
         if PREFER_LOCAL_BOT_API:
