@@ -16,7 +16,7 @@ from handlers.dl.pyrogram_uploader import warmup_pyrogram_uploader,shutdown_pyro
 
 BOT_USERNAME=None
 LOCAL_BOT_API_HOST=os.getenv("LOCAL_BOT_API_HOST","127.0.0.1")
-LOCAL_BOT_API_PORT=int(os.getenv("LOCAL_BOT_API_PORT","1234"))
+LOCAL_BOT_API_PORT=int(os.getenv("LOCAL_BOT_API_PORT","8081"))
 PREFER_LOCAL_BOT_API=os.getenv("PREFER_LOCAL_BOT_API","1").strip().lower() not in ("0","false","no")
 
 BOT_COMMANDS=[
