@@ -1,4 +1,8 @@
-import os,time,json,asyncio,logging
+import os
+import time
+import json
+import asyncio
+import logging
 from utils.config import BOT_TOKEN
 from telegram.error import RetryAfter
 from .utils import progress_bar
@@ -7,13 +11,15 @@ log=logging.getLogger(__name__)
 try:
     from telethon import TelegramClient
     from telethon.tl.types import DocumentAttributeVideo
-except Exception:
+except Exception as e:
     TelegramClient=None
     DocumentAttributeVideo=None
+    log.warning("Telethon import failed | err=%r",e)
 try:
     from FastTelethonhelper.FastTelethon import upload_file as fast_upload_file
-except Exception:
+except Exception as e:
     fast_upload_file=None
+    log.warning("FastTelethonhelper import failed | err=%r",e)
 
 _CLIENT=None
 _CLIENT_LOCK=asyncio.Lock()
@@ -49,7 +55,7 @@ def _format_eta(seconds:int|float)->str:
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
-    
+
 def _progress_interval(file_size:int)->float:
     return _PROGRESS_SMALL_INTERVAL if file_size<_PROGRESS_SMALL_LIMIT else _PROGRESS_LARGE_INTERVAL
 
@@ -59,6 +65,11 @@ def _get_progress_lock(key):
         lock=asyncio.Lock()
         _PROGRESS_LOCKS[key]=lock
     return lock
+
+def _drop_progress_lock(key):
+    lock=_PROGRESS_LOCKS.get(key)
+    if lock and not lock.locked():
+        _PROGRESS_LOCKS.pop(key,None)
 
 def _load_fast_upload_enabled()->bool:
     try:
@@ -92,6 +103,14 @@ def set_fasttelethon_enabled(enabled:bool)->bool:
         log.warning("Failed to save FastTelethon state | file=%s err=%r",_FAST_STATE_FILE,e)
     return _FAST_UPLOAD_ENABLED
 
+async def _disconnect_client(client,label:str):
+    try:
+        if client and client.is_connected():
+            await client.disconnect()
+            log.info("MTProto uploader disconnected | reason=%s",label)
+    except Exception as e:
+        log.warning("MTProto uploader disconnect failed | reason=%s err=%r",label,e)
+
 async def _get_client():
     global _CLIENT
     if not _ENABLED:
@@ -105,10 +124,19 @@ async def _get_client():
     async with _CLIENT_LOCK:
         if _CLIENT and _CLIENT.is_connected():
             return _CLIENT
+        if _CLIENT:
+            await _disconnect_client(_CLIENT,"reconnect")
+            _CLIENT=None
         os.makedirs(os.path.dirname(_SESSION_NAME) or ".",exist_ok=True)
         _CLIENT=TelegramClient(_SESSION_NAME,int(api_id),api_hash)
         await _CLIENT.start(bot_token=BOT_TOKEN)
-        log.info("MTProto uploader ready | session=%s part_size=%sKB fast=%s fast_available=%s",_SESSION_NAME,_PART_SIZE_KB,is_fasttelethon_enabled(),is_fasttelethon_available())
+        log.info(
+            "MTProto uploader ready | session=%s part_size=%sKB fast=%s fast_available=%s",
+            _SESSION_NAME,
+            _PART_SIZE_KB,
+            is_fasttelethon_enabled(),
+            is_fasttelethon_available(),
+        )
         return _CLIENT
 
 async def _resolve_entity(client,chat_id):
@@ -138,22 +166,20 @@ async def warmup_mtproto_uploader(app=None):
 
 async def shutdown_mtproto_uploader(app=None):
     global _CLIENT
-    try:
-        if _CLIENT and _CLIENT.is_connected():
-            await _CLIENT.disconnect()
-            log.info("MTProto uploader disconnected")
-    except Exception as e:
-        log.warning("MTProto uploader disconnect failed | err=%r",e)
+    await _disconnect_client(_CLIENT,"shutdown")
+    _CLIENT=None
 
 async def _safe_edit_upload(bot,chat_id,message_id,current,total,started,label="Uploading video"):
     key=(int(chat_id),int(message_id))
     lock=_get_progress_lock(key)
     async with lock:
         try:
+            current=max(int(current or 0),0)
+            total=max(int(total or 0),0)
             percent=(current/total*100) if total else 0
             elapsed=max(time.monotonic()-started,0.001)
             speed=current/elapsed
-            remaining=max((total-current),0)
+            remaining=max(total-current,0)
             eta=(remaining/speed) if speed>0 and total else 0
             text=(
                 f"<b>{label}...</b>\n\n"
@@ -190,7 +216,7 @@ def _make_progress_callback(bot,chat_id,status_msg_id,file_size,started,show_pro
         if file_size and total<file_size*0.8:
             return
         now=time.monotonic()
-        pct=current/total*100
+        pct=(current/total*100) if total else 0
         if pct<100 and now-state["last_ts"]<interval:
             return
         if pct<100 and state["last_pct"]>=0 and pct-state["last_pct"]<_PROGRESS_STEP:
@@ -207,6 +233,12 @@ async def _wait_last_progress_task(state:dict):
     if task:
         await asyncio.gather(task,return_exceptions=True)
 
+def _close_file_handle(fh,path:str):
+    try:
+        fh.close()
+    except Exception as e:
+        log.warning("Failed to close upload file handle | file=%s err=%r",os.path.basename(path),e)
+
 async def _fast_upload_video(client,file_path,progress_callback):
     if not is_fasttelethon_enabled():
         return None
@@ -214,8 +246,11 @@ async def _fast_upload_video(client,file_path,progress_callback):
         raise RuntimeError("FastTelethonhelper is not installed")
     name=os.path.basename(file_path) or "video.mp4"
     log.info("FastTelethon upload start | file=%s",name)
-    with open(file_path,"rb") as f:
+    f=open(file_path,"rb")
+    try:
         uploaded=await fast_upload_file(client=client,file=f,name=name,progress_callback=progress_callback)
+    finally:
+        _close_file_handle(f,file_path)
     log.info("FastTelethon upload done | file=%s",name)
     return uploaded
 
@@ -224,19 +259,32 @@ async def try_send_video_via_mtproto(bot,chat_id,status_msg_id,file_path,caption
         return False
     if not file_path or not os.path.exists(file_path):
         return False
+    key=(int(chat_id),int(status_msg_id))
     file_size=os.path.getsize(file_path)
     show_progress=file_size>=_PROGRESS_MIN_BYTES
     interval=_progress_interval(file_size)
     started=time.monotonic()
     fast_used=False
+    state={"task":None}
     try:
         client=await _get_client()
         entity=await _resolve_entity(client,chat_id)
         attrs=[]
         if DocumentAttributeVideo and duration and width and height:
             attrs.append(DocumentAttributeVideo(duration=int(duration),w=int(width),h=int(height),supports_streaming=True))
-        progress_callback,state=_make_progress_callback(bot,chat_id,status_msg_id,file_size,started,show_progress,interval,"FastTelethon uploading video" if is_fasttelethon_enabled() else "Uploading video")
-        log.info("MTProto upload start | chat_id=%s file=%s size=%s progress=%s interval=%.1fs part_size=%sKB fast=%s fast_available=%s",chat_id,os.path.basename(file_path),_format_size(file_size),show_progress,interval,_PART_SIZE_KB,is_fasttelethon_enabled(),is_fasttelethon_available())
+        label="FastTelethon uploading video" if is_fasttelethon_enabled() else "Uploading video"
+        progress_callback,state=_make_progress_callback(bot,chat_id,status_msg_id,file_size,started,show_progress,interval,label)
+        log.info(
+            "MTProto upload start | chat_id=%s file=%s size=%s progress=%s interval=%.1fs part_size=%sKB fast=%s fast_available=%s",
+            chat_id,
+            os.path.basename(file_path),
+            _format_size(file_size),
+            show_progress,
+            interval,
+            _PART_SIZE_KB,
+            is_fasttelethon_enabled(),
+            is_fasttelethon_available(),
+        )
         uploaded_file=None
         if is_fasttelethon_enabled():
             try:
@@ -244,7 +292,12 @@ async def try_send_video_via_mtproto(bot,chat_id,status_msg_id,file_path,caption
                 fast_used=uploaded_file is not None
                 await _wait_last_progress_task(state)
             except Exception as e:
-                log.warning("FastTelethon upload failed, fallback to normal Telethon | chat_id=%s file=%s err=%r",chat_id,os.path.basename(file_path),e)
+                log.warning(
+                    "FastTelethon upload failed, fallback to normal Telethon | chat_id=%s file=%s err=%r",
+                    chat_id,
+                    os.path.basename(file_path),
+                    e,
+                )
                 started=time.monotonic()
                 progress_callback,state=_make_progress_callback(bot,chat_id,status_msg_id,file_size,started,show_progress,interval,"Uploading video")
         send_kwargs={
@@ -265,8 +318,19 @@ async def try_send_video_via_mtproto(bot,chat_id,status_msg_id,file_path,caption
         await _wait_last_progress_task(state)
         elapsed=time.monotonic()-started
         speed=file_size/max(elapsed,0.001)
-        log.info("Telegram MTProto send done | chat_id=%s file=%s size=%s elapsed=%.2fs avg_speed=%s/s fast=%s",chat_id,os.path.basename(file_path),_format_size(file_size),elapsed,_format_size(speed),fast_used)
+        log.info(
+            "Telegram MTProto send done | chat_id=%s file=%s size=%s elapsed=%.2fs avg_speed=%s/s fast=%s",
+            chat_id,
+            os.path.basename(file_path),
+            _format_size(file_size),
+            elapsed,
+            _format_size(speed),
+            fast_used,
+        )
         return True
     except Exception as e:
         log.warning("MTProto upload failed, fallback to PTB | chat_id=%s file=%s err=%r",chat_id,os.path.basename(file_path),e)
         return False
+    finally:
+        await _wait_last_progress_task(state)
+        _drop_progress_lock(key)
