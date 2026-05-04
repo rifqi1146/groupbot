@@ -202,17 +202,21 @@ async def _extract_visual_data_url(bot,msg):
         raise
 
 def _build_user_content(prompt:str,image_data_url:str|None=None):
-    prompt=(prompt or "").strip() or "Jelaskan isi gambar ini."
+    prompt=(prompt or "").strip()
     if not image_data_url:
         return prompt
-    return [
-        {"type":"image_url","image_url":{"url":image_data_url}},
-        {"type":"text","text":prompt},
-    ]
+    content=[{"type":"image_url","image_url":{"url":image_data_url}}]
+    if prompt:
+        content.append({"type":"text","text":prompt})
+    return content
 
 def _memory_prompt(prompt:str,has_image:bool)->str:
-    prompt=(prompt or "").strip() or "Jelaskan isi gambar ini."
-    return f"{prompt}\n[User sent an image or static sticker.]" if has_image else prompt
+    prompt=(prompt or "").strip()
+    if has_image and prompt:
+        return f"{prompt}\n[User sent an image or static sticker.]"
+    if has_image:
+        return "[User sent an image or static sticker.]"
+    return prompt
 
 def _cf_credentials():
     pairs=[]
