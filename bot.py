@@ -16,7 +16,7 @@ from handlers.dl.pyrogram_uploader import warmup_pyrogram_uploader,shutdown_pyro
 
 BOT_USERNAME=None
 LOCAL_BOT_API_HOST=os.getenv("LOCAL_BOT_API_HOST","127.0.0.1")
-LOCAL_BOT_API_PORT=int(os.getenv("LOCAL_BOT_API_PORT","8081"))
+LOCAL_BOT_API_PORT=int(os.getenv("LOCAL_BOT_API_PORT","1234"))
 PREFER_LOCAL_BOT_API=os.getenv("PREFER_LOCAL_BOT_API","1").strip().lower() not in ("0","false","no")
 
 BOT_COMMANDS=[
@@ -70,32 +70,6 @@ class TokenRedactFilter(logging.Filter):
                 record.args=self._clean_arg(record.args)
         return True
 
-class LibraryNoiseFilter(logging.Filter):
-    NOISE_PATTERNS=(
-        re.compile(r'^\[.*?\] Waiting for \d+ seconds? before continuing \(required by "upload\.SaveBigFilePart"\)$'),
-        re.compile(r"^Connecting\.\.\.$"),
-        re.compile(r"^Connected!.*$"),
-        re.compile(r"^NetworkTask (started|stopped)$"),
-        re.compile(r"^Session initialized:.*$"),
-        re.compile(r"^Device:.*$"),
-        re.compile(r"^System:.*$"),
-        re.compile(r"^Session (started|stopped)$"),
-        re.compile(r"^PingTask (started|stopped)$"),
-        re.compile(r"^Disconnected$"),
-        re.compile(r"^Started \d+ HandlerTasks$"),
-    )
-
-    def filter(self,record):
-        msg=record.getMessage()
-        name=(record.name or "").lower()
-        if name.startswith(("pyrogram","pyrofork")):
-            for pattern in self.NOISE_PATTERNS:
-                if pattern.search(msg):
-                    return False
-        if 'required by "upload.SaveBigFilePart"' in msg:
-            return False
-        return True
-
 class EmojiFormatter(logging.Formatter):
     EMOJI={
         logging.INFO:"➜",
@@ -114,7 +88,6 @@ class EmojiFormatter(logging.Formatter):
 def setup_logger():
     handler=logging.StreamHandler()
     handler.addFilter(TokenRedactFilter())
-    handler.addFilter(LibraryNoiseFilter())
     handler.setFormatter(EmojiFormatter("[%(asctime)s] %(message)s","%H:%M:%S"))
 
     root=logging.getLogger()
