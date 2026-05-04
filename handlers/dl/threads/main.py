@@ -18,7 +18,7 @@ from handlers.dl.ytdlp import ytdlp_download
 
 log=logging.getLogger(__name__)
 THREADS_URL_RE=re.compile(r"https?://(?:www\.)?threads\.(?:com|net)/(?:@[^/?#]+/)?(?:p|post)/([A-Za-z0-9_-]+)",re.I)
-DEBUG_THREADS=os.getenv("THREADS_DEBUG","1").lower() in ("1","true","on","yes")
+DEBUG_THREADS=os.getenv("THREADS_DEBUG","0").lower() in ("1","true","on","yes")
 THREADS_PROGRESS_INTERVAL=float(os.getenv("THREADS_PROGRESS_INTERVAL","3"))
 THREADS_HEADERS={
     "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -166,25 +166,25 @@ def _parse_threads_embed_media(body:bytes)->dict:
     if caption_el:
         result["caption"]=html.unescape(caption_el.get_text(" ",strip=True) or "").strip()
     seen=set()
+    blocked_imgs=set()
     for container in soup.select(".MediaContainer, .SoloMediaContainer"):
-        has_video=False
         for vid in container.select("video"):
             source=vid.select_one("source")
             src=_normalize_media_url((source.get("src","") if source else "") or vid.get("src",""))
+            poster=_normalize_media_url(vid.get("poster",""))
+            if poster:
+                blocked_imgs.add(poster)
             if not src or src in seen:
                 continue
-            has_video=True
             seen.add(src)
             result["items"].append({"type":"video","url":src})
-        if has_video:
-            continue
         for img in container.select("img"):
             src=_normalize_media_url(img.get("src",""))
-            if not src or src in seen:
+            if not src or src in seen or src in blocked_imgs:
                 continue
             seen.add(src)
             result["items"].append({"type":"photo","url":src})
-    _dbg("parse embed done | caption=%s items=%s",bool(result["caption"]),len(result["items"]))
+    _dbg("parse embed done | caption=%s items=%s types=%s",bool(result["caption"]),len(result["items"]),[x.get("type") for x in result["items"]])
     if not result["items"]:
         raise RuntimeError("no media found in threads embed")
     return result
