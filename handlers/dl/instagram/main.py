@@ -129,6 +129,38 @@ def _extract_json_ld_metadata(html_text: str) -> dict:
                 return {"caption": caption, "username": username, "nickname": nickname}
     return {"caption": "", "username": "", "nickname": ""}
 
+def _fallback_caption_meta(primary_html:str,secondary_html:str="")->dict:
+    for source in (primary_html or "",secondary_html or ""):
+        meta=_extract_json_ld_metadata(source)
+        if meta.get("caption") or meta.get("username") or meta.get("nickname"):
+            return meta
+    caption=(
+        _extract_meta(primary_html,"og:description")
+        or _extract_meta(primary_html,"twitter:description")
+        or _extract_meta(primary_html,"description")
+        or _extract_meta(primary_html,"og:title")
+        or _extract_meta(primary_html,"twitter:title")
+        or _extract_meta(secondary_html,"og:description")
+        or _extract_meta(secondary_html,"twitter:description")
+        or _extract_meta(secondary_html,"description")
+        or _extract_meta(secondary_html,"og:title")
+        or _extract_meta(secondary_html,"twitter:title")
+    ).strip()
+    username=""
+    nickname=""
+    m=re.search(r"@([A-Za-z0-9._]+)",caption)
+    if m:
+        username=m.group(1).strip()
+    title_tag=(
+        _extract_meta(primary_html,"og:title")
+        or _extract_meta(primary_html,"twitter:title")
+        or _extract_meta(secondary_html,"og:title")
+        or _extract_meta(secondary_html,"twitter:title")
+    ).strip()
+    if title_tag:
+        nickname=title_tag.split(" on Instagram",1)[0].strip() if " on Instagram" in title_tag else title_tag
+    return {"caption":caption,"username":username,"nickname":nickname}
+    
 async def _fetch_instagram_caption_meta(raw_url:str)->dict:
     session=await get_http_session()
     url=_normalize_instagram_url(raw_url)
