@@ -2,6 +2,7 @@ import re,os,uuid,base64,shutil,asyncio,random,html,logging,mimetypes,subprocess
 from typing import Optional
 from bs4 import BeautifulSoup
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
 from handlers.gsearch import google_search
@@ -35,13 +36,48 @@ def _cleanup_memory():
     except Exception as e:
         logger.warning("Failed to schedule Caca memory cleanup | err=%r",e)
 
-async def _typing_loop(bot,chat_id,stop:asyncio.Event):
+async def _typing_loop(bot,chat_id,stop:asyncio.Event,message_thread_id=None):
     try:
         while not stop.is_set():
-            await bot.send_chat_action(chat_id,"typing")
+            await bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING,
+                message_thread_id=message_thread_id,
+            )
             await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        logger.debug("Caca typing loop cancelled | chat_id=%s thread_id=%s",chat_id,message_thread_id)
+        raise
     except Exception as e:
-        logger.debug("Caca typing loop stopped | err=%r",e)
+        logger.warning("Caca typing loop stopped | chat_id=%s thread_id=%s err=%r",chat_id,message_thread_id,e)
+
+async def _stop_typing_task(stop,typing):
+    if stop:
+        stop.set()
+    if typing:
+        typing.cancel()
+        try:
+            await typing
+        except asyncio.CancelledError:
+            logger.debug("Caca typing task stopped")
+        except Exception as e:
+            logger.warning("Caca typing task stop failed | err=%r",e)
+
+async def _reply_thread(bot,msg,text,parse_mode=None):
+    thread_id=getattr(msg,"message_thread_id",None)
+    kwargs={
+        "chat_id":msg.chat_id,
+        "text":text,
+        "parse_mode":parse_mode,
+        "message_thread_id":thread_id,
+        "reply_to_message_id":msg.message_id,
+    }
+    try:
+        return await bot.send_message(**kwargs)
+    except Exception as e:
+        logger.warning("Caca threaded reply failed, retry without reply target | chat_id=%s thread_id=%s err=%r",msg.chat_id,thread_id,e)
+        kwargs.pop("reply_to_message_id",None)
+        return await bot.send_message(**kwargs)
 
 def _normalize_caca_output(text:str)->str:
     text=(text or "").replace("\r\n","\n").replace("\r","\n")
@@ -345,7 +381,7 @@ async def meta_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if chat and chat.type in ("group","supergroup"):
         groups=await caca_db.load_groups()
         if chat.id not in groups:
-            return await msg.reply_text("<b>Caca tidak tersedia di grup ini</b>",parse_mode="HTML")
+            return await _reply_thread(context.bot,msg,"<b>Caca tidak tersedia di grup ini</b>",parse_mode="HTML")
     prompt=""
     use_search=False
     fresh_session=False
@@ -364,19 +400,22 @@ async def meta_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
                 prompt=" ".join(context.args).strip()
             image_data_url,image_path,converted_path=await _extract_visual_data_url(context.bot,msg)
             if not prompt and not image_data_url:
-                return await msg.reply_text(
+                return await _reply_thread(
+                    context.bot,
+                    msg,
                     f"{em} Pake gini:\n/caca <teks>\n/caca search <teks>\natau reply gambar/sticker pake /caca <pertanyaan>"
                 )
         elif msg.reply_to_message:
             history=await caca_memory.get_history(user_id)
             if not history:
-                return await msg.reply_text("😒 Gue ga inget ngobrol sama lu.\nKetik /caca dulu.")
+                return await _reply_thread(context.bot,msg,"😒 Gue ga inget ngobrol sama lu.\nKetik /caca dulu.")
             prompt=(msg.text or msg.caption or "").strip()
             image_data_url,image_path,converted_path=await _extract_visual_data_url(context.bot,msg)
         if not prompt and not image_data_url:
             return
+        thread_id=getattr(msg,"message_thread_id",None)
         stop=asyncio.Event()
-        typing=asyncio.create_task(_typing_loop(context.bot,chat.id,stop))
+        typing=asyncio.create_task(_typing_loop(context.bot,msg.chat_id,stop,thread_id))
         search_context=""
         if use_search:
             try:
@@ -400,22 +439,16 @@ async def meta_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
             {"role":"assistant","content":cleaned},
         ]
         await caca_memory.set_history(user_id,history)
-        if stop:
-            stop.set()
-        if typing:
-            typing.cancel()
+        await _stop_typing_task(stop,typing)
         chunks=split_message(cleaned,4000)
         sent=None
         for chunk in chunks:
-            sent=await msg.reply_text(chunk,parse_mode="HTML")
+            sent=await _reply_thread(context.bot,msg,chunk,parse_mode="HTML")
         if sent:
             await caca_memory.set_last_message_id(user_id,sent.message_id)
     except Exception as e:
-        if stop:
-            stop.set()
-        if typing:
-            typing.cancel()
-        await msg.reply_text(f"{em} Error: {html.escape(str(e))}")
+        await _stop_typing_task(stop,typing)
+        await _reply_thread(context.bot,msg,f"{em} Error: {html.escape(str(e))}",parse_mode="HTML")
     finally:
         for path in (image_path,converted_path):
             try:
