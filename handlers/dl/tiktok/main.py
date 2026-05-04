@@ -787,12 +787,7 @@ async def _download_album_images(session,image_urls:list[str],title:str,bot,chat
     total=len(image_urls)
     sem=asyncio.Semaphore(8)
     results=[None]*total
-    done_count=0
-    done_lock=asyncio.Lock()
-    async def update_progress(current:int):
-        await _safe_edit_status(bot,chat_id,status_msg_id,f"<b>Downloading TikTok slideshow...</b>\n\n<code>Downloaded photos: {current} of {total}</code>")
     async def one(idx:int,image_url:str):
-        nonlocal done_count
         async with sem:
             safe_title=sanitize_filename(title or "TikTok Slideshow")
             out_path=f"{TMP_DIR}/{uuid.uuid4().hex}_{safe_title}_{idx+1}.jpg"
@@ -805,15 +800,11 @@ async def _download_album_images(session,image_urls:list[str],title:str,bot,chat
                             if chunk:
                                 await f.write(chunk)
                 results[idx]={"type":"photo","path":out_path}
-                async with done_lock:
-                    done_count+=1
-                    current=done_count
-                await update_progress(current)
+                log.info("TikTok slideshow image saved | index=%s/%s file=%s",idx+1,total,out_path)
             except Exception as e:
                 log.exception("Failed to download slideshow image | index=%s url=%s err=%r",idx,image_url,e)
                 _safe_remove_file(out_path,"failed slideshow image")
                 raise
-    await update_progress(0)
     await asyncio.gather(*(one(i,url) for i,url in enumerate(image_urls)))
     return [x for x in results if x]
 
@@ -845,7 +836,7 @@ async def tiktok_scrape_download(url,bot,chat_id,status_msg_id,fmt_key="mp4"):
     if kind=="video":
         return await _download_direct_video(media,bot,chat_id,status_msg_id)
     if kind=="album":
-        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>TikTok slideshow detected...</b>")
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Downloading TikTok slideshow...</b>",min_interval=0)
         return await _download_direct_album(media,bot,chat_id,status_msg_id)
     raise RuntimeError("Unsupported TikTok media type")
 

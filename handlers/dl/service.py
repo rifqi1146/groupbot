@@ -21,11 +21,7 @@ from .remux import video_meta,make_video_thumbnail
 from .mtproto_uploader import try_send_video_via_mtproto
 
 log=logging.getLogger(__name__)
-_SEND_SEMAPHORES={}
-_CHAT_SLOWMODE_UNTIL={}
-_LAST_SEND_AT={}
-_MAX_PARALLEL_SENDS_PER_CHAT=10
-_MIN_GAP_PER_CHAT=0.3
+
 _ALBUM_CHUNK_SIZE=10
 _ALBUM_CHUNK_COOLDOWN=5
 
@@ -88,49 +84,6 @@ def _is_reply_not_found_error(exc:Exception)->bool:
     keys=("replied message not found","message to be replied not found","reply message not found","reply_to_message_id")
     return any(k in text for k in keys)
 
-def _get_chat_semaphore(chat_id):
-    sem=_SEND_SEMAPHORES.get(chat_id)
-    if sem is None:
-        sem=asyncio.Semaphore(_MAX_PARALLEL_SENDS_PER_CHAT)
-        _SEND_SEMAPHORES[chat_id]=sem
-    return sem
-
-async def _wait_send_slot(chat_id:int):
-    now=time.monotonic()
-    slow_until=_CHAT_SLOWMODE_UNTIL.get(chat_id,0.0)
-    if slow_until>now:
-        await asyncio.sleep(slow_until-now)
-    last_at=_LAST_SEND_AT.get(chat_id,0.0)
-    wait_gap=_MIN_GAP_PER_CHAT-(time.monotonic()-last_at)
-    if wait_gap>0:
-        await asyncio.sleep(wait_gap)
-
-def _mark_sent(chat_id:int):
-    _LAST_SEND_AT[chat_id]=time.monotonic()
-
-def _apply_retry_after(chat_id:int,retry_after:int):
-    until=time.monotonic()+max(int(retry_after),1)+1
-    prev=_CHAT_SLOWMODE_UNTIL.get(chat_id,0.0)
-    _CHAT_SLOWMODE_UNTIL[chat_id]=max(prev,until)
-
-async def _guarded_api_call(rate_key:int,func,*args,**kwargs):
-    sem=_get_chat_semaphore(rate_key)
-    async with sem:
-        while True:
-            await _wait_send_slot(rate_key)
-            try:
-                started=time.monotonic()
-                result=await func(*args,**kwargs)
-                elapsed=time.monotonic()-started
-                _mark_sent(rate_key)
-                log.info("Telegram send done | chat_id=%s func=%s elapsed=%.2fs",rate_key,getattr(func,"__name__",str(func)),elapsed)
-                return result
-            except RetryAfter as e:
-                retry_after=int(getattr(e,"retry_after",3))
-                _apply_retry_after(rate_key,retry_after)
-                log.warning("RetryAfter | chat_id=%s wait=%s",rate_key,retry_after)
-                await asyncio.sleep(retry_after+1)
-
 async def _get_bot_name(bot)->str:
     cached=getattr(bot,"_cached_first_name",None)
     if cached:
@@ -144,9 +97,8 @@ async def _safe_edit_status(bot,chat_id,message_id,text:str):
     try:
         await bot.edit_message_text(chat_id=chat_id,message_id=message_id,text=text,parse_mode="HTML")
     except RetryAfter as e:
-        retry_after=int(getattr(e,"retry_after",3))
-        _apply_retry_after(chat_id,retry_after)
-        log.warning("RetryAfter while editing status | chat_id=%s wait=%s",chat_id,retry_after)
+        retry_after=max(int(getattr(e,"retry_after",3)),1)
+        log.warning("RetryAfter while editing status skipped | chat_id=%s wait=%s",chat_id,retry_after)
     except Exception as e:
         if "message is not modified" in (str(e) or "").lower():
             return
@@ -169,9 +121,9 @@ async def _set_uploading_status(bot,chat_id,status_msg_id,kind:str):
     try:
         await bot.send_chat_action(chat_id=chat_id,action=action)
     except RetryAfter as e:
-        retry_after=int(getattr(e,"retry_after",3))
-        _apply_retry_after(chat_id,retry_after)
+        retry_after=max(int(getattr(e,"retry_after",3)),1)
         log.warning("RetryAfter while sending chat action | chat_id=%s wait=%s",chat_id,retry_after)
+        await asyncio.sleep(retry_after+1)
     except Exception as e:
         log.warning("Failed to send chat action | chat_id=%s action=%s err=%s",chat_id,action,e)
 
@@ -204,7 +156,14 @@ async def _delete_file(path:str|None,label:str):
 async def _send_media_group_with_fallback(bot,chat_id,media,reply_to=None,message_thread_id=None):
     while True:
         try:
-            return await _guarded_api_call(chat_id,bot.send_media_group,chat_id=chat_id,media=media,reply_to_message_id=reply_to,message_thread_id=message_thread_id)
+            started=time.monotonic()
+            result=await bot.send_media_group(chat_id=chat_id,media=media,reply_to_message_id=reply_to,message_thread_id=message_thread_id)
+            log.info("Telegram send done | chat_id=%s func=send_media_group elapsed=%.2fs",chat_id,time.monotonic()-started)
+            return result
+        except RetryAfter as e:
+            retry_after=max(int(getattr(e,"retry_after",3)),1)
+            log.warning("RetryAfter send_media_group | chat_id=%s wait=%s",chat_id,retry_after)
+            await asyncio.sleep(retry_after+1)
         except Exception as e:
             if reply_to and _is_reply_not_found_error(e):
                 reply_to=None
@@ -213,13 +172,31 @@ async def _send_media_group_with_fallback(bot,chat_id,media,reply_to=None,messag
             raise
 
 async def _send_photo_with_fallback(bot,chat_id,photo,caption,reply_to=None,message_thread_id=None):
-    try:
-        return await _guarded_api_call(chat_id,bot.send_photo,chat_id=chat_id,photo=photo,caption=caption,parse_mode="HTML",reply_to_message_id=reply_to,message_thread_id=message_thread_id,disable_notification=True)
-    except Exception as e:
-        if reply_to and _is_reply_not_found_error(e):
-            return await _guarded_api_call(chat_id,bot.send_photo,chat_id=chat_id,photo=photo,caption=caption,parse_mode="HTML",message_thread_id=message_thread_id,disable_notification=True)
-        log.exception("Failed to send photo | chat_id=%s",chat_id)
-        raise
+    kwargs={
+        "chat_id":chat_id,
+        "photo":photo,
+        "caption":caption,
+        "parse_mode":"HTML",
+        "reply_to_message_id":reply_to,
+        "message_thread_id":message_thread_id,
+        "disable_notification":True,
+    }
+    while True:
+        try:
+            started=time.monotonic()
+            result=await bot.send_photo(**kwargs)
+            log.info("Telegram send done | chat_id=%s func=send_photo elapsed=%.2fs",chat_id,time.monotonic()-started)
+            return result
+        except RetryAfter as e:
+            retry_after=max(int(getattr(e,"retry_after",3)),1)
+            log.warning("RetryAfter send_photo | chat_id=%s wait=%s",chat_id,retry_after)
+            await asyncio.sleep(retry_after+1)
+        except Exception as e:
+            if kwargs.get("reply_to_message_id") and _is_reply_not_found_error(e):
+                kwargs.pop("reply_to_message_id",None)
+                continue
+            log.exception("Failed to send photo | chat_id=%s",chat_id)
+            raise
 
 async def _send_video_with_fallback(bot,chat_id,video,caption,reply_to=None,message_thread_id=None,supports_streaming=True,duration=None,width=None,height=None,thumbnail=None):
     kwargs={
@@ -240,25 +217,52 @@ async def _send_video_with_fallback(bot,chat_id,video,caption,reply_to=None,mess
         kwargs["height"]=int(height)
     if thumbnail:
         kwargs["thumbnail"]=thumbnail
-    try:
-        return await _guarded_api_call(chat_id,bot.send_video,**kwargs)
-    except Exception as e:
-        if reply_to and _is_reply_not_found_error(e):
-            _safe_seek(video,"video",chat_id)
-            _safe_seek(thumbnail,"thumbnail",chat_id)
-            kwargs.pop("reply_to_message_id",None)
-            return await _guarded_api_call(chat_id,bot.send_video,**kwargs)
-        log.exception("Failed to send video | chat_id=%s",chat_id)
-        raise
+    while True:
+        try:
+            started=time.monotonic()
+            result=await bot.send_video(**kwargs)
+            log.info("Telegram send done | chat_id=%s func=send_video elapsed=%.2fs",chat_id,time.monotonic()-started)
+            return result
+        except RetryAfter as e:
+            retry_after=max(int(getattr(e,"retry_after",3)),1)
+            log.warning("RetryAfter send_video | chat_id=%s wait=%s",chat_id,retry_after)
+            await asyncio.sleep(retry_after+1)
+        except Exception as e:
+            if kwargs.get("reply_to_message_id") and _is_reply_not_found_error(e):
+                _safe_seek(video,"video",chat_id)
+                _safe_seek(thumbnail,"thumbnail",chat_id)
+                kwargs.pop("reply_to_message_id",None)
+                continue
+            log.exception("Failed to send video | chat_id=%s",chat_id)
+            raise
 
 async def _send_audio_with_fallback(bot,chat_id,audio,title,performer,filename,reply_to=None,message_thread_id=None):
-    try:
-        return await _guarded_api_call(chat_id,bot.send_audio,chat_id=chat_id,audio=audio,title=title,performer=performer,filename=filename,reply_to_message_id=reply_to,message_thread_id=message_thread_id,disable_notification=True)
-    except Exception as e:
-        if reply_to and _is_reply_not_found_error(e):
-            return await _guarded_api_call(chat_id,bot.send_audio,chat_id=chat_id,audio=audio,title=title,performer=performer,filename=filename,message_thread_id=message_thread_id,disable_notification=True)
-        log.exception("Failed to send audio | chat_id=%s",chat_id)
-        raise
+    kwargs={
+        "chat_id":chat_id,
+        "audio":audio,
+        "title":title,
+        "performer":performer,
+        "filename":filename,
+        "reply_to_message_id":reply_to,
+        "message_thread_id":message_thread_id,
+        "disable_notification":True,
+    }
+    while True:
+        try:
+            started=time.monotonic()
+            result=await bot.send_audio(**kwargs)
+            log.info("Telegram send done | chat_id=%s func=send_audio elapsed=%.2fs",chat_id,time.monotonic()-started)
+            return result
+        except RetryAfter as e:
+            retry_after=max(int(getattr(e,"retry_after",3)),1)
+            log.warning("RetryAfter send_audio | chat_id=%s wait=%s",chat_id,retry_after)
+            await asyncio.sleep(retry_after+1)
+        except Exception as e:
+            if kwargs.get("reply_to_message_id") and _is_reply_not_found_error(e):
+                kwargs.pop("reply_to_message_id",None)
+                continue
+            log.exception("Failed to send audio | chat_id=%s",chat_id)
+            raise
 
 async def _cleanup_album_files(items:list[dict]):
     for item in items:
