@@ -25,3 +25,4 @@ aiofiles
 cryptg
 telethon
 yt-search-py
+lottie
