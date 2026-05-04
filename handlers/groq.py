@@ -1,6 +1,7 @@
 import re,json,time,html,random,asyncio,logging,aiohttp
 from typing import Optional
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
 from rag.retriever import retrieve_context
@@ -14,7 +15,7 @@ log=logging.getLogger(__name__)
 LOCAL_CONTEXTS=load_local_contexts()
 SYSTEM_PROMPT=(
     "Jawab selalu menggunakan Bahasa Indonesia yang santai.\n"
-    "Kalo user bertanya debgan bahasa inggris, jawab juga dengan bahasa inggris\n"
+    "Kalo user bertanya dengan bahasa inggris, jawab juga dengan bahasa inggris\n"
     "Lu adalah kiyoshi bot, bot buatan @HirohitoKiyoshi,\n"
     "Jelas ala gen z yang asik, tapi tetap mudah dipahami.\n"
     "Jangan gunakan Bahasa Inggris kecuali diminta.\n"
@@ -44,6 +45,49 @@ def _can(uid:int)->bool:
     _last_req[uid]=now
     return True
 
+async def _typing_loop(bot,chat_id,stop_event:asyncio.Event,message_thread_id=None):
+    try:
+        while not stop_event.is_set():
+            await bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING,
+                message_thread_id=message_thread_id,
+            )
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        log.debug("Groq typing loop cancelled | chat_id=%s thread_id=%s",chat_id,message_thread_id)
+        raise
+    except Exception as e:
+        log.warning("Groq typing loop stopped | chat_id=%s thread_id=%s err=%r",chat_id,message_thread_id,e)
+
+async def _stop_typing_task(stop_event,typing):
+    if stop_event:
+        stop_event.set()
+    if typing:
+        typing.cancel()
+        try:
+            await typing
+        except asyncio.CancelledError:
+            log.debug("Groq typing task stopped")
+        except Exception as e:
+            log.warning("Groq typing task stop failed | err=%r",e)
+
+async def _reply_thread(bot,msg,text,parse_mode=None):
+    thread_id=getattr(msg,"message_thread_id",None)
+    kwargs={
+        "chat_id":msg.chat_id,
+        "text":text,
+        "parse_mode":parse_mode,
+        "message_thread_id":thread_id,
+        "reply_to_message_id":msg.message_id,
+    }
+    try:
+        return await bot.send_message(**kwargs)
+    except Exception as e:
+        log.warning("Groq threaded reply failed, retry without reply target | chat_id=%s thread_id=%s err=%r",msg.chat_id,thread_id,e)
+        kwargs.pop("reply_to_message_id",None)
+        return await bot.send_message(**kwargs)
+
 async def build_groq_rag_prompt(user_prompt:str)->str:
     try:
         contexts=await retrieve_context(user_prompt,LOCAL_CONTEXTS,top_k=3)
@@ -69,7 +113,7 @@ async def ask_groq_text(prompt:str,history:Optional[list]=None,use_search:bool=F
         "messages":messages,
         "temperature":0.9 if use_search else 0.7,
         "top_p":0.95,
-        "max_completion_tokens":4096,
+        "max_completion_tokens":2048,
     }
     if use_search:
         payload["tools"]=[{"type":"browser_search"}]
@@ -82,12 +126,14 @@ async def ask_groq_text(prompt:str,history:Optional[list]=None,use_search:bool=F
         timeout=aiohttp.ClientTimeout(total=GROQ_TIMEOUT),
     ) as resp:
         raw_resp=await resp.text()
+        status=resp.status
     try:
         data=json.loads(raw_resp)
-    except Exception:
+    except Exception as e:
+        log.warning("Groq response JSON parse failed | status=%s err=%r body=%r",status,e,raw_resp[:500])
         data={}
-    if resp.status!=200:
-        err=data.get("error",{}).get("message") or data.get("message") or raw_resp or f"Groq HTTP {resp.status}"
+    if status!=200:
+        err=data.get("error",{}).get("message") or data.get("message") or raw_resp or f"Groq HTTP {status}"
         raise RuntimeError(err)
     if "choices" not in data or not data["choices"]:
         raise RuntimeError("Groq response kosong")
@@ -100,14 +146,6 @@ async def ask_groq_text(prompt:str,history:Optional[list]=None,use_search:bool=F
     raw=re.sub(r"[ꦀ-꧿]+","",raw)
     return raw.strip()
 
-async def _typing_loop(bot,chat_id,stop_event:asyncio.Event):
-    try:
-        while not stop_event.is_set():
-            await bot.send_chat_action(chat_id=chat_id,action="typing")
-            await asyncio.sleep(4)
-    except Exception as e:
-        log.debug("Groq typing loop stopped | err=%r",e)
-
 async def groq_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if not await require_join_or_block(update,context):
         return
@@ -115,11 +153,12 @@ async def groq_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.from_user:
         return
     user_id=msg.from_user.id
-    chat_id=update.effective_chat.id
     em=_emo()
     prompt=""
     use_search=False
     fresh_session=False
+    stop=None
+    typing=None
     if msg.text and msg.text.startswith("/groq"):
         if context.args and context.args[0].lower()=="search":
             use_search=True
@@ -128,28 +167,28 @@ async def groq_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
             fresh_session=True
             prompt=" ".join(context.args).strip()
         if not prompt:
-            return await msg.reply_text(f"{em} Gunakan:\n/groq <pertanyaan>\n/groq search <pertanyaan>")
+            return await _reply_thread(context.bot,msg,f"{em} Gunakan:\n/groq <pertanyaan>\n/groq search <pertanyaan>")
     elif msg.reply_to_message:
         reply_mid=msg.reply_to_message.message_id
         active_mid=await groq_memory.get_last_message_id(user_id)
         if not active_mid or int(active_mid)!=int(reply_mid):
-            return await msg.reply_text("😒 Ketik /groq dulu.")
+            return await _reply_thread(context.bot,msg,"😒 Ketik /groq dulu.")
         prompt=(msg.text or "").strip()
     if not prompt:
         return
     if not _can(user_id):
-        return await msg.reply_text(f"{em} ⏳ Sabar dulu…")
-    stop=asyncio.Event()
-    typing=asyncio.create_task(_typing_loop(context.bot,chat_id,stop))
+        return await _reply_thread(context.bot,msg,f"{em} ⏳ Sabar dulu…")
     try:
+        thread_id=getattr(msg,"message_thread_id",None)
+        stop=asyncio.Event()
+        typing=asyncio.create_task(_typing_loop(context.bot,msg.chat_id,stop,thread_id))
         history=[] if fresh_session else await groq_memory.get_history(user_id)
         raw=await ask_groq_text(prompt=prompt,history=history,use_search=use_search)
-        stop.set()
-        typing.cancel()
+        await _stop_typing_task(stop,typing)
         chunks=split_message(raw,4000)
         last_sent=None
         for chunk in chunks:
-            last_sent=await msg.reply_text(chunk,parse_mode="HTML")
+            last_sent=await _reply_thread(context.bot,msg,chunk,parse_mode="HTML")
         if last_sent:
             history.extend([
                 {"role":"user","content":prompt},
@@ -157,7 +196,6 @@ async def groq_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
             ])
             await groq_memory.set_history(user_id,history,last_sent.message_id)
     except Exception as e:
-        stop.set()
-        typing.cancel()
+        await _stop_typing_task(stop,typing)
         log.warning("Groq request failed | user_id=%s err=%r",user_id,e)
-        await msg.reply_text(f"{em} ❌ Error: {html.escape(str(e))}")
+        await _reply_thread(context.bot,msg,f"{em} ❌ Error: {html.escape(str(e))}",parse_mode="HTML")

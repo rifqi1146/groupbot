@@ -1,6 +1,7 @@
 import asyncio,json,html,logging,aiohttp
 from typing import Optional
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from handlers.join import require_join_or_block
 from utils.text import split_message,sanitize_ai_output
@@ -14,13 +15,48 @@ from utils import gemini_memory
 log=logging.getLogger(__name__)
 LOCAL_CONTEXTS=load_local_contexts()
 
-async def _typing_loop(bot,chat_id,stop:asyncio.Event):
+async def _typing_loop(bot,chat_id,stop:asyncio.Event,message_thread_id=None):
     try:
         while not stop.is_set():
-            await bot.send_chat_action(chat_id=chat_id,action="typing")
+            await bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING,
+                message_thread_id=message_thread_id,
+            )
             await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        log.debug("Gemini typing loop cancelled | chat_id=%s thread_id=%s",chat_id,message_thread_id)
+        raise
     except Exception as e:
-        log.debug("Gemini typing loop stopped | err=%r",e)
+        log.warning("Gemini typing loop stopped | chat_id=%s thread_id=%s err=%r",chat_id,message_thread_id,e)
+
+async def _stop_typing_task(stop,typing):
+    if stop:
+        stop.set()
+    if typing:
+        typing.cancel()
+        try:
+            await typing
+        except asyncio.CancelledError:
+            log.debug("Gemini typing task stopped")
+        except Exception as e:
+            log.warning("Gemini typing task stop failed | err=%r",e)
+
+async def _reply_thread(bot,msg,text,parse_mode=None):
+    thread_id=getattr(msg,"message_thread_id",None)
+    kwargs={
+        "chat_id":msg.chat_id,
+        "text":text,
+        "parse_mode":parse_mode,
+        "message_thread_id":thread_id,
+        "reply_to_message_id":msg.message_id,
+    }
+    try:
+        return await bot.send_message(**kwargs)
+    except Exception as e:
+        log.warning("Gemini threaded reply failed, retry without reply target | chat_id=%s thread_id=%s err=%r",msg.chat_id,thread_id,e)
+        kwargs.pop("reply_to_message_id",None)
+        return await bot.send_message(**kwargs)
 
 def _is_gemini_quota_error(status:Optional[int],text:str)->bool:
     blob=f"{status or ''} {text or ''}".lower()
@@ -73,7 +109,7 @@ async def ask_ai_gemini(prompt:str,model:str="gemini-2.5-flash")->tuple[bool,str
             "parts":[{
                 "text":(
                     "Jawab selalu menggunakan Bahasa Indonesia yang santai,\n"
-                    "Kalo user bertanya debgan bahasa inggris, jawab juga dengan bahasa inggris\n"
+                    "Kalo user bertanya dengan bahasa inggris, jawab juga dengan bahasa inggris\n"
                     "Lu adalah kiyoshi bot, bot buatan @HirohitoKiyoshi,\n"
                     "Jawab jelas ala gen z tapi tetap asik dan mudah dipahami.\n"
                     "Jangan gunakan Bahasa Inggris kecuali diminta.\n"
@@ -114,30 +150,32 @@ async def ai_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.from_user:
         return
     user_id=msg.from_user.id
-    chat_id=update.effective_chat.id
     prompt=""
     fresh_session=False
+    stop=None
+    typing=None
     if msg.text and msg.text.startswith("/ask"):
         prompt=" ".join(context.args).strip() if context.args else ""
         fresh_session=True
         if not prompt:
-            return await msg.reply_text("Contoh:\n/ask apa itu relativitas?")
+            return await _reply_thread(context.bot,msg,"Contoh:\n/ask apa itu relativitas?")
     elif msg.reply_to_message:
         reply_mid=msg.reply_to_message.message_id
         active_mid=await gemini_memory.get_last_message_id(user_id)
         if not active_mid or int(active_mid)!=int(reply_mid):
-            return await msg.reply_text(
-                "😒 Lu siapa?\n"
-                "Gue belum ngobrol sama lu.\n"
-                "Ketik /ask dulu.",
+            return await _reply_thread(
+                context.bot,
+                msg,
+                "😒 Lu siapa?\nGue belum ngobrol sama lu.\nKetik /ask dulu.",
                 parse_mode="HTML",
             )
         prompt=(msg.text or "").strip()
     if not prompt:
         return
-    stop=asyncio.Event()
-    typing=asyncio.create_task(_typing_loop(context.bot,chat_id,stop))
     try:
+        thread_id=getattr(msg,"message_thread_id",None)
+        stop=asyncio.Event()
+        typing=asyncio.create_task(_typing_loop(context.bot,msg.chat_id,stop,thread_id))
         history=[] if fresh_session else await gemini_memory.get_history(user_id)
         final_prompt=await _build_ai_prompt_from_history(history,prompt)
         ok,raw,status=await ask_ai_gemini(final_prompt)
@@ -149,16 +187,14 @@ async def ai_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
                 raise RuntimeError(raw)
         clean=sanitize_ai_output(raw)
         chunks=split_message(clean,4000)
-        stop.set()
-        typing.cancel()
+        await _stop_typing_task(stop,typing)
         last_sent=None
         for chunk in chunks:
-            last_sent=await msg.reply_text(chunk,parse_mode="HTML")
+            last_sent=await _reply_thread(context.bot,msg,chunk,parse_mode="HTML")
         if last_sent:
             history.append({"user":prompt,"ai":clean})
             await gemini_memory.set_history(user_id,history,last_sent.message_id)
     except Exception as e:
-        stop.set()
-        typing.cancel()
+        await _stop_typing_task(stop,typing)
         log.warning("Gemini request failed | user_id=%s err=%r",user_id,e)
-        await msg.reply_text(f"❌ Error: {html.escape(str(e))}")
+        await _reply_thread(context.bot,msg,f"❌ Error: {html.escape(str(e))}",parse_mode="HTML")
