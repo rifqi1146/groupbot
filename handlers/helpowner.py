@@ -31,6 +31,7 @@ async def helpowner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/restart</code> — Restart the bot.\n"
         "• <code>/speedtest</code> — Run server speed test.\n"
         "• <code>/update</code> — Update system Bot.\n"
+        "• <code>/uploadengine</code> — Switch Telethon/PyroFork uploader.\n"
         "• <code>/wlc</code> — Configure welcome message.\n\n"
     
         "<b>Access & Billing</b>\n"

@@ -45,6 +45,7 @@ from handlers.waifu import waifu_cmd
 from handlers.weather import weather_cmd
 from handlers.welcome import wlc_cmd, start_verify_pm
 from handlers.aiimagedetector import aiimagedetector_cmd
+from handlers.uploadengine import uploadengine_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -140,6 +141,7 @@ COMMAND_HANDLERS = [
     ("tr", tr_cmd, True),
     ("trlist", trlist_cmd, True),
     ("unban", unban_cmd, False),
+    ("uploadengine", uploadengine_cmd, False),
     ("unmute", unmute_cmd, False),
     ("untag", untag_cmd, False),
     ("upscale", upscale_cmd, False),

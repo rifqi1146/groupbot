@@ -13,6 +13,7 @@ from handlers.messages import register_messages
 from utils.startup import startup_tasks
 from utils.config import BOT_TOKEN
 from handlers.dl.mtproto_uploader import warmup_mtproto_uploader, shutdown_mtproto_uploader
+from handlers.dl.pyrogram_uploader import warmup_pyrogram_uploader, shutdown_pyrogram_uploader
 
 BOT_USERNAME = None
 
@@ -104,6 +105,13 @@ def setup_logger():
     root.addHandler(handler)
 
     for name in (
+        "pyrogram",
+        "pyrogram.client",
+        "pyrogram.connection",
+        "pyrogram.connection.connection",
+        "pyrogram.session",
+        "pyrogram.session.session",
+        "pyrogram.dispatcher",        
         "httpx",
         "httpcore",
         "telegram",
@@ -151,7 +159,12 @@ async def post_init(app):
         await warmup_mtproto_uploader(app)
     except Exception:
         log.exception("Failed to warmup MTProto uploader")
-
+    
+    try:
+        await warmup_pyrogram_uploader(app)
+    except Exception:
+        log.exception("Failed to warmup Pyrogram uploader")
+    
     try:
         await app.bot.set_my_commands(BOT_COMMANDS)
         log.info("✓ Bot commands set")
@@ -173,7 +186,12 @@ async def post_shutdown(app):
         await shutdown_mtproto_uploader(app)
     except Exception:
         log.exception("Failed to shutdown MTProto uploader")
-
+    
+    try:
+        await shutdown_pyrogram_uploader(app)
+    except Exception:
+        log.exception("Failed to shutdown Pyrogram uploader")
+        
     await close_http_session()
     log.info("HTTP session closed")
 

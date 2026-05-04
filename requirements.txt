@@ -26,3 +26,5 @@ cryptg
 telethon
 yt-search-py
 lottie
+pyrofork
+tgcrypto-pyrofork

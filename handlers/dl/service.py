@@ -3,6 +3,7 @@ import uuid
 import html
 import time
 import logging
+import json
 import subprocess
 import asyncio
 from telegram import InputMediaPhoto,InputMediaVideo
@@ -19,12 +20,96 @@ from .reddit.main import is_reddit_url,reddit_download
 from .pinterest.main import is_pinterest_url,pinterest_download
 from .remux import video_meta,make_video_thumbnail
 from .mtproto_uploader import try_send_video_via_mtproto
+from .pyrogram_uploader import try_send_video_via_pyrogram
 
 log=logging.getLogger(__name__)
 
 _ALBUM_CHUNK_SIZE=10
 _ALBUM_CHUNK_COOLDOWN=5
 
+_UPLOAD_ENGINE_DEFAULT=os.getenv("UPLOAD_ENGINE","1").strip()
+_UPLOAD_ENGINE_STATE_FILE=os.getenv("UPLOAD_ENGINE_STATE_FILE","data/upload_engine.json")
+_UPLOAD_ENGINE_CACHE=None
+_UPLOAD_ENGINE_NAMES={"0":"telethon","1":"pyrofork"}
+_UPLOAD_ENGINE_ALIASES={"0":"0","telethon":"0","mtproto":"0","1":"1","pyrofork":"1","pyrogram":"1","pyro":"1"}
+
+def _normalize_upload_engine(value:str|int|None)->str:
+    raw=str(value if value is not None else _UPLOAD_ENGINE_DEFAULT).strip().lower()
+    return _UPLOAD_ENGINE_ALIASES.get(raw,_UPLOAD_ENGINE_ALIASES.get(_UPLOAD_ENGINE_DEFAULT.strip().lower(),"1"))
+
+def _load_upload_engine()->str:
+    global _UPLOAD_ENGINE_CACHE
+    if _UPLOAD_ENGINE_CACHE is not None:
+        return _UPLOAD_ENGINE_CACHE
+    engine=_normalize_upload_engine(_UPLOAD_ENGINE_DEFAULT)
+    try:
+        if os.path.exists(_UPLOAD_ENGINE_STATE_FILE):
+            with open(_UPLOAD_ENGINE_STATE_FILE,"r",encoding="utf-8") as f:
+                data=json.load(f)
+            engine=_normalize_upload_engine(data.get("engine",engine))
+    except Exception as e:
+        log.warning("Failed to load upload engine state | file=%s err=%r",_UPLOAD_ENGINE_STATE_FILE,e)
+    _UPLOAD_ENGINE_CACHE=engine
+    return engine
+
+def get_upload_engine()->str:
+    return _load_upload_engine()
+
+def get_upload_engine_name()->str:
+    return _UPLOAD_ENGINE_NAMES.get(get_upload_engine(),"pyrofork")
+
+def set_upload_engine(value:str)->str:
+    global _UPLOAD_ENGINE_CACHE
+    engine=_normalize_upload_engine(value)
+    _UPLOAD_ENGINE_CACHE=engine
+    try:
+        os.makedirs(os.path.dirname(_UPLOAD_ENGINE_STATE_FILE) or ".",exist_ok=True)
+        tmp=f"{_UPLOAD_ENGINE_STATE_FILE}.tmp"
+        with open(tmp,"w",encoding="utf-8") as f:
+            json.dump({"engine":engine,"name":_UPLOAD_ENGINE_NAMES.get(engine,"pyrofork"),"updated_at":int(time.time())},f)
+        os.replace(tmp,_UPLOAD_ENGINE_STATE_FILE)
+        log.info("Upload engine state saved | engine=%s name=%s",engine,_UPLOAD_ENGINE_NAMES.get(engine,"pyrofork"))
+    except Exception as e:
+        log.warning("Failed to save upload engine state | file=%s err=%r",_UPLOAD_ENGINE_STATE_FILE,e)
+    return engine
+
+async def _try_send_video_via_upload_engine(bot,chat_id,status_msg_id,file_path,caption,reply_to=None,message_thread_id=None,duration=None,width=None,height=None,thumb_path=None):
+    engine=get_upload_engine()
+    try:
+        if engine=="1":
+            return await try_send_video_via_pyrogram(
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                file_path=file_path,
+                caption=caption,
+                reply_to=reply_to,
+                message_thread_id=message_thread_id,
+                duration=duration,
+                width=width,
+                height=height,
+                thumb_path=thumb_path,
+            )
+        if engine=="0":
+            return await try_send_video_via_mtproto(
+                bot=bot,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                file_path=file_path,
+                caption=caption,
+                reply_to=reply_to,
+                message_thread_id=message_thread_id,
+                duration=duration,
+                width=width,
+                height=height,
+                thumb_path=thumb_path,
+            )
+        log.warning("Unsupported upload engine ignored | value=%s",engine)
+        return False
+    except Exception as e:
+        log.warning("Upload engine failed, fallback to PTB | engine=%s name=%s file=%s err=%r",engine,_UPLOAD_ENGINE_NAMES.get(engine,"unknown"),os.path.basename(file_path or ""),e)
+        return False
+        
 async def reencode_mp3(src_path:str)->str:
     fixed_path=f"{TMP_DIR}/{uuid.uuid4().hex}.mp3"
     def _run():
@@ -361,7 +446,7 @@ async def send_downloaded_media(bot,chat_id,reply_to,status_msg_id,path,fmt_key,
                 meta_video=await asyncio.to_thread(video_meta,file_path)
                 thumb_path=await asyncio.to_thread(make_video_thumbnail,file_path)
                 caption=_build_safe_caption(caption_text,bot_name)
-                sent=await try_send_video_via_mtproto(
+                sent=await _try_send_video_via_upload_engine(
                     bot=bot,
                     chat_id=chat_id,
                     status_msg_id=status_msg_id,
