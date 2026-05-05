@@ -36,20 +36,28 @@ def _cleanup_memory():
     except Exception as e:
         logger.warning("Failed to schedule Caca memory cleanup | err=%r",e)
 
-async def _typing_loop(bot,chat_id,stop:asyncio.Event,message_thread_id=None):
+def _get_thread_id(msg):
+    thread_id=getattr(msg,"message_thread_id",None)
+    if thread_id:
+        return thread_id
+    reply=getattr(msg,"reply_to_message",None)
+    if reply:
+        return getattr(reply,"message_thread_id",None)
+    return None
+
+async def _typing_loop(bot,chat_id,stop:asyncio.Event):
     try:
         while not stop.is_set():
             await bot.send_chat_action(
                 chat_id=chat_id,
                 action=ChatAction.TYPING,
-                message_thread_id=message_thread_id,
             )
             await asyncio.sleep(4)
     except asyncio.CancelledError:
-        logger.debug("Caca typing loop cancelled | chat_id=%s thread_id=%s",chat_id,message_thread_id)
+        logger.debug("Caca typing loop cancelled | chat_id=%s",chat_id)
         raise
     except Exception as e:
-        logger.warning("Caca typing loop stopped | chat_id=%s thread_id=%s err=%r",chat_id,message_thread_id,e)
+        logger.warning("Caca typing loop stopped | chat_id=%s err=%r",chat_id,e)
 
 async def _stop_typing_task(stop,typing):
     if stop:
@@ -64,20 +72,26 @@ async def _stop_typing_task(stop,typing):
             logger.warning("Caca typing task stop failed | err=%r",e)
 
 async def _reply_thread(bot,msg,text,parse_mode=None):
-    thread_id=getattr(msg,"message_thread_id",None)
+    thread_id=_get_thread_id(msg)
     kwargs={
         "chat_id":msg.chat_id,
         "text":text,
         "parse_mode":parse_mode,
-        "message_thread_id":thread_id,
         "reply_to_message_id":msg.message_id,
     }
+    if thread_id:
+        kwargs["message_thread_id"]=thread_id
     try:
         return await bot.send_message(**kwargs)
     except Exception as e:
-        logger.warning("Caca threaded reply failed, retry without reply target | chat_id=%s thread_id=%s err=%r",msg.chat_id,thread_id,e)
+        logger.warning("Caca reply failed, retry without reply target | chat_id=%s thread_id=%s err=%r",msg.chat_id,thread_id,e)
         kwargs.pop("reply_to_message_id",None)
-        return await bot.send_message(**kwargs)
+        try:
+            return await bot.send_message(**kwargs)
+        except Exception as e2:
+            logger.warning("Caca reply retry failed, retry without thread | chat_id=%s thread_id=%s err=%r",msg.chat_id,thread_id,e2)
+            kwargs.pop("message_thread_id",None)
+            return await bot.send_message(**kwargs)
 
 def _normalize_caca_output(text:str)->str:
     text=(text or "").replace("\r\n","\n").replace("\r","\n")
@@ -413,9 +427,9 @@ async def meta_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
             image_data_url,image_path,converted_path=await _extract_visual_data_url(context.bot,msg)
         if not prompt and not image_data_url:
             return
-        thread_id=getattr(msg,"message_thread_id",None)
+        logger.debug("Caca typing start | chat_id=%s message_id=%s has_reply=%s",msg.chat_id,msg.message_id,bool(msg.reply_to_message))
         stop=asyncio.Event()
-        typing=asyncio.create_task(_typing_loop(context.bot,msg.chat_id,stop,thread_id))
+        typing=asyncio.create_task(_typing_loop(context.bot,msg.chat_id,stop))
         search_context=""
         if use_search:
             try:
