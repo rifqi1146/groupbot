@@ -80,20 +80,16 @@ def register_messages(app):
         group=-100,
     )
     app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect),
+        group=-90,
+    )
+    app.add_handler(
         MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, susunkata_answer_handler),
         group=-3,
     )
     app.add_handler(
         MessageHandler(AI_REPLY_FILTER, ai_reply_router),
         group=-2,
-    )
-    app.add_handler(
-        MessageHandler(filters.ALL, collect_chat),
-        group=0,
-    )
-    app.add_handler(
-        MessageHandler(filters.ALL & ~filters.COMMAND, user_collector),
-        group=1,
     )
     app.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_handler),
@@ -112,10 +108,14 @@ def register_messages(app):
         group=4,
     )
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect),
-        group=5,
+        MessageHandler(filters.ALL, collect_chat, block=False),
+        group=50,
     )
     app.add_handler(
-        MessageHandler(filters.ALL, log_commands),
+        MessageHandler(filters.ALL & ~filters.COMMAND, user_collector, block=False),
+        group=51,
+    )
+    app.add_handler(
+        MessageHandler(filters.ALL, log_commands, block=False),
         group=100,
     )
