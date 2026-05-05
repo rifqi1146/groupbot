@@ -539,44 +539,55 @@ async def _get_video_data(content_url: str, content_id: str) -> dict:
     _dbg("after _parse_video_from_body | parsed=%r", parsed)
     return parsed
 
-async def facebook_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
-    await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping Facebook video...</b>")
-    _dbg("facebook init | BASE_DIR=%s COOKIES_PATH=%s exists=%s", BASE_DIR, COOKIES_PATH, os.path.exists(COOKIES_PATH))
-    _dbg("facebook scrape start | raw_url=%s fmt_key=%s", raw_url, fmt_key)
-    content_url = (raw_url or "").strip()
-    is_share = bool(SHARE_RE.search(content_url))
-    _dbg("share url detected=%s | url=%s", is_share, content_url)
+async def facebook_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Facebook video...</b>")
+    _dbg("facebook init | BASE_DIR=%s COOKIES_PATH=%s exists=%s",BASE_DIR,COOKIES_PATH,os.path.exists(COOKIES_PATH))
+    _dbg("facebook scrape start | raw_url=%s fmt_key=%s",raw_url,fmt_key)
+    content_url=(raw_url or "").strip()
+    is_share=bool(SHARE_RE.search(content_url))
+    _dbg("share url detected=%s | url=%s",is_share,content_url)
     if is_share:
-        content_url = await _follow_share_redirect(content_url)
-    content_id = _extract_content_id(content_url)
+        content_url=await _follow_share_redirect(content_url)
+    content_id=_extract_content_id(content_url)
     if not content_id:
-        _dbg("scrape failed before fetch | reason=no content id | content_url=%s", content_url)
+        _dbg("scrape failed before fetch | reason=no content id | content_url=%s",content_url)
         raise RuntimeError("failed to extract facebook content id")
-    _dbg("before _get_video_data | content_url=%s content_id=%s", content_url, content_id)
-    video_data = await _get_video_data(content_url, content_id)
-    _dbg("after _get_video_data | video_data=%r", video_data)
-    _dbg("video data parsed | hd=%s sd=%s", bool(video_data.get("hd_url")), bool(video_data.get("sd_url")))
-    video_url = video_data.get("hd_url") or video_data.get("sd_url")
-    _dbg("video url selected | exists=%s", bool(video_url))
+    _dbg("before _get_video_data | content_url=%s content_id=%s",content_url,content_id)
+    video_data=await _get_video_data(content_url,content_id)
+    _dbg("after _get_video_data | video_data=%r",video_data)
+    _dbg("video data parsed | hd=%s sd=%s",bool(video_data.get("hd_url")),bool(video_data.get("sd_url")))
+    video_url=video_data.get("hd_url") or video_data.get("sd_url")
+    _dbg("video url selected | exists=%s",bool(video_url))
     if not video_url:
-        _dbg("video url empty after parse | content_url=%s content_id=%s", content_url, content_id)
+        _dbg("video url empty after parse | content_url=%s content_id=%s",content_url,content_id)
         raise RuntimeError("no video formats found")
-    title = (video_data.get("title") or "Facebook Video").strip() or "Facebook Video"
-    _dbg("fb title selected | title=%s", _clip(title, 200))
-    out_path = f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
-    _dbg("output path ready | out=%s", out_path)
-    session = await get_http_session()
-    headers = _build_headers(_normalize_content_url(content_url, content_id))
-    _dbg("headers ready | referer=%s cookie=%s", headers.get("Referer"), bool(headers.get("Cookie")))
-    _dbg("download chosen url | url=%s out=%s", _clip(video_url, 200), out_path)
-    await _download_with_best_engine(session, video_url, out_path, bot, chat_id, status_msg_id, "Downloading Facebook video...", headers=headers)
-    _dbg("facebook scrape download done | out=%s", out_path)
-    return {"path": out_path, "title": title}
+    title=(video_data.get("title") or "Facebook Video").strip() or "Facebook Video"
+    _dbg("fb title selected | title=%s",_clip(title,200))
+    os.makedirs(TMP_DIR,exist_ok=True)
+    out_path=f"{TMP_DIR}/{uuid.uuid4().hex}_{sanitize_filename(title)}.mp4"
+    session=await get_http_session()
+    headers=_build_headers(_normalize_content_url(content_url,content_id))
+    _dbg("download chosen url | url=%s out=%s",_clip(video_url,200),out_path)
+    await _download_with_best_engine(session,video_url,out_path,bot,chat_id,status_msg_id,"Downloading Facebook video...",headers=headers)
+    if not os.path.exists(out_path) or os.path.getsize(out_path)<=0:
+        raise RuntimeError("Facebook download output empty")
+    _dbg("facebook scrape download done | out=%s",out_path)
+    return {"path":out_path,"title":title,"source":"Facebook"}
 
-async def facebook_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
+async def facebook_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     try:
-        return await facebook_scrape_download(raw_url=raw_url, fmt_key=fmt_key, bot=bot, chat_id=chat_id, status_msg_id=status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await facebook_scrape_download(
+            raw_url=raw_url,
+            fmt_key=fmt_key,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            format_id=format_id,
+            has_audio=has_audio,
+            metadata_ready=metadata_ready,
+        )
     except Exception as e:
-        log.exception("Facebook scraping failed, fallback to yt-dlp | url=%s err=%r", raw_url, e)
-        await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Facebook scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")
-        return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+        log.exception("Facebook scraping failed, fallback to yt-dlp | url=%s err=%r",raw_url,e)
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Facebook scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")
+        return await ytdlp_download(raw_url,fmt_key,bot,chat_id,status_msg_id,format_id=format_id,has_audio=has_audio)

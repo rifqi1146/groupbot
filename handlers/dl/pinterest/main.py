@@ -505,26 +505,36 @@ async def _download_pin_items(parsed: dict, bot, chat_id, status_msg_id) -> dict
         return {"path": downloaded[0]["path"], "title": title, "desc": parsed.get("desc") or ""}
     return {"items": downloaded, "title": title, "desc": parsed.get("desc") or ""}
 
-async def pinterest_scrape_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
-    del fmt_key, format_id, has_audio
-    await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Scraping Pinterest media...</b>")
-    url = (raw_url or "").strip()
+async def pinterest_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
+    del fmt_key,format_id,has_audio
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Pinterest media...</b>")
+    url=(raw_url or "").strip()
     if SHORT_RE.search(url):
-        url = await _resolve_short_url(url)
-    pin_id = _extract_pin_id(url)
+        url=await _resolve_short_url(url)
+    pin_id=_extract_pin_id(url)
     if not pin_id:
         raise RuntimeError("failed to extract Pinterest pin ID")
-    pin_data = await _get_pin_data(pin_id)
-    parsed = _extract_pin_media(pin_data)
-    result = await _download_pin_items(parsed, bot, chat_id, status_msg_id)
-    _dbg("pinterest scrape success | pin_id=%s result=%s", pin_id, "album" if result.get("items") else "single")
+    pin_data=await _get_pin_data(pin_id)
+    parsed=_extract_pin_media(pin_data)
+    result=await _download_pin_items(parsed,bot,chat_id,status_msg_id)
+    _dbg("pinterest scrape success | pin_id=%s result=%s",pin_id,"album" if result.get("items") else "single")
     return result
 
-async def pinterest_download(raw_url: str, fmt_key: str, bot, chat_id, status_msg_id, format_id: str | None = None, has_audio: bool = False):
+async def pinterest_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     try:
-        return await pinterest_scrape_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+        return await pinterest_scrape_download(
+            raw_url=raw_url,
+            fmt_key=fmt_key,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            format_id=format_id,
+            has_audio=has_audio,
+            metadata_ready=metadata_ready,
+        )
     except Exception as e:
-        log.exception("Pinterest scraping failed, fallback to yt-dlp | url=%s err=%r", raw_url, e)
-        await _safe_edit_status(bot, chat_id, status_msg_id, "<b>Pinterest scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")
-        return await ytdlp_download(raw_url, fmt_key, bot, chat_id, status_msg_id, format_id=format_id, has_audio=has_audio)
+        log.exception("Pinterest scraping failed, fallback to yt-dlp | url=%s err=%r",raw_url,e)
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Pinterest scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")
+        return await ytdlp_download(raw_url,fmt_key,bot,chat_id,status_msg_id,format_id=format_id,has_audio=has_audio)
         

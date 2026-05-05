@@ -76,6 +76,26 @@ def _pick_auto_resolution(res_map:dict[int,dict],preferred_height:int):
         return lower[0]
     return candidates[0]
 
+def _platform_label(url:str)->str:
+    host=_host(url)
+    checks=(
+        (("tiktok.com","vt.tiktok.com","vm.tiktok.com","douyin.com"),"TikTok"),
+        (("instagram.com","instagr.am"),"Instagram"),
+        (("youtube.com","youtu.be","music.youtube.com"),"YouTube"),
+        (("facebook.com","fb.watch","m.facebook.com"),"Facebook"),
+        (("x.com","twitter.com","vxtwitter.com","fxtwitter.com"),"X"),
+        (("reddit.com","redd.it"),"Reddit"),
+        (("threads.net","threads.com"),"Threads"),
+        (("pinterest.com","pin.it"),"Pinterest"),
+    )
+    for domains,label in checks:
+        if any(_host_match(host,d) for d in domains):
+            return label
+    return "Media"
+
+def _metadata_status(url:str)->str:
+    return f"<b>Scraping {_platform_label(url)} metadata...</b>"
+    
 async def _safe_delete_message(bot,chat_id,message_id,label:str="message"):
     try:
         await bot.delete_message(chat_id,message_id)
@@ -99,12 +119,14 @@ async def _remove_file(path:str|None,label:str):
     except Exception as e:
         log.warning("Failed to delete %s temp file | path=%s err=%r",label,path,e)
 
-async def _start_dl_task(context,message,data,fmt_key,format_id=None,has_audio=False,label=None,engine:str|None=None):
+async def _start_dl_task(context,message,data,fmt_key,format_id=None,has_audio=False,label=None,engine:str|None=None,status_ready:bool=False):
     log.info(
-        "Start download task | url=%s fmt_key=%s format_id=%s has_audio=%s engine=%s label=%s",
-        data.get("url"),fmt_key,format_id,has_audio,engine,label,
+        "Start download task | url=%s fmt_key=%s format_id=%s has_audio=%s engine=%s label=%s status_ready=%s",
+        data.get("url"),fmt_key,format_id,has_audio,engine,label,status_ready,
     )
-    await message.edit_text(f"<b>Preparing {label or DL_FORMATS[fmt_key]['label']}...</b>",parse_mode="HTML")
+    if not status_ready:
+        await message.edit_text(_metadata_status(data["url"]),parse_mode="HTML")
+        status_ready=True
     context.application.create_task(
         _dl_worker(
             app=context.application,
@@ -117,10 +139,11 @@ async def _start_dl_task(context,message,data,fmt_key,format_id=None,has_audio=F
             has_audio=has_audio,
             engine=engine,
             message_thread_id=data.get("message_thread_id",getattr(message,"message_thread_id",None)),
+            metadata_ready=status_ready,
         )
     )
 
-async def _show_resolution_picker(context,message,dl_id:str,data:dict,engine:str|None=None):
+async def _show_resolution_picker(context,message,dl_id:str,data:dict,engine:str|None=None,status_ready:bool=False):
     res_list=await get_resolutions(data["url"],engine=engine)
     if not res_list:
         DL_CACHE.pop(dl_id,None)
@@ -136,18 +159,12 @@ async def _show_resolution_picker(context,message,dl_id:str,data:dict,engine:str
                 "filesize":int(r.get("filesize") or 0),
                 "total_size":int(r.get("total_size") or 0),
             }
-    log.info(
-        "Resolution picker ready | url=%s engine=%s heights=%s map=%s",
-        data.get("url"),engine,sorted(res_map.keys(),reverse=True),res_map,
-    )
+    log.info("Resolution picker ready | url=%s engine=%s heights=%s map=%s",data.get("url"),engine,sorted(res_map.keys(),reverse=True),res_map)
     settings=get_user_settings(data["user"])
     preferred_height=int(settings.get("youtube_resolution") or 0)
     if preferred_height>0:
         picked_height,picked=_pick_auto_resolution(res_map,preferred_height)
-        log.info(
-            "Auto resolution preference | url=%s preferred=%s picked_height=%s picked=%s engine=%s",
-            data.get("url"),preferred_height,picked_height,picked,engine,
-        )
+        log.info("Auto resolution preference | url=%s preferred=%s picked_height=%s picked=%s engine=%s",data.get("url"),preferred_height,picked_height,picked,engine)
         if picked_height and picked:
             DL_CACHE.pop(dl_id,None)
             return await _start_dl_task(
@@ -159,22 +176,25 @@ async def _show_resolution_picker(context,message,dl_id:str,data:dict,engine:str
                 has_audio=bool(picked.get("has_audio")),
                 label=f"{picked_height}p",
                 engine=engine,
+                status_ready=status_ready,
             )
     DL_CACHE[dl_id]["res_map"]=res_map
     if engine:
         DL_CACHE[dl_id]["engine"]=engine
     return await message.edit_text("<b>Select resolution</b>",reply_markup=res_keyboard(dl_id,res_list),parse_mode="HTML")
 
-async def _process_choice(context,message,dl_id:str,data:dict,choice:str,user_id:int):
+async def _process_choice(context,message,dl_id:str,data:dict,choice:str,user_id:int,status_ready:bool=False):
     url=data["url"]
     if choice=="video" and supports_resolution_picker(url):
         DL_CACHE[dl_id]["fmt_key"]="video"
         if supports_ytdlp_resolution(url):
             log.info("Resolution engine selected | url=%s engine=ytdlp",url)
-            await message.edit_text("<b>Fetching video formats...</b>",parse_mode="HTML")
-            return await _show_resolution_picker(context,message,dl_id,data,engine="ytdlp")
+            if not status_ready:
+                await message.edit_text(_metadata_status(url),parse_mode="HTML")
+                status_ready=True
+            return await _show_resolution_picker(context,message,dl_id,data,engine="ytdlp",status_ready=status_ready)
     DL_CACHE.pop(dl_id,None)
-    return await _start_dl_task(context=context,message=message,data=data,fmt_key=choice,format_id=None,has_audio=False)
+    return await _start_dl_task(context=context,message=message,data=data,fmt_key=choice,format_id=None,has_audio=False,status_ready=status_ready)
 
 async def _is_admin_or_owner(update:Update,context:ContextTypes.DEFAULT_TYPE)->bool:
     user=update.effective_user
@@ -269,8 +289,16 @@ async def auto_dl_detect(update:Update,context:ContextTypes.DEFAULT_TYPE):
     }
     auto_choice=str(settings.get("autodl_format") or "ask").lower()
     if auto_choice in ("video","mp3"):
-        status=await msg.reply_text(f"<b>Auto selecting {auto_choice.upper()}...</b>",parse_mode="HTML")
-        return await _process_choice(context=context,message=status,dl_id=dl_id,data=DL_CACHE[dl_id],choice=auto_choice,user_id=update.effective_user.id)
+        status=await msg.reply_text(_metadata_status(text),parse_mode="HTML")
+        return await _process_choice(
+            context=context,
+            message=status,
+            dl_id=dl_id,
+            data=DL_CACHE[dl_id],
+            choice=auto_choice,
+            user_id=update.effective_user.id,
+            status_ready=True,
+        )
     await msg.reply_text(
         "👀 <b>Link detected</b>\n\nDo you want me to download it?",
         reply_markup=autodl_detect_keyboard(dl_id),
@@ -295,7 +323,7 @@ async def dlask_callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return await _safe_delete_message(context.bot,q.message.chat.id,q.message.message_id,"download request menu")
     await q.edit_message_text("📥 <b>Select format</b>",reply_markup=dl_keyboard(dl_id),parse_mode="HTML")
 
-async def _dl_worker(app,chat_id,reply_to,raw_url,fmt_key,status_msg_id,format_id:str|None=None,has_audio:bool=False,engine:str|None=None,message_thread_id:int|None=None,_flood_retry:int=0):
+async def _dl_worker(app,chat_id,reply_to,raw_url,fmt_key,status_msg_id,format_id:str|None=None,has_audio:bool=False,engine:str|None=None,message_thread_id:int|None=None,metadata_ready:bool=False,_flood_retry:int=0):
     bot=app.bot
     path=None
     try:
@@ -305,7 +333,7 @@ async def _dl_worker(app,chat_id,reply_to,raw_url,fmt_key,status_msg_id,format_i
         )
         if is_tiktok(raw_url):
             async with TIKTOK_LOCK:
-                path=await tiktok_download(raw_url,bot,chat_id,status_msg_id,fmt_key)
+                path=await tiktok_download(raw_url,bot,chat_id,status_msg_id,fmt_key,metadata_ready=metadata_ready)
                 actual_path=path.get("path") if isinstance(path,dict) else path
                 if actual_path and is_invalid_video(actual_path):
                     await _remove_file(actual_path,"invalid TikTok")
@@ -321,6 +349,7 @@ async def _dl_worker(app,chat_id,reply_to,raw_url,fmt_key,status_msg_id,format_i
                     format_id=format_id,
                     has_audio=has_audio,
                     engine=engine,
+                    metadata_ready=metadata_ready,
                 )
         prepare_started=time.monotonic()
         path=await prepare_download_result_for_send(path,fmt_key=fmt_key)
@@ -342,7 +371,20 @@ async def _dl_worker(app,chat_id,reply_to,raw_url,fmt_key,status_msg_id,format_i
             wait_time=int(m.group(1)) if m else 5
             log.warning("Download worker flood retry | chat_id=%s wait=%s retry=%s url=%s",chat_id,wait_time,_flood_retry+1,raw_url)
             await asyncio.sleep(wait_time)
-            return await _dl_worker(app,chat_id,reply_to,raw_url,fmt_key,status_msg_id,format_id,has_audio,engine,message_thread_id,_flood_retry+1)
+            return await _dl_worker(
+                app=app,
+                chat_id=chat_id,
+                reply_to=reply_to,
+                raw_url=raw_url,
+                fmt_key=fmt_key,
+                status_msg_id=status_msg_id,
+                format_id=format_id,
+                has_audio=has_audio,
+                engine=engine,
+                message_thread_id=message_thread_id,
+                metadata_ready=metadata_ready,
+                _flood_retry=_flood_retry+1,
+            )
         log.warning("Download worker failed | chat_id=%s url=%s err=%r",chat_id,raw_url,e)
         public_err=html.escape(err.strip())[:3500] or "Unknown downloader error"
         await _safe_edit_error(
@@ -373,8 +415,16 @@ async def dl_cmd(update:Update,context:ContextTypes.DEFAULT_TYPE):
     settings=get_user_settings(update.effective_user.id)
     auto_choice=str(settings.get("autodl_format") or "ask").lower()
     if auto_choice in ("video","mp3"):
-        status=await msg.reply_text(f"📥 <b>Auto selecting {auto_choice.upper()}...</b>",parse_mode="HTML")
-        return await _process_choice(context=context,message=status,dl_id=dl_id,data=DL_CACHE[dl_id],choice=auto_choice,user_id=update.effective_user.id)
+        status=await update.message.reply_text(_metadata_status(url),parse_mode="HTML")
+        return await _process_choice(
+            context=context,
+            message=status,
+            dl_id=dl_id,
+            data=DL_CACHE[dl_id],
+            choice=auto_choice,
+            user_id=update.effective_user.id,
+            status_ready=True,
+        )
     await msg.reply_text("📥 <b>Select format</b>",reply_markup=dl_keyboard(dl_id),parse_mode="HTML")
 
 async def dlengine_callback(update:Update,context:ContextTypes.DEFAULT_TYPE):

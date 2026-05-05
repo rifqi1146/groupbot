@@ -824,8 +824,9 @@ async def _download_direct_album(media:dict,bot,chat_id,status_msg_id)->dict:
     log.info("TikTok direct scraping success | type=album items=%s",len(items))
     return {"items":items,"title":title,"desc":media.get("desc") or "","source":"scraping","kind":"album"}
 
-async def tiktok_scrape_download(url,bot,chat_id,status_msg_id,fmt_key="mp4"):
-    await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping TikTok metadata...</b>")
+async def tiktok_scrape_download(url,bot,chat_id,status_msg_id,fmt_key="mp4",metadata_ready:bool=False):
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping TikTok metadata...</b>")
     media=await _fetch_tiktok_direct(url,bot=bot)
     kind=media.get("kind")
     log.info("TikTok scraping metadata success | url=%s kind=%s title=%r target=%s",url,kind,media.get("title"),media.get("target_url"))
@@ -845,11 +846,11 @@ async def douyin_download(url,bot,chat_id,status_msg_id):
     if result.get("items"):
         raise RuntimeError("SLIDESHOW")
     return result
-
-async def tiktok_download(url,bot,chat_id,status_msg_id,fmt_key="mp4"):
+    
+async def tiktok_download(url,bot,chat_id,status_msg_id,fmt_key="mp4",metadata_ready:bool=False):
     try:
-        log.info("TikTok primary start | source=scraping url=%s fmt=%s",url,fmt_key)
-        result=await tiktok_scrape_download(url=url,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,fmt_key=fmt_key)
+        log.info("TikTok primary start | source=scraping url=%s fmt=%s metadata_ready=%s",url,fmt_key,metadata_ready)
+        result=await tiktok_scrape_download(url=url,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,fmt_key=fmt_key,metadata_ready=metadata_ready)
         if isinstance(result,dict):
             if result.get("path"):
                 log.info("TikTok primary success | source=scraping file=%s",result.get("path"))
@@ -871,3 +872,4 @@ async def tiktok_download(url,bot,chat_id,status_msg_id,fmt_key="mp4"):
             elif result.get("items"):
                 log.info("TikTok fallback success | source=tikwm items=%s",len(result.get("items") or []))
         return result
+

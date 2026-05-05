@@ -388,23 +388,35 @@ async def _download_x_items(parsed:dict,bot,chat_id,status_msg_id)->dict:
         return {"path":downloaded_items[0]["path"],"title":title}
     return {"items":downloaded_items,"title":title}
 
-async def twitter_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
+async def twitter_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     del fmt_key,format_id,has_audio
-    await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping X media...</b>")
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping X media...</b>")
     text=(raw_url or "").strip()
-    if SHORT_RE.match(text): text=await _resolve_short_url(text)
+    if SHORT_RE.match(text):
+        text=await _resolve_short_url(text)
     tweet_id=_extract_status_id(text)
     _dbg("scrape start | url=%s tweet_id=%s",text,tweet_id)
-    if not tweet_id: raise RuntimeError("failed to extract x status id")
+    if not tweet_id:
+        raise RuntimeError("failed to extract x status id")
     tweet=await _get_tweet_api(tweet_id)
     parsed=_parse_tweet_media(tweet)
     result=await _download_x_items(parsed,bot,chat_id,status_msg_id)
     _dbg("scrape success | result_type=%s","album" if isinstance(result,dict) and result.get("items") else "single")
     return result
 
-async def twitter_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
+async def twitter_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     try:
-        return await twitter_scrape_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio)
+        return await twitter_scrape_download(
+            raw_url=raw_url,
+            fmt_key=fmt_key,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            format_id=format_id,
+            has_audio=has_audio,
+            metadata_ready=metadata_ready,
+        )
     except Exception as e:
         log.exception("X scraping failed, fallback to yt-dlp | url=%s err=%r",raw_url,e)
         await _safe_edit_status(bot,chat_id,status_msg_id,"<b>X scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")

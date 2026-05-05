@@ -493,9 +493,10 @@ async def _download_reddit_items(parsed:dict,bot,chat_id,status_msg_id)->dict:
         return {"path":downloaded_items[0]["path"],"title":title}
     return {"items":downloaded_items,"title":title}
 
-async def reddit_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
+async def reddit_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     del fmt_key,format_id,has_audio
-    await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Reddit media...</b>")
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Reddit media...</b>")
     text=(raw_url or "").strip()
     if SHORT_RE.match(text):
         resolved=await _resolve_short_url(text)
@@ -503,8 +504,13 @@ async def reddit_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_
             raise RuntimeError("failed to resolve reddit short url")
         text=resolved
     comments_url=_normalize_comments_url(text)
-    if not comments_url: raise RuntimeError("failed to normalize reddit url")
-    urls=[comments_url,comments_url.replace("www.reddit.com","old.reddit.com"),comments_url.replace("www.reddit.com","new.reddit.com")]
+    if not comments_url:
+        raise RuntimeError("failed to normalize reddit url")
+    urls=[
+        comments_url,
+        comments_url.replace("www.reddit.com","old.reddit.com"),
+        comments_url.replace("www.reddit.com","new.reddit.com"),
+    ]
     payload=await _fetch_json_from_candidates(urls)
     post=_pick_post_data(payload)
     parsed=_parse_reddit_post(post)
@@ -512,9 +518,18 @@ async def reddit_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_
     _dbg("reddit scrape success | result_type=%s","album" if isinstance(result,dict) and result.get("items") else "single")
     return result
 
-async def reddit_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
+async def reddit_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     try:
-        return await reddit_scrape_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio)
+        return await reddit_scrape_download(
+            raw_url=raw_url,
+            fmt_key=fmt_key,
+            bot=bot,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            format_id=format_id,
+            has_audio=has_audio,
+            metadata_ready=metadata_ready,
+        )
     except Exception as e:
         log.exception("Reddit scraping failed, fallback to yt-dlp | url=%s err=%r",raw_url,e)
         await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Reddit scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")

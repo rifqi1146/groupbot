@@ -344,9 +344,10 @@ async def _download_threads_items(parsed:dict,fmt_key:str,bot,chat_id,status_msg
             _safe_remove_file(item.get("path"),"threads download failed cleanup")
         raise
 
-async def threads_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
+async def threads_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     del format_id,has_audio
-    await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Threads post...</b>")
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Scraping Threads post...</b>")
     post_id=_extract_threads_post_id(raw_url)
     _dbg("threads scrape start | url=%s post_id=%s",raw_url,post_id)
     if not post_id:
@@ -358,17 +359,9 @@ async def threads_scrape_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg
     _dbg("threads scrape success | result_type=%s","album" if isinstance(result,dict) and result.get("items") else "single")
     return result
 
-async def threads_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False):
+async def threads_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,format_id:str|None=None,has_audio:bool=False,metadata_ready:bool=False):
     try:
-        return await threads_scrape_download(
-            raw_url=raw_url,
-            fmt_key=fmt_key,
-            bot=bot,
-            chat_id=chat_id,
-            status_msg_id=status_msg_id,
-            format_id=format_id,
-            has_audio=has_audio,
-        )
+        return await threads_scrape_download(raw_url=raw_url,fmt_key=fmt_key,bot=bot,chat_id=chat_id,status_msg_id=status_msg_id,format_id=format_id,has_audio=has_audio,metadata_ready=metadata_ready)
     except Exception as e:
         log.exception("Threads scraping failed, fallback to yt-dlp | url=%s err=%r",raw_url,e)
         await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Threads scraping failed</b>\n\n<i>Fallback to yt-dlp...</i>")

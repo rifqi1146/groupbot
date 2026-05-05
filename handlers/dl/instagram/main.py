@@ -843,21 +843,45 @@ async def _collect_instagram_downloads(url:str,fmt_key:str,bot,chat_id,status_ms
         raise RuntimeError("All media downloads were duplicates or invalid")
     return {"items":downloaded,"source":source,"failed_count":failed_count}
 
-async def instagram_api_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id):
+async def instagram_api_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_id,metadata_ready:bool=False):
     meta={"caption":"","username":"","nickname":"","items":[]}
-    await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Fetching Instagram metadata...</b>")
+    if not metadata_ready:
+        await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Fetching Instagram metadata...</b>")
     try:
         meta=await _fetch_instagram_metadata(raw_url)
-        log.info("Instagram primary metadata success | url=%s caption_len=%s username=%r nickname=%r items=%s",raw_url,len(meta.get("caption") or ""),meta.get("username"),meta.get("nickname"),len(meta.get("items") or []))
+        log.info(
+            "Instagram primary metadata success | url=%s caption_len=%s username=%r nickname=%r items=%s",
+            raw_url,
+            len(meta.get("caption") or ""),
+            meta.get("username"),
+            meta.get("nickname"),
+            len(meta.get("items") or []),
+        )
     except Exception as e:
         log.warning("Primary Instagram metadata extractor failed | url=%s err=%r",raw_url,e)
-        fallback_meta=await _fetch_instagram_caption_meta(raw_url)
-        if fallback_meta.get("caption") or fallback_meta.get("username") or fallback_meta.get("nickname"):
-            meta=fallback_meta
-            log.info("Instagram fallback metadata success | url=%s caption_len=%s username=%r nickname=%r",raw_url,len(meta.get("caption") or ""),meta.get("username"),meta.get("nickname"))
-        else:
-            log.warning("Instagram fallback metadata empty | url=%s",raw_url)
-    log.info("Instagram metadata result | url=%s caption=%r username=%r nickname=%r items=%s",raw_url,meta.get("caption"),meta.get("username"),meta.get("nickname"),len(meta.get("items") or []))
+        try:
+            fallback_meta=await _fetch_instagram_caption_meta(raw_url)
+            if fallback_meta.get("caption") or fallback_meta.get("username") or fallback_meta.get("nickname"):
+                meta=fallback_meta
+                log.info(
+                    "Instagram fallback metadata success | url=%s caption_len=%s username=%r nickname=%r",
+                    raw_url,
+                    len(meta.get("caption") or ""),
+                    meta.get("username"),
+                    meta.get("nickname"),
+                )
+            else:
+                log.warning("Instagram fallback metadata empty | url=%s",raw_url)
+        except Exception as fe:
+            log.warning("Instagram fallback metadata extractor failed | url=%s err=%r",raw_url,fe)
+    log.info(
+        "Instagram metadata result | url=%s caption=%r username=%r nickname=%r items=%s",
+        raw_url,
+        meta.get("caption"),
+        meta.get("username"),
+        meta.get("nickname"),
+        len(meta.get("items") or []),
+    )
     await _safe_edit_status(bot,chat_id,status_msg_id,"<b>Downloading Instagram media...</b>")
     collected=await _collect_instagram_downloads(raw_url,fmt_key,bot,chat_id,status_msg_id,meta=meta)
     items=collected["items"]
@@ -865,16 +889,15 @@ async def instagram_api_download(raw_url:str,fmt_key:str,bot,chat_id,status_msg_
     failed_count=collected.get("failed_count",0)
     if failed_count:
         log.warning("Instagram scraper partial success | url=%s downloaded=%s failed=%s source=%s",raw_url,len(items),failed_count,source)
+    _LAST_IG_STATUS_TEXT.pop((int(chat_id),int(status_msg_id)),None)
     if len(items)==1:
         item=items[0]
         media_type=item.get("type") or "photo"
         title=_build_title(meta,media_type)
-        _LAST_IG_STATUS_TEXT.pop((int(chat_id),int(status_msg_id)),None)
         log.info("Instagram scraper success | url=%s file=%s source=%s title=%r",raw_url,item.get("path"),source,title)
         return {"path":item["path"],"title":title,"source":source}
     first_type=((items[0] or {}).get("type") or "photo")
-    title=_build_title(meta,first_type)
-    _LAST_IG_STATUS_TEXT.pop((int(chat_id),int(status_msg_id)),None)
+    title=_build_title(meta,first_type,len(items))
     log.info("Instagram scraper success | url=%s items=%s source=%s title=%r",raw_url,len(items),source,title)
     return {"items":items,"title":title,"source":source}
 
