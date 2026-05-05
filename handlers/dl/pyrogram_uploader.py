@@ -18,15 +18,31 @@ except Exception as e:
 _CLIENT=None
 _CLIENT_LOCK=asyncio.Lock()
 _PROGRESS_LOCKS={}
-_ENABLED=os.getenv("PYROGRAM_UPLOAD","1").lower() not in ("0","false","off","no")
-_SESSION_NAME=os.getenv("PYROGRAM_SESSION","pyrogram_bot")
-_WORKDIR=os.getenv("PYROGRAM_WORKDIR","data")
-_NO_UPDATES=os.getenv("PYROGRAM_NO_UPDATES","0").lower() in ("1","true","on","yes")
-_PROGRESS_MIN_BYTES=int(os.getenv("PYROGRAM_PROGRESS_MIN_BYTES",str(5*1024*1024)))
-_PROGRESS_SMALL_LIMIT=int(os.getenv("PYROGRAM_PROGRESS_SMALL_LIMIT",str(100*1024*1024)))
-_PROGRESS_SMALL_INTERVAL=float(os.getenv("PYROGRAM_PROGRESS_SMALL_INTERVAL","3.0"))
-_PROGRESS_LARGE_INTERVAL=float(os.getenv("PYROGRAM_PROGRESS_LARGE_INTERVAL","10.0"))
-_PROGRESS_STEP=float(os.getenv("PYROGRAM_PROGRESS_STEP","5"))
+_PYROFORK_STATE={
+    "enabled":True,
+    "session_name":"pyrogram_bot",
+    "workdir":"data",
+    "no_updates":False,
+    "max_concurrent_transmissions":10,
+    "progress_min_bytes":5*1024*1024,
+    "progress_small_limit":100*1024*1024,
+    "progress_small_interval":3.0,
+    "progress_large_interval":10.0,
+    "progress_step":5.0,
+    "resolved_chats":{},
+}
+
+def set_pyrofork_enabled(enabled:bool)->bool:
+    _PYROFORK_STATE["enabled"]=bool(enabled)
+    return _PYROFORK_STATE["enabled"]
+
+def set_pyrofork_max_concurrent_transmissions(value:int)->int:
+    value=max(1,min(int(value or 1),8))
+    _PYROFORK_STATE["max_concurrent_transmissions"]=value
+    return value
+
+def get_pyrofork_state()->dict:
+    return dict(_PYROFORK_STATE)
 
 def _format_size(num:int|float)->str:
     value=float(num or 0)
@@ -49,7 +65,7 @@ def _format_eta(seconds:int|float)->str:
     return f"{s}s"
 
 def _progress_interval(file_size:int)->float:
-    return _PROGRESS_SMALL_INTERVAL if file_size<_PROGRESS_SMALL_LIMIT else _PROGRESS_LARGE_INTERVAL
+    return _PYROFORK_STATE["progress_small_interval"] if file_size<_PYROFORK_STATE["progress_small_limit"] else _PYROFORK_STATE["progress_large_interval"]
 
 def _get_progress_lock(key):
     lock=_PROGRESS_LOCKS.get(key)
@@ -69,7 +85,8 @@ def _is_reply_not_found_error(exc:Exception)->bool:
     return any(k in text for k in keys)
 
 def _flood_wait_seconds(exc:Exception)->int:
-    if errors and isinstance(exc,getattr(errors,"FloodWait",())):
+    flood_cls=getattr(errors,"FloodWait",None) if errors else None
+    if flood_cls and isinstance(exc,flood_cls):
         return max(int(getattr(exc,"value",1)),1)
     return 0
 
@@ -100,9 +117,21 @@ async def _disconnect_client(client,label:str):
     except Exception as e:
         log.warning("Pyrofork uploader disconnect failed | reason=%s err=%r",label,e)
 
+def _build_client_kwargs(api_id,api_hash,parse_mode):
+    return {
+        "name":_PYROFORK_STATE["session_name"],
+        "api_id":int(api_id),
+        "api_hash":api_hash,
+        "bot_token":BOT_TOKEN,
+        "workdir":_PYROFORK_STATE["workdir"],
+        "no_updates":_PYROFORK_STATE["no_updates"],
+        "parse_mode":parse_mode,
+        "max_concurrent_transmissions":_PYROFORK_STATE["max_concurrent_transmissions"],
+    }
+
 async def _get_client():
     global _CLIENT
-    if not _ENABLED:
+    if not _PYROFORK_STATE["enabled"]:
         raise RuntimeError("Pyrofork upload disabled")
     if Client is None:
         raise RuntimeError("Pyrofork is not installed")
@@ -116,24 +145,41 @@ async def _get_client():
         if _CLIENT:
             await _disconnect_client(_CLIENT,"reconnect")
             _CLIENT=None
-        os.makedirs(_WORKDIR,exist_ok=True)
+        os.makedirs(_PYROFORK_STATE["workdir"],exist_ok=True)
         parse_mode=enums.ParseMode.HTML if enums else "html"
-        _CLIENT=Client(
-            _SESSION_NAME,
-            api_id=int(api_id),
-            api_hash=api_hash,
-            bot_token=BOT_TOKEN,
-            workdir=_WORKDIR,
-            no_updates=_NO_UPDATES,
-            parse_mode=parse_mode,
-        )
+        kwargs=_build_client_kwargs(api_id,api_hash,parse_mode)
+        try:
+            _CLIENT=Client(**kwargs)
+        except TypeError as e:
+            if "max_concurrent_transmissions" not in str(e):
+                raise
+            kwargs.pop("max_concurrent_transmissions",None)
+            _CLIENT=Client(**kwargs)
+            log.warning("Pyrofork max_concurrent_transmissions unsupported by installed version")
         await _CLIENT.start()
-        log.info("Pyrofork uploader ready | session=%s workdir=%s no_updates=%s",_SESSION_NAME,_WORKDIR,_NO_UPDATES)
+        log.info(
+            "Pyrofork uploader ready | session=%s workdir=%s no_updates=%s max_transmissions=%s",
+            _PYROFORK_STATE["session_name"],
+            _PYROFORK_STATE["workdir"],
+            _PYROFORK_STATE["no_updates"],
+            _PYROFORK_STATE["max_concurrent_transmissions"],
+        )
         return _CLIENT
 
 async def _resolve_pyrogram_chat_id(bot,client,chat_id):
+    cache=_PYROFORK_STATE["resolved_chats"]
+    cache_key=str(chat_id)
+    cached=cache.get(cache_key)
+    if cached is not None:
+        try:
+            await client.resolve_peer(cached)
+            return cached
+        except Exception as e:
+            log.warning("Pyrofork cached peer invalid | chat_id=%s cached=%s err=%r",chat_id,cached,e)
+            cache.pop(cache_key,None)
     try:
         await client.resolve_peer(chat_id)
+        cache[cache_key]=chat_id
         return chat_id
     except Exception as e:
         log.warning("Pyrofork resolve_peer by id failed | chat_id=%s err=%r",chat_id,e)
@@ -142,6 +188,7 @@ async def _resolve_pyrogram_chat_id(bot,client,chat_id):
         cid=getattr(chat,"id",None)
         if cid is not None:
             await client.resolve_peer(cid)
+            cache[cache_key]=cid
             log.info("Pyrofork peer resolved by get_chat | chat_id=%s resolved=%s",chat_id,cid)
             return cid
     except Exception as e:
@@ -152,24 +199,15 @@ async def _resolve_pyrogram_chat_id(bot,client,chat_id):
         if username:
             target=f"@{username}"
             await client.resolve_peer(target)
+            cache[cache_key]=target
             log.info("Pyrofork peer resolved by username | chat_id=%s username=%s",chat_id,target)
             return target
     except Exception as e:
         log.warning("Pyrofork username resolve failed | chat_id=%s err=%r",chat_id,e)
-    try:
-        async for dialog in client.get_dialogs(limit=500):
-            dchat=getattr(dialog,"chat",None)
-            did=getattr(dchat,"id",None)
-            if did is not None and int(did)==int(chat_id):
-                await client.resolve_peer(did)
-                log.info("Pyrofork peer resolved from dialogs | chat_id=%s",chat_id)
-                return did
-    except Exception as e:
-        log.warning("Pyrofork dialogs resolve failed | chat_id=%s err=%r",chat_id,e)
     raise RuntimeError(f"Pyrofork peer not resolved: {chat_id}")
 
 async def warmup_pyrogram_uploader(app=None):
-    if not _ENABLED:
+    if not _PYROFORK_STATE["enabled"]:
         log.info("Pyrofork uploader warmup skipped | disabled")
         return
     try:
@@ -224,7 +262,7 @@ def _make_progress_callback(bot,chat_id,status_msg_id,file_size,started,show_pro
         pct=(current/total*100) if total else 0
         if pct<100 and now-state["last_ts"]<interval:
             return
-        if pct<100 and state["last_pct"]>=0 and pct-state["last_pct"]<_PROGRESS_STEP:
+        if pct<100 and state["last_pct"]>=0 and pct-state["last_pct"]<_PYROFORK_STATE["progress_step"]:
             return
         def schedule():
             if state["task"] and not state["task"].done():
@@ -261,13 +299,13 @@ async def _send_video(client,kwargs):
         raise
 
 async def try_send_video_via_pyrogram(bot,chat_id,status_msg_id,file_path,caption,reply_to=None,message_thread_id=None,duration=None,width=None,height=None,thumb_path=None):
-    if not _ENABLED:
+    if not _PYROFORK_STATE["enabled"]:
         return False
     if not file_path or not os.path.exists(file_path):
         return False
     key=(int(chat_id),int(status_msg_id))
     file_size=os.path.getsize(file_path)
-    show_progress=file_size>=_PROGRESS_MIN_BYTES
+    show_progress=file_size>=_PYROFORK_STATE["progress_min_bytes"]
     interval=_progress_interval(file_size)
     started=time.monotonic()
     state={"task":None}
@@ -276,7 +314,7 @@ async def try_send_video_via_pyrogram(bot,chat_id,status_msg_id,file_path,captio
         target_chat_id=await _resolve_pyrogram_chat_id(bot,client,chat_id)
         progress_callback,state=_make_progress_callback(bot,chat_id,status_msg_id,file_size,started,show_progress,interval,"Pyrofork uploading video")
         kwargs={
-            "chat_id":chat_id,
+            "chat_id":target_chat_id,
             "video":file_path,
             "caption":caption,
             "supports_streaming":True,
@@ -295,13 +333,14 @@ async def try_send_video_via_pyrogram(bot,chat_id,status_msg_id,file_path,captio
         if thumb_path and os.path.exists(thumb_path):
             kwargs["thumb"]=thumb_path
         log.info(
-            "Pyrofork upload start | chat_id=%s target=%s file=%s size=%s progress=%s interval=%.1fs",
+            "Pyrofork upload start | chat_id=%s target=%s file=%s size=%s progress=%s interval=%.1fs max_transmissions=%s",
             chat_id,
             target_chat_id,
             os.path.basename(file_path),
             _format_size(file_size),
             show_progress,
             interval,
+            _PYROFORK_STATE["max_concurrent_transmissions"],
         )
         try:
             sent=await _send_video(client,kwargs)
@@ -311,6 +350,8 @@ async def try_send_video_via_pyrogram(bot,chat_id,status_msg_id,file_path,captio
                 sent=await _send_video(client,kwargs)
             else:
                 raise
+        message_id=getattr(sent,"id",None) or getattr(sent,"message_id",None)
+        await _edit_caption_via_bot_api(bot,chat_id,message_id,caption)
         await _wait_last_progress_task(state)
         elapsed=time.monotonic()-started
         speed=file_size/max(elapsed,0.001)
