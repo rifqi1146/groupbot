@@ -126,6 +126,7 @@ COMMAND_HANDLERS = [
     ("reload", reload_cmd, False),
     ("reminder", reminder_cmd, False),
     ("restart", restart_cmd, False),
+    ("reboot", restart_cmd, False),
     ("restore", restore_cmd, True),
     ("resi", resi_cmd, False),
     ("rmsudo", rmsudo_cmd, False),
