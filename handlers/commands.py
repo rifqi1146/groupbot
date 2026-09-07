@@ -49,6 +49,7 @@ from handlers.aiimagedetector import aiimagedetector_cmd
 from handlers.uploadengine import uploadengine_cmd
 from handlers.share import share_cmd
 from handlers.igstalk import igstalk_cmd
+from handlers.igstory import igstory_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -111,6 +112,7 @@ COMMAND_HANDLERS = [
     ("helpowner", helpowner_cmd, True),
     ("ip", ip_cmd, True),
     ("igstalk", igstalk_cmd, False),
+    ("igstory", igstory_cmd, False),
     ("kang", kang_cmd, False),
     ("kick", kick_cmd, False),
     ("kurs", kurs_cmd, False),
