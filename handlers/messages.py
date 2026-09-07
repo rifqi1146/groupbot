@@ -18,6 +18,7 @@ from utils.gemini_memory import has_last_message_id as ai_db_has_last_message_id
 from handlers.groq import groq_query
 from utils.groq_memory import get_last_message_id as groq_db_get_last_message_id
 from utils.groq_memory import has_last_message_id as groq_db_has_last_message_id
+from handlers.asahotak import asahotak_answer_handler
 
 AI_REPLY_FILTER = (
     filters.REPLY
@@ -82,6 +83,11 @@ def register_messages(app):
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, auto_dl_detect),
         group=-90,
+    )
+
+    app.add_handler(
+        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, asahotak_answer_handler),
+        group=-4,
     )
     app.add_handler(
         MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, susunkata_answer_handler),

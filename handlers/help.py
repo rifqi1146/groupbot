@@ -77,6 +77,7 @@ HELP_TEXT = {
     "features": (
         "<b>Main Features</b>\n\n"
         "• <code>/anime</code> — Search anime\n"
+        "• <code>/asahotak</code> — Random question\n"
         "• <code>/aidetect</code> — Detect AI-generated images\n"
         "• <code>/aitext</code> — Detect AI-generated text\n"
         "• <code>/asupan</code> — Random TikTok content\n"

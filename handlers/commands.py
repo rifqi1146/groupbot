@@ -50,6 +50,7 @@ from handlers.uploadengine import uploadengine_cmd
 from handlers.share import share_cmd
 from handlers.igstalk import igstalk_cmd
 from handlers.igstory import igstory_cmd
+from handlers.asahotak import asahotak_cmd
 
 from handlers.asupan import (
     asupan_cmd,
@@ -85,6 +86,7 @@ COMMAND_HANDLERS = [
     ("share", share_cmd, False),
     ("anime", anime_cmd, False),
     ("aidetect", aiimagedetector_cmd, False),
+    ("asahotak", asahotak_cmd, False),
     ("wlc", wlc_cmd, False),
     ("ask", ai_cmd, False),
     ("asupan", asupan_cmd, False),
